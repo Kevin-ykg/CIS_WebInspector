@@ -104,7 +104,7 @@ namespace CIS_WebInspector.Services
                     float[] scaleYs = new float[baseScaleYs.Length];
                     for (int i = 0; i < baseScaleYs.Length; i++)
                     {
-                        scaleYs[i] = baseScaleYs[i] * ConfigManager.Config.DownscaleFactor;
+                        scaleYs[i] = 1 / baseScaleYs[i] ;
                     }
                     
                     foreach (var scaleY in scaleYs)
@@ -112,7 +112,10 @@ namespace CIS_WebInspector.Services
                         smallMat = new Mat();
                         Cv2.Resize(roiMat, smallMat, new OpenCvSharp.Size(0, 0), DownscaleFactorX, scaleY, InterpolationFlags.Area);
                         // 3. 极性反转 (黑底白码 -> 白底黑码)
-                        Cv2.BitwiseNot(smallMat, smallMat);
+                        Cv2.Threshold(smallMat, smallMat, 50, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
+                        //Cv2.BitwiseNot(smallMat, smallMat);
+                        //Cv2.EqualizeHist(smallMat, smallMat);
+                        //Cv2.ImWrite("qr.jpg", smallMat);
 
                         // 4. 将 OpenCV Mat 内存无缝对接给 ZXing
                         int smallW = smallMat.Width;
