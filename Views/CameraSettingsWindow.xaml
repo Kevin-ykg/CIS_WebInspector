@@ -1,0 +1,93 @@
+<Window x:Class="CIS_WebInspector.Views.CameraSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="采集卡硬件参数设置" Height="600" Width="450"
+        WindowStartupLocation="CenterOwner"
+        Background="#FF1E1E2E"
+        Foreground="#FFDDDDDD">
+    
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="修改数值后自动应用到设备：" FontSize="14" Foreground="#FFAAAAAA" Margin="0,0,0,8"/>
+
+        <!-- 属性列表 -->
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Properties}" AutoGenerateColumns="False" 
+                  Background="#FF252538" RowBackground="#FF2A2A3E" AlternatingRowBackground="#FF252538"
+                  Foreground="#FFEEEEEE" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#FF444455"
+                  HeadersVisibility="Column" BorderBrush="#FF444455" BorderThickness="1"
+                  CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="True">
+            <DataGrid.ColumnHeaderStyle>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#FF151520"/>
+                    <Setter Property="Foreground" Value="#FFAAAAAA"/>
+                    <Setter Property="Padding" Value="8,6"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="#FF4A6FA5"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+            
+            <DataGrid.Columns>
+                <!-- 属性名：只读 -->
+                <DataGridTextColumn Header="属性名称 (AriPropertyType)" Binding="{Binding Name}" IsReadOnly="True" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="4"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- 属性值：可编辑 -->
+                <DataGridTextColumn Header="设定值" Binding="{Binding Value, UpdateSourceTrigger=LostFocus}" Width="1*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Margin" Value="4"/>
+                            <Setter Property="Foreground" Value="#FF00FF00"/>
+                            <Setter Property="FontWeight" Value="Bold"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                    <DataGridTextColumn.EditingElementStyle>
+                        <Style TargetType="TextBox">
+                            <Setter Property="Background" Value="#FF1E1E2E"/>
+                            <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Setter Property="BorderBrush" Value="#FF8888AA"/>
+                            <Setter Property="Padding" Value="2"/>
+                        </Style>
+                    </DataGridTextColumn.EditingElementStyle>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- 底部按钮 -->
+        <Border Grid.Row="2" Margin="0,12,0,0" Padding="8" Background="#FF1A1A28" CornerRadius="8">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <Button Content="💾 另存为配置文件 (.arcf)" 
+                        Command="{Binding SaveConfigCommand}"
+                        Background="#FF4A6FA5" Foreground="White" FontSize="14" FontWeight="SemiBold"
+                        Padding="20,8" BorderThickness="0" Cursor="Hand">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="4"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
