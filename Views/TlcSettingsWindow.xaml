@@ -4,7 +4,8 @@
         Title="相机与光源控制面板 (TLC C++ SDK)" Height="600" Width="850"
         WindowStartupLocation="CenterOwner"
         Background="#FF1E1E2E"
-        Foreground="#FFDDDDDD">
+        Foreground="#FFDDDDDD"
+        FontSize="14">
     <Window.Resources>
         <!-- 下拉选项的样式 -->
         <Style TargetType="ComboBoxItem">
@@ -96,7 +97,8 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="12">
+    <Viewbox Stretch="Uniform">
+        <Grid Margin="12" Width="826" Height="561">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -247,5 +249,6 @@
                 </Grid>
             </Border>
         </Grid>
-    </Grid>
+        </Grid>
+    </Viewbox>
 </Window>

@@ -4,9 +4,11 @@
         Title="采集卡硬件参数设置" Height="600" Width="450"
         WindowStartupLocation="CenterOwner"
         Background="#FF1E1E2E"
-        Foreground="#FFDDDDDD">
+        Foreground="#FFDDDDDD"
+        FontSize="14">
     
-    <Grid Margin="12">
+    <Viewbox Stretch="Uniform">
+        <Grid Margin="12" Width="426" Height="561">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -89,5 +91,6 @@
                 </Button>
             </StackPanel>
         </Border>
-    </Grid>
+        </Grid>
+    </Viewbox>
 </Window>

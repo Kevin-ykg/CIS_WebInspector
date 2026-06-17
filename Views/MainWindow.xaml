@@ -7,6 +7,7 @@
         MinWidth="1000" MinHeight="650"
         WindowStartupLocation="CenterScreen"
         Background="#FF1E1E2E"
+        FontSize="14"
         Closed="Window_Closed">
 
     <Window.Resources>
@@ -66,7 +67,8 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Viewbox Stretch="Uniform">
+        <Grid Width="1380" Height="810">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>    <!-- 0: 顶部标题 -->
             <RowDefinition Height="*"/>       <!-- 1: 主界面 -->
@@ -241,5 +243,6 @@
                 <TextBlock Grid.Column="7" Text="{Binding StatusText}" Foreground="#FF80D0FF" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0"/>
             </Grid>
         </Border>
-    </Grid>
+        </Grid>
+    </Viewbox>
 </Window>
