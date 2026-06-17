@@ -55,6 +55,11 @@ namespace CIS_WebInspector.Services
         // ---- 异常监控 ----
         private int _framesSinceLastQr = 0;
 
+        // ---- 延迟切割（当切割点超出当前帧时暂存） ----
+        private bool _hasDeferredCut = false;
+        private int _deferredCutRemaining = 0;
+        private QrDetectionResult _deferredQrResult;
+
         // ---- 段累积（按需增长，完成后释放） ----
         private readonly List<SegmentChunk> _segChunks = new List<SegmentChunk>();
         private long _segTotalRows;
@@ -86,6 +91,9 @@ namespace CIS_WebInspector.Services
             _globalProcessedRows = 0;
             _lastQrGlobalY = -999999;
             _framesSinceLastQr = 0;
+            _hasDeferredCut = false;
+            _deferredCutRemaining = 0;
+            _deferredQrResult = null;
             ClearChunks();
         }
 
@@ -113,6 +121,7 @@ namespace CIS_WebInspector.Services
             bool cutInPrevTail = false;  // 切割点是否落在上一帧的尾部
             int rowsToDiscardFromLastChunk = 0; // 段结束时，需要从上一帧退回的行数
             int rowsToKeepFromPrevTail = 0;     // 段开始时，需要从上一帧抢捞的行数
+            bool skipDetection = false;  // 延迟切割命中时跳过本帧检测
 
             string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "日志");
             if (!System.IO.Directory.Exists(logDir))
@@ -130,8 +139,37 @@ namespace CIS_WebInspector.Services
 
             logAction($"[ProcessFrame] Start processing frame, _globalProcessedRows={_globalProcessedRows * df} (Original)");
 
+            // ======== 延迟切割执行（上一帧遗留） ========
+            if (_hasDeferredCut)
+            {
+                if (_deferredCutRemaining <= height)
+                {
+                    // 延迟切割点落在当前帧内，执行切割
+                    logAction($"  [Deferred] Executing deferred cut at row {_deferredCutRemaining * df} (Original) in current frame");
+                    qrResult = _deferredQrResult;
+                    cutRowInCurr = _deferredCutRemaining;
+                    _hasDeferredCut = false;
+                    _deferredQrResult = null;
+                    skipDetection = true;
+                }
+                else
+                {
+                    // 切割点仍然超出当前帧（极端情况），继续延迟，整帧入队
+                    logAction($"  [Deferred] Still exceeds frame! remaining={_deferredCutRemaining * df} > height={height * df} (Original). Continuing deferral.");
+                    _deferredCutRemaining -= height;
+                    // 根据状态机，如果在 Collecting 状态就把整帧数据入队
+                    if (_state == State.Collecting)
+                    {
+                        AddChunk(frameData, 0, height);
+                    }
+                    SaveTail(frameData, height);
+                    _globalProcessedRows += height;
+                    return; // 提前退出，等待下一帧
+                }
+            }
+
             // 检测1: 重叠区域（上一帧尾部 + 当前帧头部）
-            if (_prevTail != null && _prevTailRows > 0)
+            if (!skipDetection && _prevTail != null && _prevTailRows > 0)
             {
                 int currTopRows = Math.Min(OverlapRows, height);
                 int overlapH = _prevTailRows + currTopRows;
@@ -171,14 +209,19 @@ namespace CIS_WebInspector.Services
                         }
                         else
                         {
-                            logAction($"  [Overlap] Rejected! cutRowInOverlap={cutRowInOverlap * df} > overlapH={overlapH * df} (Original)");
+                            // 切割点超出重叠区域，启动延迟切割
+                            logAction($"  [Overlap] Deferred! cutRowInOverlap={cutRowInOverlap * df} > overlapH={overlapH * df} (Original). Deferring to next frame.");
+                            _hasDeferredCut = true;
+                            _deferredCutRemaining = cutRowInOverlap - overlapH;
+                            _deferredQrResult = ovResult;
+                            _lastQrGlobalY = globalY;
                         }
                     }
                 }
             }
 
             // 检测2: 当前帧整体（覆盖 QR 完全在帧内部的情况）
-            if (qrResult == null || !qrResult.Found)
+            if (!skipDetection && (qrResult == null || !qrResult.Found))
             {
                 var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
                 logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Text={fResult.DecodedText}");
@@ -200,7 +243,12 @@ namespace CIS_WebInspector.Services
                         }
                         else
                         {
-                            logAction($"  [Current] Rejected! cutRow={cutRow * df} > height={height * df} (Original)");
+                            // 切割点超出当前帧，启动延迟切割
+                            logAction($"  [Current] Deferred! cutRow={cutRow * df} > height={height * df} (Original). Deferring to next frame.");
+                            _hasDeferredCut = true;
+                            _deferredCutRemaining = cutRow - height;
+                            _deferredQrResult = fResult;
+                            _lastQrGlobalY = globalY;
                         }
                     }
                 }

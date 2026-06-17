@@ -38,7 +38,7 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 切割点偏移量：QR 中心 Y 坐标往下的固定行数。
         /// </summary>
-        public int BaseQrOffsetRows { get; set; } = 1500;
+        public int BaseQrOffsetRows { get; set; } = 2000;
 
         /// <summary>
         /// 跨帧重叠寻找区域的高度。
