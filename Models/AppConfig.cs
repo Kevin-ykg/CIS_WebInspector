@@ -38,13 +38,13 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 切割点偏移量：QR 中心 Y 坐标往下的固定行数。
         /// </summary>
-        public int BaseQrOffsetRows { get; set; } = 2000;
+        public int BaseQrOffsetRows { get; set; } = 1800;
 
         /// <summary>
         /// 跨帧重叠寻找区域的高度。
         /// 必须大于 BaseQrOffsetRows。
         /// </summary>
-        public int BaseOverlapRows { get; set; } = 3000;
+        public int BaseOverlapRows { get; set; } = 3800;
 
 
         // ==========================================
@@ -54,12 +54,12 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 横向感兴趣区域的起始 X 坐标。
         /// </summary>
-        public int BaseRoiX { get; set; } = 1000;
+        public int BaseRoiX { get; set; } = 500;
 
         /// <summary>
         /// 横向感兴趣区域的宽度。
         /// </summary>
-        public int BaseRoiWidth { get; set; } = 5000;
+        public int BaseRoiWidth { get; set; } = 6000;
 
         /// <summary>
         /// 动态差速拉伸补偿系数。

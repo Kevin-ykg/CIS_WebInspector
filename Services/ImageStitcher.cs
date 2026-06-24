@@ -168,8 +168,42 @@ namespace CIS_WebInspector.Services
                 }
             }
 
-            // 检测1: 重叠区域（上一帧尾部 + 当前帧头部）
-            if (!skipDetection && _prevTail != null && _prevTailRows > 0)
+            // 检测1: 当前帧整体（优先检测，覆盖 QR 完全在帧内部的常见情况）
+            if (!skipDetection)
+            {
+                var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
+                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Text={fResult.DecodedText}");
+                if (fResult.Found)
+                {
+                    long globalY = _globalProcessedRows + fResult.CenterY;
+                    if (globalY - _lastQrGlobalY > 1000) // 防重复检测
+                    {
+                        int cutRow = fResult.CenterY + QrOffsetRows;
+                        
+                        // 如果切割点超出了当前帧的高度，说明段的结尾在下一帧。
+                        // 我们在这里拒绝采纳，它将在下一帧的重叠区域被 Detection 2 捕获并切割。
+                        if (cutRow <= height)
+                        {
+                            logAction($"  [Current] Accepted! cutRow={cutRow * df} (Original)");
+                            qrResult = fResult;
+                            _lastQrGlobalY = globalY;
+                            cutRowInCurr = cutRow;
+                        }
+                        else
+                        {
+                            // 切割点超出当前帧，启动延迟切割
+                            logAction($"  [Current] Deferred! cutRow={cutRow * df} > height={height * df} (Original). Deferring to next frame.");
+                            _hasDeferredCut = true;
+                            _deferredCutRemaining = cutRow - height;
+                            _deferredQrResult = fResult;
+                            _lastQrGlobalY = globalY;
+                        }
+                    }
+                }
+            }
+
+            // 检测2: 重叠区域（当前帧未发现时，检测跨帧边界的 QR 码）
+            if (!skipDetection && (qrResult == null || !qrResult.Found) && _prevTail != null && _prevTailRows > 0)
             {
                 int currTopRows = Math.Min(OverlapRows, height);
                 int overlapH = _prevTailRows + currTopRows;
@@ -214,40 +248,6 @@ namespace CIS_WebInspector.Services
                             _hasDeferredCut = true;
                             _deferredCutRemaining = cutRowInOverlap - overlapH;
                             _deferredQrResult = ovResult;
-                            _lastQrGlobalY = globalY;
-                        }
-                    }
-                }
-            }
-
-            // 检测2: 当前帧整体（覆盖 QR 完全在帧内部的情况）
-            if (!skipDetection && (qrResult == null || !qrResult.Found))
-            {
-                var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
-                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Text={fResult.DecodedText}");
-                if (fResult.Found)
-                {
-                    long globalY = _globalProcessedRows + fResult.CenterY;
-                    if (globalY - _lastQrGlobalY > 1000) // 防重复检测
-                    {
-                        int cutRow = fResult.CenterY + QrOffsetRows;
-                        
-                        // 如果切割点超出了当前帧的高度，说明段的结尾在下一帧。
-                        // 我们在这里拒绝采纳，它将在下一帧的重叠区域被 Detection 1 捕获并切割。
-                        if (cutRow <= height)
-                        {
-                            logAction($"  [Current] Accepted! cutRow={cutRow * df} (Original)");
-                            qrResult = fResult;
-                            _lastQrGlobalY = globalY;
-                            cutRowInCurr = cutRow;
-                        }
-                        else
-                        {
-                            // 切割点超出当前帧，启动延迟切割
-                            logAction($"  [Current] Deferred! cutRow={cutRow * df} > height={height * df} (Original). Deferring to next frame.");
-                            _hasDeferredCut = true;
-                            _deferredCutRemaining = cutRow - height;
-                            _deferredQrResult = fResult;
                             _lastQrGlobalY = globalY;
                         }
                     }
