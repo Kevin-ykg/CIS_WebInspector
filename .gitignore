@@ -49,3 +49,6 @@ _ReSharper*/
 
 # Auto-generated files
 *.g.cs
+
+# Large media files
+*.tiff

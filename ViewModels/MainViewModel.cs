@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CIS_WebInspector.Models;
 using CIS_WebInspector.Services;
+using OpenCvSharp;
 
 namespace CIS_WebInspector.ViewModels
 {
@@ -107,10 +108,28 @@ namespace CIS_WebInspector.ViewModels
         // ---- 动态日志集合 ----
         public System.Collections.ObjectModel.ObservableCollection<string> LogMessages { get; } = new System.Collections.ObjectModel.ObservableCollection<string>();
 
+        private static readonly object _logLock = new object();
+
         public void AddLog(string msg)
         {
             string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
             string formattedMsg = $"[{timeStamp}] {msg}";
+
+            try
+            {
+                string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "日志");
+                if (!System.IO.Directory.Exists(logDir))
+                    System.IO.Directory.CreateDirectory(logDir);
+                
+                string dateStr = DateTime.Now.ToString("yyyyMMdd");
+                string dbgLog = System.IO.Path.Combine(logDir, $"SysRunLog_{dateStr}.txt");
+                
+                lock (_logLock)
+                {
+                    System.IO.File.AppendAllText(dbgLog, formattedMsg + "\n");
+                }
+            }
+            catch { }
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
@@ -497,13 +516,179 @@ namespace CIS_WebInspector.ViewModels
                     });
                 }
 
-                // 如果是离线加载模式，自动暂停并弹窗提示
+                // 如果是离线加载模式，自动暂停并弹窗提示，同时启动离线缺陷检测流水线
                 if (_cameraSource is OfflineImageSource)
                 {
                     ExecuteStop(null);
-                    System.Windows.MessageBox.Show("当前拼接图像已完成，请在确认无误后点击界面上的【恢复采集】按钮继续提取下一段！", "拼接完成", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show("当前拼接图像已完成，系统将在后台开始执行排版解析和离线缺陷检测...", "拼接完成", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    
+                    // 启动缺陷检测流水线
+                    System.Threading.Tasks.Task.Run(() => RunDefectPipeline(result));
                 }
             }, System.Windows.Threading.DispatcherPriority.Normal);
+        }
+
+        // ---- 离线缺陷检测流水线 ----
+        private void RunDefectPipeline(StitchedImageResult result)
+        {
+            try
+            {
+                AddLog("开始执行离线缺陷检测流水线...");
+                
+                var config = ConfigManager.Config;
+                if (config == null) return;
+
+                // 1. 解析 Debug.log 获取排版信息
+                string qrCode = result.EndQrText;
+                if (string.IsNullOrEmpty(qrCode))
+                {
+                    AddLog("[缺陷流水线] 未找到有效的结束二维码，终止流水线。");
+                    return;
+                }
+
+                AddLog($"正在解析 Debug.log，目标二维码: {qrCode} ...");
+                var layoutInfo = DebugLogParser.ParseForQrCode(config.DebugLogPath, qrCode, config.TiffImageDir);
+                if (layoutInfo == null)
+                {
+                    AddLog("[缺陷流水线] 解析失败或未找到对应的排版日志。");
+                    return;
+                }
+
+                AddLog($"成功解析排版日志，原图: {layoutInfo.TiffFileName}，共 {layoutInfo.Parts.Count} 个有效零件。");
+
+                // 2. 加载 TIFF 原图
+                AddLog($"正在加载 TIFF 原图...");
+                Mat tiffMat = null;
+                if (System.IO.File.Exists(layoutInfo.TiffFullPath))
+                {
+                    tiffMat = OpenCvSharp.Cv2.ImRead(layoutInfo.TiffFullPath, OpenCvSharp.ImreadModes.Unchanged);
+                }
+                else
+                {
+                    AddLog($"[缺陷流水线] 无法找到 TIFF 原图文件: {layoutInfo.TiffFullPath}");
+                    return;
+                }
+
+                if (tiffMat.Empty())
+                {
+                    AddLog($"[缺陷流水线] TIFF 图像加载失败。");
+                    return;
+                }
+
+                // 如果 TIFF 是 4 通道，分离 Alpha 通道作为原始设计二值掩膜，然后 alpha 融合到白底
+                // 参照 align_diff.py: alpha_mask = channels[3] 作为完美设计二值图像
+                // 注意：TIFF 原图可能非常大，不能创建多个全尺寸 float32 Mat，改用逐行处理
+                Mat alphaMask = null;
+                if (tiffMat.Channels() == 4)
+                {
+                    int h = tiffMat.Height;
+                    int w = tiffMat.Width;
+
+                    // 提取 Alpha 通道作为独立掩膜
+                    Mat[] tiffChannels = Cv2.Split(tiffMat);
+                    alphaMask = tiffChannels[3].Clone();
+                    foreach (var ch in tiffChannels) ch.Dispose();
+
+                    AddLog($"  提取Alpha通道: 非零像素={Cv2.CountNonZero(alphaMask)}, " +
+                           $"覆盖率={Cv2.CountNonZero(alphaMask) * 100.0 / (h * w):F1}%");
+
+                    // Alpha 混合到白底 → BGR 3通道
+                    // 使用 unsafe 指针 + Parallel.For 多线程并行，避免逐像素 P/Invoke 开销
+                    Mat result8u = new Mat(h, w, MatType.CV_8UC3);
+                    unsafe
+                    {
+                        System.Threading.Tasks.Parallel.For(0, h, row =>
+                        {
+                            byte* srcRow = (byte*)tiffMat.Ptr(row);
+                            byte* dstRow = (byte*)result8u.Ptr(row);
+
+                            for (int col = 0; col < w; col++)
+                            {
+                                byte sb = srcRow[0];
+                                byte sg = srcRow[1];
+                                byte sr = srcRow[2];
+                                byte sa = srcRow[3];
+
+                                if (sa == 255)
+                                {
+                                    dstRow[0] = sb;
+                                    dstRow[1] = sg;
+                                    dstRow[2] = sr;
+                                }
+                                else if (sa == 0)
+                                {
+                                    dstRow[0] = 255;
+                                    dstRow[1] = 255;
+                                    dstRow[2] = 255;
+                                }
+                                else
+                                {
+                                    float a = sa * (1f / 255f);
+                                    float inv = 1f - a;
+                                    dstRow[0] = (byte)(sb * a + 255f * inv);
+                                    dstRow[1] = (byte)(sg * a + 255f * inv);
+                                    dstRow[2] = (byte)(sr * a + 255f * inv);
+                                }
+
+                                srcRow += 4;
+                                dstRow += 3;
+                            }
+                        });
+                    }
+
+                    tiffMat.Dispose();
+                    tiffMat = result8u;
+                }
+                else
+                {
+                    AddLog("  [WARN] TIFF无Alpha通道，将使用统一阈值检测");
+                }
+
+                // 3. 构建 CIS 图像的 Mat（保持原始通道，不做强制转换）
+                AddLog($"正在计算图像对齐变换矩阵...");
+                var matType = result.BitsPerPixel == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
+                Mat cisMat = null;
+                var handle = System.Runtime.InteropServices.GCHandle.Alloc(result.Data, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    cisMat = OpenCvSharp.Mat.FromPixelData(result.Height, result.Width, matType, handle.AddrOfPinnedObject(), result.Stride).Clone();
+                }
+                finally
+                {
+                    handle.Free();
+                }
+
+                // 4. 计算变换矩阵（ImageAligner 内部会自行处理通道转换）
+                Mat H = ImageAligner.ComputeTransform(cisMat, tiffMat, config.MarkStripRatioTiff, config.MarkStripRatioCisTop, config.MarkStripRatioCisBot, config.MinCircularityTiff, config.MinCircularityCis);
+                if (H == null || H.Empty())
+                {
+                    AddLog("[缺陷流水线] 图像对齐失败，无法计算有效的变换矩阵。");
+                    return;
+                }
+                AddLog("变换矩阵计算成功！");
+
+                // 5. 图像变换
+                AddLog("正在将 CIS 图像变换到 TIFF 空间...");
+                Mat cisWarped = ImageAligner.WarpToTiffSpace(cisMat, H, tiffMat.Size());
+
+                // 6. 裁切小图并保存
+                if (config.SaveCroppedImages)
+                {
+                    AddLog("正在按排版坐标裁切并保存零件小图...");
+                    double scale = config.LayoutDpi / 25.4;
+                    string outDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, config.CroppedOutputDir, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                    PatchCropper.CropAndSave(cisWarped, tiffMat, alphaMask, layoutInfo.Parts, outDir, scale, config.LayoutOriginXmm, config.LayoutOriginYmm);
+                    AddLog($"[缺陷流水线] 全部完成！结果保存在: {outDir}");
+                }
+                else
+                {
+                    AddLog("[缺陷流水线] 图像对齐完成。未开启小图保存功能，跳过裁切。");
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog($"[缺陷流水线] 执行发生严重异常: {ex.Message}\n{ex.StackTrace}");
+            }
         }
 
         // ---- 二维码超时警告回调 ----

@@ -126,8 +126,11 @@ namespace CIS_WebInspector.Services
             string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "日志");
             if (!System.IO.Directory.Exists(logDir))
                 System.IO.Directory.CreateDirectory(logDir);
-            string dbgLog = System.IO.Path.Combine(logDir, "stitcher_debug_process.txt");
+            
             string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            string dateStr = DateTime.Now.ToString("yyyyMMdd");
+            string dbgLog = System.IO.Path.Combine(logDir, $"SysRunLog_{dateStr}.txt");
+            
             int df = ConfigManager.Config.DownscaleFactor;
 
             Action<string> logAction = (msg) =>

@@ -28,7 +28,8 @@ namespace CIS_WebInspector.Services
             { 
                 WriteIndented = true,
                 ReadCommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true
+                AllowTrailingCommas = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             };
 
             if (File.Exists(ConfigPath))
