@@ -136,7 +136,7 @@ namespace CIS_WebInspector.Models
         public int DefectAreaThreshOuter { get; set; } = 144;
 
         /// <summary>内部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L565: TOLERANCE_inner=5）</summary>
-        public int DefectToleranceInner { get; set; } = 12;
+        public int DefectToleranceInner { get; set; } = 6;
 
         /// <summary>外部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L566: TOLERANCE_outer=80）</summary>
         public int DefectToleranceOuter { get; set; } = 12;
