@@ -118,16 +118,68 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="🧩 拼接结果" Style="{StaticResource PanelTitle}"/>
-                    <Border Grid.Row="1" Background="#FF1A1A28" CornerRadius="4" Margin="4">
-                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" 
-                                      VerticalScrollBarVisibility="Auto">
-                            <Image x:Name="imgStitchedPreview" 
-                                   Source="{Binding StitchedPreview}"
-                                   RenderOptions.BitmapScalingMode="NearestNeighbor"
-                                   Stretch="Uniform"/>
-                        </ScrollViewer>
-                    </Border>
+                    <TabControl Grid.Row="0" Grid.RowSpan="2" Background="Transparent" BorderThickness="0" Margin="4">
+                        <TabControl.Resources>
+                            <Style TargetType="TabItem">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="TabItem">
+                                            <Border Name="Border" Padding="16,8" Margin="0,0,4,0" Background="#FF1A1A28" CornerRadius="4,4,0,0">
+                                                <ContentPresenter x:Name="ContentSite" VerticalAlignment="Center" HorizontalAlignment="Center" ContentSource="Header"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Border" Property="Background" Value="#FF4A6FA5" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Foreground" Value="#FFE0E0F0"/>
+                                <Setter Property="FontSize" Value="14"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TabControl.Resources>
+                        
+                        <TabItem Header="🧩 拼接结果">
+                            <Border Background="#FF1A1A28" CornerRadius="4" Margin="0,4,0,0">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" 
+                                              VerticalScrollBarVisibility="Auto">
+                                    <Image x:Name="imgStitchedPreview" 
+                                           Source="{Binding StitchedPreview}"
+                                           RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                           Stretch="Uniform"/>
+                                </ScrollViewer>
+                            </Border>
+                        </TabItem>
+                        
+                        <TabItem Header="🔍 全局缺陷图">
+                            <Border Background="#FF1A1A28" CornerRadius="4" Margin="0,4,0,0" ClipToBounds="True">
+                                <Grid Background="Transparent"
+                                      MouseWheel="Image_MouseWheel"
+                                      MouseLeftButtonDown="Image_MouseLeftButtonDown"
+                                      MouseLeftButtonUp="Image_MouseLeftButtonUp"
+                                      MouseMove="Image_MouseMove">
+                                    <Image x:Name="imgGlobalDefect" 
+                                           Source="{Binding GlobalDefectPreview}"
+                                           RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                           Stretch="Uniform">
+                                        <Image.RenderTransform>
+                                            <TransformGroup>
+                                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                <TranslateTransform X="0" Y="0" />
+                                            </TransformGroup>
+                                        </Image.RenderTransform>
+                                    </Image>
+                                </Grid>
+                            </Border>
+                        </TabItem>
+                    </TabControl>
                     <TextBlock Grid.Row="2" 
                                Text="{Binding LastStitchInfo}" 
                                Foreground="#FF80E080" FontSize="11" 

@@ -37,6 +37,13 @@ namespace CIS_WebInspector.ViewModels
             set => SetProperty(ref _stitchedPreview, value);
         }
 
+        private BitmapImage _globalDefectPreview;
+        public BitmapImage GlobalDefectPreview
+        {
+            get => _globalDefectPreview;
+            set => SetProperty(ref _globalDefectPreview, value);
+        }
+
         private ulong _frameCount;
         public ulong FrameCount
         {
@@ -658,32 +665,70 @@ namespace CIS_WebInspector.ViewModels
                     handle.Free();
                 }
 
-                // 4. 计算变换矩阵（ImageAligner 内部会自行处理通道转换）
-                Mat H = ImageAligner.ComputeTransform(cisMat, tiffMat, config.MarkStripRatioTiff, config.MarkStripRatioCisTop, config.MarkStripRatioCisBot, config.MinCircularityTiff, config.MinCircularityCis);
+                // 4. 计算变换矩阵，并获取自动计算的最佳二值化阈值
+                int optimalThresh = 127;
+                Mat H = ImageAligner.ComputeTransform(cisMat, tiffMat, out optimalThresh, config.MarkStripRatioTiff, config.MarkStripRatioCisTop, config.MarkStripRatioCisBot, config.MinCircularityTiff, config.MinCircularityCis);
                 if (H == null || H.Empty())
                 {
                     AddLog("[缺陷流水线] 图像对齐失败，无法计算有效的变换矩阵。");
                     return;
                 }
-                AddLog("变换矩阵计算成功！");
+                AddLog($"变换矩阵计算成功！自动最佳二值化阈值: {optimalThresh}");
 
                 // 5. 图像变换
                 AddLog("正在将 CIS 图像变换到 TIFF 空间...");
                 Mat cisWarped = ImageAligner.WarpToTiffSpace(cisMat, H, tiffMat.Size());
 
-                // 6. 裁切小图并保存
-                if (config.SaveCroppedImages)
+                // 6. 裁切小图 + 缺陷检测
+                int finalCisThresh = optimalThresh + config.DefectCisThreshOffset;
+                finalCisThresh = Math.Max(0, Math.Min(255, finalCisThresh));
+                AddLog($"正在按排版坐标裁切零件小图并执行缺陷检测 (应用 CIS 阈值 {finalCisThresh})...");
+                double scale = config.LayoutDpi / 25.4;
+                string outDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, config.CroppedOutputDir, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                var defectTaskResult = PatchCropper.CropAndSave(cisWarped, tiffMat, alphaMask, layoutInfo.Parts, outDir, scale, config.LayoutOriginXmm, config.LayoutOriginYmm, finalCisThresh, config);
+                var defectResults = defectTaskResult.Results;
+
+                // 汇总检测结果
+                int totalParts = defectResults.Count;
+                int passCount = 0;
+                int failCount = 0;
+                foreach (var dr in defectResults)
                 {
-                    AddLog("正在按排版坐标裁切并保存零件小图...");
-                    double scale = config.LayoutDpi / 25.4;
-                    string outDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, config.CroppedOutputDir, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
-                    PatchCropper.CropAndSave(cisWarped, tiffMat, alphaMask, layoutInfo.Parts, outDir, scale, config.LayoutOriginXmm, config.LayoutOriginYmm);
-                    AddLog($"[缺陷流水线] 全部完成！结果保存在: {outDir}");
+                    if (dr.IsPass)
+                        passCount++;
+                    else
+                        failCount++;
+
+                    string status = dr.IsPass ? "✓ Pass" : "✗ FAIL";
+                    AddLog($"  [{status}] {dr.PartId} — 内部缺陷: {dr.InnerDefectCount}个(最大{dr.MaxAreaInner}px²) | 外部缺陷: {dr.OuterDefectCount}个(最大{dr.MaxAreaOuter}px²)");
                 }
-                else
+
+                // 加载全局缺陷大图到 UI (通过内存字节流加载，不依赖本地硬盘文件)
+                if (defectTaskResult.GlobalImageBytes != null && defectTaskResult.GlobalImageBytes.Length > 0)
                 {
-                    AddLog("[缺陷流水线] 图像对齐完成。未开启小图保存功能，跳过裁切。");
+                    Application.Current?.Dispatcher?.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            using (var stream = new System.IO.MemoryStream(defectTaskResult.GlobalImageBytes))
+                            {
+                                var bmp = new BitmapImage();
+                                bmp.BeginInit();
+                                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                                bmp.StreamSource = stream;
+                                bmp.EndInit();
+                                bmp.Freeze();
+                                GlobalDefectPreview = bmp;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            AddLog($"[缺陷流水线] 无法加载全局缺陷图到界面: {ex.Message}");
+                        }
+                    });
                 }
+
+                AddLog($"[缺陷流水线] 全部完成！共 {totalParts} 个零件 | 合格 {passCount} | 不合格 {failCount} | 结果保存在: {outDir}");
             }
             catch (Exception ex)
             {

@@ -27,10 +27,12 @@ namespace CIS_WebInspector.Services
         /// <param name="minCircTiff">TIFF 圆度阈值</param>
         /// <param name="minCircCis">CIS 圆度阈值</param>
         /// <returns>3x3 变换矩阵 (Homography)，失败返回 null</returns>
-        public static Mat ComputeTransform(Mat cisMat, Mat tiffMat,
+        public static Mat ComputeTransform(Mat cisMat, Mat tiffMat, out int optimalThresh,
             double stripRatioTiff = 0.08, double stripRatioCisTop = 0.2, double stripRatioCisBot = 0.08,
             double minCircTiff = 0.85, double minCircCis = 0.75)
         {
+            optimalThresh = 127; // 默认值
+
             int hTiff = tiffMat.Height;
             int wTiff = tiffMat.Width;
             int hCis = cisMat.Height;
@@ -67,6 +69,8 @@ namespace CIS_WebInspector.Services
             var cisTopResult = DetectJpg(cisTop, 0, minCircCis);
             var cisTopPtsRaw = cisTopResult.Item1;
             int topThresh = cisTopResult.Item2;
+            optimalThresh = topThresh; // 记录得到的最佳阈值
+
             
             // CIS Top 面积过滤
             List<MarkerPoint> cisTopPts = cisTopPtsRaw;
