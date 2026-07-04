@@ -12,19 +12,19 @@ namespace CIS_WebInspector.Models
         // ==========================================
         // 1. 基础运行参数
         // ==========================================
-        
+
         /// <summary>
         /// 全局图像压缩比例。
         /// 4 表示宽、高分别压缩到 1/4（面积为 1/16）。
         /// 修改此值无需修改下方的物理坐标锚点，引擎会自动换算。
         /// </summary>
-        public int DownscaleFactor { get; set; } = 4/4;
+        public int DownscaleFactor { get; set; } = 4 / 4;
 
         /// <summary>
         /// 在线模式下的相机 DMA 环形缓存队列长度。
         /// </summary>
         public int BufferCount { get; set; } = 8;
-        
+
         /// <summary>
         /// 连续多少帧未检测到二维码就触发报警。
         /// 用于监控打印质量或漏印异常。
@@ -38,13 +38,13 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 切割点偏移量：QR 中心 Y 坐标往下的固定行数。
         /// </summary>
-        public int BaseQrOffsetRows { get; set; } = 1800/4;
+        public int BaseQrOffsetRows { get; set; } = 1800 / 4;
 
         /// <summary>
         /// 跨帧重叠寻找区域的高度。
         /// 必须大于 BaseQrOffsetRows。
         /// </summary>
-        public int BaseOverlapRows { get; set; } = 3800/4;
+        public int BaseOverlapRows { get; set; } = 3800 / 4;
 
 
         // ==========================================
@@ -66,10 +66,11 @@ namespace CIS_WebInspector.Models
         /// 用于补偿线扫相机的拉伸形变（例如 Y 轴被压扁到 0.5）。
         /// 这里的系数是相对于“原图”的基准变形率。
         /// </summary>
-        public float[] BaseScaleYs { get; set; } = new float[] { 0.45f, 0.50f, 0.55f, 0.60f, 0.95f,1.0f,1.05f};
+        public float[] BaseScaleYs { get; set; } = new float[] { 0.45f, 0.50f, 0.55f, 0.60f, 0.95f, 1.0f, 1.05f };
+
 
         // ==========================================
-        // 4. 离线缺陷检测参数
+        // 4. 排版数据捞取/全图配准参数
         // ==========================================
 
         /// <summary>Debug.log 文件路径</summary>
@@ -107,5 +108,46 @@ namespace CIS_WebInspector.Models
 
         /// <summary>CIS 实拍标志点最低圆度</summary>
         public double MinCircularityCis { get; set; } = 0.75;
+
+
+        // ==========================================
+        // 5. 零件缺陷检测参数 (localpeizhun.cpp & align_diff.py)
+        // ==========================================
+
+        /// <summary>是否启用零件级 SIFT 二次局部对齐（全局已对齐时可关闭以大幅提速）</summary>
+        public bool EnableSiftLocalAlign { get; set; } = true;
+
+        /// <summary>缺陷检测时小图缩放比例，影响SIFT 二次局部对齐，以及缺陷检测的时间和图像大小</summary>
+        public double DefectDetectScale { get; set; } = 0.3;
+
+        /// <summary>缺陷检测自适应最小宽度（像素，防缩放过度导致 SIFT 失败）</summary>
+        public int DefectMinScaledWidth { get; set; } = 200;
+
+        /// <summary>Alpha 掩膜二值化阈值（align_diff.py L546: threshold(alpha_mask, 60)）</summary>
+        public int DefectAlphaBinaryThresh { get; set; } = 60;
+
+        /// <summary>CIS 实拍图二值化阈值偏移量（将与 Mark 点检测到的 optimal_thresh 相加）</summary>
+        public int DefectCisThreshOffset { get; set; } = 10;
+
+        /// <summary>内部缺陷面积判定阈值（断墨、漏印），与缩放比例相关</summary>
+        public int DefectAreaThreshInner { get; set; } = 100;
+
+        /// <summary>外部缺陷面积判定阈值（飞墨、脏污），与缩放比例相关</summary>
+        public int DefectAreaThreshOuter { get; set; } = 144;
+
+        /// <summary>内部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L565: TOLERANCE_inner=5）</summary>
+        public int DefectToleranceInner { get; set; } = 6;
+
+        /// <summary>外部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L566: TOLERANCE_outer=80）</summary>
+        public int DefectToleranceOuter { get; set; } = 12;
+
+        /// <summary>边缘屏蔽轮廓厚度-外包围，与缩放比例相关（align_diff.py L585）</summary>
+        public int DefectEdgeExclusionThick { get; set; } = 6;
+
+        /// <summary>边缘屏蔽轮廓厚度-内包围，与缩放比例相关（align_diff.py L591）</summary>
+        public int DefectEdgeExclusionSmall { get; set; } = 6;
+
+        /// <summary>是否保存缺陷检测可视化结果图</summary>
+        public bool SaveDefectResultImages { get; set; } = true;
     }
 }
