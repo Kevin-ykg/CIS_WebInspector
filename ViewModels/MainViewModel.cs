@@ -185,6 +185,11 @@ namespace CIS_WebInspector.ViewModels
         public RelayCommand OpenTlcSettingsCommand =>
             _openTlcSettingsCommand ?? (_openTlcSettingsCommand = new RelayCommand(_ => ExecuteOpenTlcSettings(_), _ => !IsRunning));
 
+        private RelayCommand _openAppSettingsCommand;
+        public RelayCommand OpenAppSettingsCommand =>
+            _openAppSettingsCommand ?? (_openAppSettingsCommand = new RelayCommand(_ => ExecuteOpenAppSettings(_), _ => !IsRunning));
+
+
         // ---- 选择自动保存目录 ----
         private void ExecuteSelectAutoSaveDir(object _)
         {
@@ -227,6 +232,21 @@ namespace CIS_WebInspector.ViewModels
             var win = new Views.TlcSettingsWindow { DataContext = vm };
             win.ShowDialog();
         }
+
+        // ---- 打开全局参数设置弹窗 ----
+        private void ExecuteOpenAppSettings(object _)
+        {
+            var win = new Views.AppSettingsWindow();
+            var vm = new AppSettingsViewModel(win, this);
+            win.DataContext = vm;
+            
+            // 如果用户点了保存，可以在这里加一些处理，例如通知部分服务重载参数
+            if (win.ShowDialog() == true)
+            {
+                AddLog("全局系统参数已更新并保存。");
+            }
+        }
+
 
         // ---- 初始化在线相机 ----
         private void ExecuteLoadConfig(object _)

@@ -1,0 +1,319 @@
+<Window x:Class="CIS_WebInspector.Views.AppSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="系统参数设置" Height="600" Width="800"
+        Icon="pack://application:,,,/logo.png"
+        WindowStartupLocation="CenterOwner"
+        Background="#FF1E1E2E" Foreground="White"
+        FontSize="14">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFE0E0E0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#FF2A2A3E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#FF4A4A5E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Width" Value="150"/>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="ParamDescription" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFA0A0A0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,4,0,16"/>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <TabControl Background="Transparent" BorderBrush="#FF4A4A5E" BorderThickness="1">
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Background" Value="#FF2A2A3E"/>
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="Padding" Value="12,6"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Margin" Value="0,0,2,0"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border Background="{TemplateBinding Background}" 
+                                        BorderThickness="0" 
+                                        CornerRadius="4,4,0,0"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#FF4A6FA5"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.Resources>
+
+            <!-- 基础与目录 -->
+            <TabItem Header="基础与目录">
+                <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="全局图像压缩比例" Width="180"/>
+                            <TextBox Text="{Binding Config.DownscaleFactor}"/>
+                        </StackPanel>
+                        <TextBlock Text="例如 1 表示不压缩，4 表示宽、高分别压缩到 1/4。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="环形缓存队列长度" Width="180"/>
+                            <TextBox Text="{Binding Config.BufferCount}"/>
+                        </StackPanel>
+                        <TextBlock Text="在线模式下的相机 DMA 环形缓存队列长度。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="无QR报警阈值(帧)" Width="180"/>
+                            <TextBox Text="{Binding Config.MaxFramesWithoutQr}"/>
+                        </StackPanel>
+                        <TextBlock Text="连续多少帧未检测到二维码就触发报警，用于监控漏印。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Debug 日志文件" Width="180"/>
+                            <TextBox Text="{Binding DebugLogPath}" Width="350"/>
+                            <Button Content="..." Command="{Binding SelectDebugLogCommand}" Width="40" Margin="10,0,0,0" Padding="0,2" Background="#FF4A4A5E" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                        </StackPanel>
+                        <TextBlock Text="设备底层通信 Debug.log 文件路径。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="TIFF 原图目录" Width="180"/>
+                            <TextBox Text="{Binding TiffImageDir}" Width="350"/>
+                            <Button Content="..." Command="{Binding SelectTiffDirCommand}" Width="40" Margin="10,0,0,0" Padding="0,2" Background="#FF4A4A5E" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                        </StackPanel>
+                        <TextBlock Text="设计图 TIFF 文件存放目录。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="裁切小图输出目录" Width="180"/>
+                            <TextBox Text="{Binding CroppedOutputDir}" Width="350"/>
+                            <Button Content="..." Command="{Binding SelectCroppedDirCommand}" Width="40" Margin="10,0,0,0" Padding="0,2" Background="#FF4A4A5E" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                        </StackPanel>
+                        <TextBlock Text="裁切及缺陷检测结果保存目录。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="保存裁切小图" Width="180"/>
+                            <CheckBox IsChecked="{Binding Config.SaveCroppedImages}"/>
+                        </StackPanel>
+                        <TextBlock Text="是否保存未包含标记结果的纯净小图。" Style="{StaticResource ParamDescription}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 拼接与对齐 -->
+            <TabItem Header="拼接与排版">
+                <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="切割点固定行偏移" Width="180"/>
+                            <TextBox Text="{Binding Config.BaseQrOffsetRows}"/>
+                        </StackPanel>
+                        <TextBlock Text="QR 中心 Y 坐标往下的固定行数 (相对原图)。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="跨帧重叠区域高度" Width="180"/>
+                            <TextBox Text="{Binding Config.BaseOverlapRows}"/>
+                        </StackPanel>
+                        <TextBlock Text="必须大于上面设定的切割点偏移量。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="排版坐标系物理 DPI" Width="180"/>
+                            <TextBox Text="{Binding Config.LayoutDpi}"/>
+                        </StackPanel>
+                        <TextBlock Text="通常为 300，用于毫米与像素间的换算。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="排版原点 X 偏移 (mm)" Width="180"/>
+                            <TextBox Text="{Binding Config.LayoutOriginXmm}"/>
+                        </StackPanel>
+                        <TextBlock Text="排版文件设定的左上角起点横向偏移。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="排版原点 Y 偏移 (mm)" Width="180"/>
+                            <TextBox Text="{Binding Config.LayoutOriginYmm}"/>
+                        </StackPanel>
+                        <TextBlock Text="排版文件设定的左上角起点纵向偏移。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="二维码感兴趣区 X 坐标" Width="180"/>
+                            <TextBox Text="{Binding Config.BaseRoiX}"/>
+                        </StackPanel>
+                        <TextBlock Text="寻找二维码时的横向起始搜索位置（相对于原图）。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="二维码感兴趣区宽度" Width="180"/>
+                            <TextBox Text="{Binding Config.BaseRoiWidth}"/>
+                        </StackPanel>
+                        <TextBlock Text="寻找二维码时的横向搜索区域总宽度（相对于原图）。" Style="{StaticResource ParamDescription}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 标志点配准 -->
+            <TabItem Header="标志点配准">
+                <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="TIFF 条带高度比例" Width="180"/>
+                            <TextBox Text="{Binding Config.MarkStripRatioTiff}"/>
+                        </StackPanel>
+                        <TextBlock Text="标志点检测：TIFF 设计图上下端条带占图像高度的比例。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="CIS 上端条带比例" Width="180"/>
+                            <TextBox Text="{Binding Config.MarkStripRatioCisTop}"/>
+                        </StackPanel>
+                        <TextBlock Text="标志点检测：CIS 实拍图上端条带占图像高度的比例。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="CIS 下端条带比例" Width="180"/>
+                            <TextBox Text="{Binding Config.MarkStripRatioCisBot}"/>
+                        </StackPanel>
+                        <TextBlock Text="标志点检测：CIS 实拍图下端条带占图像高度的比例。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="TIFF 标志点最低圆度" Width="180"/>
+                            <TextBox Text="{Binding Config.MinCircularityTiff}"/>
+                        </StackPanel>
+                        <TextBlock Text="形状过滤：越接近 1 要求越圆。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="CIS 标志点最低圆度" Width="180"/>
+                            <TextBox Text="{Binding Config.MinCircularityCis}"/>
+                        </StackPanel>
+                        <TextBlock Text="形状过滤：实拍图像一般阈值略低。" Style="{StaticResource ParamDescription}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 缺陷检测 -->
+            <TabItem Header="缺陷检测">
+                <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="启用 SIFT 局部二次对齐" Width="180"/>
+                            <CheckBox IsChecked="{Binding Config.EnableSiftLocalAlign}"/>
+                        </StackPanel>
+                        <TextBlock Text="若全局已对齐，可关闭以大幅提速。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="保存缺陷可视化图" Width="180"/>
+                            <CheckBox IsChecked="{Binding Config.SaveDefectResultImages}"/>
+                        </StackPanel>
+                        <TextBlock Text="是否将每个零件及全局大图的缺陷高亮图保存到本地硬盘。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="缺陷检测缩放比例" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectDetectScale}"/>
+                        </StackPanel>
+                        <TextBlock Text="处理图像时的内部缩放率（如 0.3），影响检测精度和速度。" Style="{StaticResource ParamDescription}"/>
+                        
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="自适应最小宽度 (px)" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectMinScaledWidth}"/>
+                        </StackPanel>
+                        <TextBlock Text="防缩放过度导致 SIFT 失败的最低分辨率保障。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Alpha 二值化阈值" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectAlphaBinaryThresh}"/>
+                        </StackPanel>
+                        <TextBlock Text="标准掩膜的图像二值化强度。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="实拍图二值化偏移量" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectCisThreshOffset}"/>
+                        </StackPanel>
+                        <TextBlock Text="将与全局 Mark 点检测到的最佳阈值相加作为实际使用值。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="内部缺陷(断漏)判定面积" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectAreaThreshInner}"/>
+                        </StackPanel>
+                        <TextBlock Text="断墨、漏印等缺陷的最小生效面积阈值。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="外部缺陷(脏污)判定面积" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectAreaThreshOuter}"/>
+                        </StackPanel>
+                        <TextBlock Text="飞墨、脏污等缺陷的最小生效面积阈值。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="边缘屏蔽厚度(外)" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectEdgeExclusionThick}"/>
+                        </StackPanel>
+                        <TextBlock Text="外包围屏蔽范围大小，抵抗外界对准误差导致的虚假边缘。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="边缘屏蔽厚度(内)" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectEdgeExclusionSmall}"/>
+                        </StackPanel>
+                        <TextBlock Text="内细节包围屏蔽范围大小，抵抗内部细碎图案的对准误差。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="内部缺陷形态学容差" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectToleranceInner}"/>
+                        </StackPanel>
+                        <TextBlock Text="形态学闭操作核大小，影响断墨漏印区域的粘连合并。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="外部缺陷形态学容差" Width="180"/>
+                            <TextBox Text="{Binding Config.DefectToleranceOuter}"/>
+                        </StackPanel>
+                        <TextBlock Text="形态学闭操作核大小，影响外围飞墨脏污区域的粘连合并。" Style="{StaticResource ParamDescription}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <!-- 图像保存 -->
+            <TabItem Header="图像保存">
+                <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <Button Content="💾 保存单帧图像" Command="{Binding MainVm.SaveImageCommand}" Width="150" Padding="8,6" Background="#FF4682B4" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                        </StackPanel>
+                        <TextBlock Text="立即保存当前画面的缺陷标注图及拼图结果。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,16,0,16">
+                            <Button Content="📂 批量保存目录..." Command="{Binding MainVm.SelectAutoSaveDirCommand}" Width="150" Padding="8,6" Background="#FF556B2F" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                            <TextBlock Text="{Binding MainVm.AutoSaveDirectory}" Foreground="#FFDDDDDD" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="设置自动保存的文件夹路径。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="开启自动保存 (JPG)" Width="180"/>
+                            <CheckBox IsChecked="{Binding MainVm.IsAutoSaveEnabled}"/>
+                        </StackPanel>
+                        <TextBlock Text="勾选后，每次检测完毕均会自动将结果图保存至上述目录。" Style="{StaticResource ParamDescription}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="取消" Command="{Binding CancelCommand}" Width="100" Margin="0,0,16,0" 
+                    Background="#FF4A4A5E" Foreground="White" BorderThickness="0" Padding="8,6" Cursor="Hand"/>
+            <Button Content="保存配置" Command="{Binding SaveCommand}" Width="120" 
+                    Background="#FF4A6FA5" Foreground="White" BorderThickness="0" Padding="8,6" Cursor="Hand"/>
+        </StackPanel>
+    </Grid>
+</Window>

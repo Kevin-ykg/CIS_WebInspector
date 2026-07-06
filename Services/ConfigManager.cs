@@ -59,5 +59,27 @@ namespace CIS_WebInspector.Services
                 }
             }
         }
+
+        public static void SaveConfig()
+        {
+            if (_instance == null) return;
+            
+            var options = new JsonSerializerOptions 
+            { 
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            };
+
+            try
+            {
+                string json = JsonSerializer.Serialize(_instance, options);
+                File.WriteAllText(ConfigPath, json);
+                System.Diagnostics.Debug.WriteLine("配置已成功保存到本地。");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"保存配置失败: {ex.Message}");
+            }
+        }
     }
 }

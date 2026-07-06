@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:CIS_WebInspector.ViewModels"
         Title="爱速智烫画膜缺陷检测系统" 
+        Icon="pack://application:,,,/logo.png"
         Width="1400" Height="850"
         MinWidth="1000" MinHeight="650"
         WindowStartupLocation="CenterScreen"
@@ -78,10 +79,18 @@
         </Grid.RowDefinitions>
 
         <!-- 顶部控制栏 -->
-        <Border Grid.Row="0" Background="#FF1A1A28" Padding="12,8" Margin="8,8,8,0" CornerRadius="8">
-            <TextBlock Text="爱速智烫画膜缺陷检测系统" 
-                       Foreground="#FFCCCCCC" FontSize="18" FontWeight="SemiBold" 
-                       HorizontalAlignment="Center"/>
+        <Border Grid.Row="0" Background="#FF252538" Padding="12,8" Margin="8,8,8,0" CornerRadius="8">
+            <!-- 控制按钮栏 -->
+            <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Button Content="📂 加载配置" Command="{Binding LoadConfigCommand}" Background="#FF4A6FA5" Style="{StaticResource ActionButton}"/>
+                <Button Content="📁 离线加载" Command="{Binding LoadOfflineCommand}" Background="#FF6A5ACD" Style="{StaticResource ActionButton}"/>
+                <Button Content="▶ 开始采集" Command="{Binding StartCommand}" Background="#FF2E8B57" Style="{StaticResource ActionButton}"/>
+                <Button Content="▶ 恢复采集" Command="{Binding ResumeCommand}" Background="#FFD2691E" Style="{StaticResource ActionButton}"/>
+                <Button Content="■ 停止采集" Command="{Binding StopCommand}" Background="#FFB22222" Style="{StaticResource ActionButton}"/>
+                <Button Content="⚙ 采集卡设置" Command="{Binding OpenCameraSettingsCommand}" Background="#FF8B008B" Style="{StaticResource ActionButton}"/>
+                <Button Content="📷 相机设置" Command="{Binding OpenTlcSettingsCommand}" Background="#FF008080" Style="{StaticResource ActionButton}"/>
+                <Button Content="⚙ 参数设置" Command="{Binding OpenAppSettingsCommand}" Background="#FFB8860B" Style="{StaticResource ActionButton}"/>
+            </WrapPanel>
         </Border>
 
         <!-- 主内容区域：左右分栏 -->
@@ -188,57 +197,7 @@
             </Border>
         </Grid>
 
-        <!-- 控制按钮栏 -->
-        <Border Grid.Row="2" Background="#FF252538" Margin="8,4,8,2" CornerRadius="8" Padding="8,6">
-            <WrapPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <Button Content="📂 加载配置" 
-                        Command="{Binding LoadConfigCommand}" 
-                        Background="#FF4A6FA5" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="📁 离线加载" 
-                        Command="{Binding LoadOfflineCommand}" 
-                        Background="#FF6A5ACD" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="▶ 开始采集" 
-                        Command="{Binding StartCommand}" 
-                        Background="#FF2E8B57" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="▶ 恢复采集" 
-                        Command="{Binding ResumeCommand}" 
-                        Background="#FFD2691E" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="■ 停止采集" 
-                        Command="{Binding StopCommand}" 
-                        Background="#FFB22222" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="⚙ 采集卡设置" 
-                        Command="{Binding OpenCameraSettingsCommand}" 
-                        Background="#FF8B008B" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="📷 相机设置" 
-                        Command="{Binding OpenTlcSettingsCommand}" 
-                        Background="#FF008080" 
-                        Style="{StaticResource ActionButton}"/>
-                <Button Content="💾 保存图像" 
-                        Command="{Binding SaveImageCommand}" 
-                        Background="#FF4682B4" 
-                        Style="{StaticResource ActionButton}"/>
-                
-                <Border BorderBrush="#FF555566" BorderThickness="1,0,0,0" Margin="8,4" Padding="12,0,0,0">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="📂 批量保存..." 
-                                Command="{Binding SelectAutoSaveDirCommand}" 
-                                Background="#FF556B2F" 
-                                Style="{StaticResource ActionButton}"/>
-                        <CheckBox Content="开启自动保存 (JPG)" 
-                                  IsChecked="{Binding IsAutoSaveEnabled}" 
-                                  Foreground="#FFDDDDDD" FontSize="13" 
-                                  VerticalAlignment="Center" Margin="12,0,0,0"
-                                  ToolTip="{Binding AutoSaveDirectory}"/>
-                    </StackPanel>
-                </Border>
-            </WrapPanel>
-        </Border>
+        <!-- 原本的控制栏已移至顶部 Row 0 -->
 
         <!-- 动态日志窗口 -->
         <Border Grid.Row="3" Background="#FF1A1A28" Margin="8,2,8,2" CornerRadius="8" Padding="4">
