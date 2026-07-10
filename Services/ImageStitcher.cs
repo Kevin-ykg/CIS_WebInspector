@@ -175,7 +175,8 @@ namespace CIS_WebInspector.Services
             if (!skipDetection)
             {
                 var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
-                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Text={fResult.DecodedText}");
+                string currentQrDiagnostic = fResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
+                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
                 if (fResult.Found)
                 {
                     long globalY = _globalProcessedRows + fResult.CenterY;
@@ -216,7 +217,8 @@ namespace CIS_WebInspector.Services
                 Buffer.BlockCopy(frameData, 0, overlapImg, _stride * _prevTailRows, _stride * currTopRows);
 
                 var ovResult = _qrDetector.Detect(overlapImg, _width, overlapH, _stride, _bpp);
-                logAction($"  [Overlap] Detect: Found={ovResult.Found}, Y={ovResult.CenterY * df} (Original), Text={ovResult.DecodedText}");
+                string overlapQrDiagnostic = ovResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
+                logAction($"  [Overlap] Detect: Found={ovResult.Found}, Y={ovResult.CenterY * df} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
                 if (ovResult.Found)
                 {
                     long globalY = _globalProcessedRows - _prevTailRows + ovResult.CenterY;

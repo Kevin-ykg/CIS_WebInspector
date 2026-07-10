@@ -1,52 +1,79 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using OpenCvSharp;
 using CIS_WebInspector.Models;
+using OpenCvSharp;
+using ZXingCpp;
 
 namespace CIS_WebInspector.Services
 {
     /// <summary>
-    /// 基于 ZXing.Net 的高级二维码检测器。
-    /// 完全兼容旧版 API，并能极好地处理工业相机线扫拉伸畸变和黑底白码。
+    /// 面向 CIS 线扫图像的鲁棒二维码检测器。
+    /// 使用 ZXing-C++ 作为解码后端，并针对反色、反光、局部低对比度和 Y 轴拉伸形变执行分级回退。
     /// </summary>
     public sealed class QrCodeDetector : IDisposable
     {
-        private readonly ZXing.BarcodeReaderGeneric _detector;
+        private const double ScaleEpsilon = 0.0001;
+        private readonly BarcodeReader _reader;
+        private readonly object _decodeLock = new object();
         private bool _disposed;
 
-        /// <summary>横向感兴趣区域的起始 X 坐标（自动换算后）</summary>
-        public int RoiX => ConfigManager.Config.BaseRoiX / ConfigManager.Config.DownscaleFactor;
+        /// <summary>横向感兴趣区域的起始 X 坐标（自动换算后）。</summary>
+        public int RoiX => ConfigManager.Config.BaseRoiX / Math.Max(1, ConfigManager.Config.DownscaleFactor);
 
-        /// <summary>横向感兴趣区域的宽度（自动换算后）</summary>
-        public int RoiWidth => ConfigManager.Config.BaseRoiWidth / ConfigManager.Config.DownscaleFactor;
+        /// <summary>横向感兴趣区域的宽度（自动换算后）。</summary>
+        public int RoiWidth => ConfigManager.Config.BaseRoiWidth / Math.Max(1, ConfigManager.Config.DownscaleFactor);
 
-        /// <summary>X轴降采样比例（输入已根据 DownscaleFactor 缩小，无需再缩放）</summary>
+        /// <summary>X 轴附加缩放系数。正常保持 1.0。</summary>
         public float DownscaleFactorX { get; set; } = 1.0f;
 
-        /// <summary>Y轴降采样比例（未使用，通过 scaleY 动态覆盖）</summary>
+        /// <summary>Y 轴附加缩放系数。正常保持 1.0。</summary>
         public float DownscaleFactorY { get; set; } = 1.0f;
+
+        /// <summary>
+        /// 最近一次调用发生的参数、图像格式或本机库异常。未识别到二维码本身不属于异常。
+        /// </summary>
+        public string LastError { get; private set; }
+
+        /// <summary>最近一次成功识别使用的预处理路径和缩放系数，便于现场调参。</summary>
+        public string LastDecodeStrategy { get; private set; }
 
         public QrCodeDetector()
         {
-            _detector = new ZXing.BarcodeReaderGeneric
+            _reader = new BarcodeReader
             {
-                AutoRotate = false,
-                Options = new ZXing.Common.DecodingOptions
-                {
-                    TryHarder = true,
-                    PossibleFormats = new System.Collections.Generic.List<ZXing.BarcodeFormat> 
-                    { 
-                        ZXing.BarcodeFormat.QR_CODE, 
-                        ZXing.BarcodeFormat.DATA_MATRIX 
-                    }
-                }
+                Formats = BarcodeFormat.QRCode,
+                Binarizer = Binarizer.LocalAverage,
+                TryHarder = true,
+                TryRotate = true,
+                TryInvert = true,
+                TryDownscale = true,
+                IsPure = false,
+                ReturnErrors = false,
+                MaxNumberOfSymbols = 1
             };
         }
 
         public QrDetectionResult Detect(byte[] data, int width, int height, int stride, int bitsPerPixel)
         {
-            if (data == null || data.Length == 0) return QrDetectionResult.NotFound;
-            var matType = bitsPerPixel == 8 ? MatType.CV_8UC1 : MatType.CV_8UC3;
+            LastError = null;
+            LastDecodeStrategy = null;
+            if (_disposed)
+            {
+                LastError = "二维码检测器已经释放。";
+                return QrDetectionResult.NotFound;
+            }
+
+            if (!TryGetMatType(width, height, stride, bitsPerPixel, out MatType matType))
+                return QrDetectionResult.NotFound;
+
+            long requiredBytes = (long)stride * height;
+            if (data == null || data.Length < requiredBytes)
+            {
+                LastError = $"图像缓冲区不足：需要 {requiredBytes} 字节，实际 {data?.Length ?? 0} 字节。";
+                return QrDetectionResult.NotFound;
+            }
+
             GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
             try
             {
@@ -54,6 +81,11 @@ namespace CIS_WebInspector.Services
                 {
                     return DetectCore(mat);
                 }
+            }
+            catch (Exception ex)
+            {
+                LastError = $"二维码检测失败：{ex.Message}";
+                return QrDetectionResult.NotFound;
             }
             finally
             {
@@ -63,153 +95,338 @@ namespace CIS_WebInspector.Services
 
         public QrDetectionResult Detect(IntPtr dataPtr, int width, int height, int stride, int bitsPerPixel)
         {
-            if (dataPtr == IntPtr.Zero) return QrDetectionResult.NotFound;
-            var matType = bitsPerPixel == 8 ? MatType.CV_8UC1 : MatType.CV_8UC3;
-            using (var mat = Mat.FromPixelData(height, width, matType, dataPtr, stride))
+            LastError = null;
+            LastDecodeStrategy = null;
+            if (_disposed)
             {
-                return DetectCore(mat);
+                LastError = "二维码检测器已经释放。";
+                return QrDetectionResult.NotFound;
             }
-        }
 
-        private QrDetectionResult DetectCore(Mat mat)
-        {
+            if (dataPtr == IntPtr.Zero)
+            {
+                LastError = "图像缓冲区指针为空。";
+                return QrDetectionResult.NotFound;
+            }
+
+            if (!TryGetMatType(width, height, stride, bitsPerPixel, out MatType matType))
+                return QrDetectionResult.NotFound;
+
             try
             {
-                Mat grayMat = mat;
-                bool needDispose = false;
-                if (mat.Channels() == 3)
+                using (var mat = Mat.FromPixelData(height, width, matType, dataPtr, stride))
                 {
-                    grayMat = new Mat();
-                    Cv2.CvtColor(mat, grayMat, ColorConversionCodes.BGR2GRAY);
-                    needDispose = true;
-                }
-
-                Mat roiMat = null;
-                Mat smallMat = null;
-                try
-                {
-                    // 1. 裁剪感兴趣区域 (ROI)
-                    int safeX = Math.Max(0, Math.Min(RoiX, grayMat.Width - 1));
-                    int safeWidth = Math.Min(RoiWidth, grayMat.Width - safeX);
-                    if (safeWidth <= 0) 
-                    {
-                        safeX = 0;
-                        safeWidth = grayMat.Width;
-                    }
-                    roiMat = new Mat(grayMat, new Rect(safeX, 0, safeWidth, grayMat.Height));
-
-                    // 2. 动态差速拉伸补偿扫描 (解决工业产线料带张力波动或编码器打滑导致的变比畸变)
-                    // 从配置中读取基础补偿系数，然后乘以当前的缩放比例，自动抵消由于总体缩放造成的Y轴形变
-                    float[] baseScaleYs = ConfigManager.Config.BaseScaleYs;
-                    float[] scaleYs = new float[baseScaleYs.Length];
-                    for (int i = 0; i < baseScaleYs.Length; i++)
-                    {
-                        scaleYs[i] = 1 / baseScaleYs[i] ;
-                    }
-                    
-                    foreach (var scaleY in scaleYs)
-                    {
-                        smallMat = new Mat();
-                        Cv2.Resize(roiMat, smallMat, new OpenCvSharp.Size(0, 0), DownscaleFactorX, scaleY, InterpolationFlags.Area);
-                        // 3. 极性反转 (黑底白码 -> 白底黑码)
-                        Cv2.Threshold(smallMat, smallMat, 50, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
-                        //Cv2.BitwiseNot(smallMat, smallMat);
-                        //Cv2.EqualizeHist(smallMat, smallMat);
-                        //Cv2.ImWrite("qr.jpg", smallMat);
-
-                        // 4. 将 OpenCV Mat 内存无缝对接给 ZXing
-                        int smallW = smallMat.Width;
-                        int smallH = smallMat.Height;
-                        int smallStride = (int)smallMat.Step();
-                        byte[] rawData = new byte[smallStride * smallH];
-                        Marshal.Copy(smallMat.Data, rawData, 0, rawData.Length);
-
-                        var source = new ZXing.RGBLuminanceSource(rawData, smallW, smallH, ZXing.RGBLuminanceSource.BitmapFormat.Gray8);
-                        
-                        ZXing.Result result = null;
-                        int rotationPass = 0;
-                        var currentSource = (ZXing.LuminanceSource)source;
-
-                        // 手动尝试 4 个方向，完全掌控坐标系映射，避免 AutoRotate 的毒瘤坐标错乱Bug
-                        for (int r = 0; r < 4; r++)
-                        {
-                            result = _detector.Decode(currentSource);
-                            if (result != null && result.ResultPoints != null && result.ResultPoints.Length > 0)
-                            {
-                                rotationPass = r;
-                                break;
-                            }
-                            currentSource = currentSource.rotateCounterClockwise();
-                        }
-
-                        if (result != null)
-                        {
-                            // 5. 将发现的坐标映射回原始的 0 度坐标系
-                            float cx = 0, cy = 0;
-                            for (int i = 0; i < result.ResultPoints.Length; i++)
-                            {
-                                float px = result.ResultPoints[i].X;
-                                float py = result.ResultPoints[i].Y;
-                                float origX = px;
-                                float origY = py;
-
-                                // 逆时针旋转的坐标逆映射
-                                if (rotationPass == 1) // 90度逆时针
-                                {
-                                    origX = source.Width - 1 - py;
-                                    origY = px;
-                                }
-                                else if (rotationPass == 2) // 180度
-                                {
-                                    origX = source.Width - 1 - px;
-                                    origY = source.Height - 1 - py;
-                                }
-                                else if (rotationPass == 3) // 270度逆时针
-                                {
-                                    origX = py;
-                                    origY = source.Height - 1 - px;
-                                }
-
-                                cx += (origX / DownscaleFactorX) + safeX;
-                                cy += (origY / scaleY);
-                            }
-                            cx /= result.ResultPoints.Length;
-                            cy /= result.ResultPoints.Length;
-
-                            smallMat.Dispose();
-
-                            return new QrDetectionResult
-                            {
-                                Found = true,
-                                CenterX = (int)Math.Round(cx),
-                                CenterY = (int)Math.Round(cy),
-                                DecodedText = result.Text
-                            };
-                        }
-
-                        smallMat.Dispose();
-                        smallMat = null;
-                    }
-
-                    return QrDetectionResult.NotFound;
-                }
-                finally
-                {
-                    smallMat?.Dispose();
-                    roiMat?.Dispose();
-                    if (needDispose) grayMat.Dispose();
+                    return DetectCore(mat);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                LastError = $"二维码检测失败：{ex.Message}";
                 return QrDetectionResult.NotFound;
             }
         }
 
+        private bool TryGetMatType(int width, int height, int stride, int bitsPerPixel, out MatType matType)
+        {
+            matType = default;
+            if (width <= 0 || height <= 0 || stride <= 0)
+            {
+                LastError = $"无效的图像尺寸或步长：{width}x{height}, stride={stride}。";
+                return false;
+            }
+
+            int channels;
+            switch (bitsPerPixel)
+            {
+                case 8:
+                    channels = 1;
+                    matType = MatType.CV_8UC1;
+                    break;
+                case 24:
+                    channels = 3;
+                    matType = MatType.CV_8UC3;
+                    break;
+                case 32:
+                    channels = 4;
+                    matType = MatType.CV_8UC4;
+                    break;
+                default:
+                    LastError = $"不支持 {bitsPerPixel} bpp 图像；仅支持 Gray8、BGR24 和 BGRA32。";
+                    return false;
+            }
+
+            if ((long)stride < (long)width * channels)
+            {
+                LastError = $"图像步长 {stride} 小于每行有效字节数 {width * channels}。";
+                return false;
+            }
+
+            return true;
+        }
+
+        private QrDetectionResult DetectCore(Mat source)
+        {
+            Mat gray = null;
+            bool ownsGray = false;
+            try
+            {
+                if (source.Empty())
+                    return QrDetectionResult.NotFound;
+
+                if (source.Channels() == 1)
+                {
+                    gray = source;
+                }
+                else
+                {
+                    gray = new Mat();
+                    ownsGray = true;
+                    Cv2.CvtColor(
+                        source,
+                        gray,
+                        source.Channels() == 4 ? ColorConversionCodes.BGRA2GRAY : ColorConversionCodes.BGR2GRAY);
+                }
+
+                int safeX = Math.Max(0, Math.Min(RoiX, gray.Width - 1));
+                int configuredWidth = RoiWidth;
+                int safeWidth = configuredWidth > 0
+                    ? Math.Min(configuredWidth, gray.Width - safeX)
+                    : gray.Width - safeX;
+                if (safeWidth <= 0)
+                {
+                    safeX = 0;
+                    safeWidth = gray.Width;
+                }
+
+                using (var roi = new Mat(gray, new Rect(safeX, 0, safeWidth, gray.Height)))
+                {
+                    double scaleX = NormalizeScale(DownscaleFactorX);
+                    double[] scaleYs = BuildScaleYCandidates();
+
+                    // 第一层：保留原始灰度，让 ZXing-C++ 的局部均值二值化器自行处理亮度不均和反色。
+                    if (TryDecodeScaleSweep(roi, scaleX, scaleYs, InterpolationFlags.Linear, "原始灰度", out DecodeHit hit))
+                        return ToDetectionResult(hit, safeX);
+
+                    // 第二层：CLAHE 只在首轮失败后启用，用于反光或暗部导致的局部低对比度。
+                    using (var contrast = new Mat())
+                    using (var clahe = Cv2.CreateCLAHE(2.0, new OpenCvSharp.Size(8, 8)))
+                    {
+                        clahe.Apply(roi, contrast);
+                        if (TryDecodeScaleSweep(contrast, scaleX, scaleYs, InterpolationFlags.Linear, "CLAHE", out hit))
+                            return ToDetectionResult(hit, safeX);
+
+                        // 第三层：自适应阈值是最终回退，不再用单一 Otsu 阈值抹掉反光区的灰度细节。
+                        int blockSize = GetAdaptiveBlockSize(contrast.Width, contrast.Height);
+                        if (blockSize >= 3)
+                        {
+                            using (var binary = new Mat())
+                            {
+                                Cv2.AdaptiveThreshold(
+                                    contrast,
+                                    binary,
+                                    255,
+                                    AdaptiveThresholdTypes.GaussianC,
+                                    ThresholdTypes.Binary,
+                                    blockSize,
+                                    3);
+                                if (TryDecodeScaleSweep(binary, scaleX, scaleYs, InterpolationFlags.Nearest, "自适应阈值", out hit))
+                                    return ToDetectionResult(hit, safeX);
+                            }
+                        }
+                    }
+                }
+
+                return QrDetectionResult.NotFound;
+            }
+            catch (Exception ex)
+            {
+                LastError = $"二维码检测失败：{ex.Message}";
+                return QrDetectionResult.NotFound;
+            }
+            finally
+            {
+                if (ownsGray)
+                    gray?.Dispose();
+            }
+        }
+
+        private bool TryDecodeScaleSweep(
+            Mat source,
+            double scaleX,
+            IReadOnlyList<double> scaleYs,
+            InterpolationFlags interpolation,
+            string strategy,
+            out DecodeHit hit)
+        {
+            for (int i = 0; i < scaleYs.Count; i++)
+            {
+                if (TryDecode(source, scaleX, scaleYs[i], interpolation, out hit))
+                {
+                    hit.Strategy = strategy;
+                    return true;
+                }
+            }
+
+            hit = null;
+            return false;
+        }
+
+        private bool TryDecode(
+            Mat source,
+            double scaleX,
+            double scaleY,
+            InterpolationFlags interpolation,
+            out DecodeHit hit)
+        {
+            Mat scaled = null;
+            bool ownsScaled = false;
+            Barcode[] barcodes = null;
+            try
+            {
+                if (Math.Abs(scaleX - 1.0) < ScaleEpsilon && Math.Abs(scaleY - 1.0) < ScaleEpsilon)
+                {
+                    scaled = source;
+                }
+                else
+                {
+                    scaled = new Mat();
+                    ownsScaled = true;
+                    Cv2.Resize(source, scaled, new OpenCvSharp.Size(), scaleX, scaleY, interpolation);
+                }
+
+                var image = new ImageView(
+                    scaled.Data,
+                    scaled.Width,
+                    scaled.Height,
+                    ImageFormat.Lum,
+                    checked((int)scaled.Step()),
+                    1);
+
+                lock (_decodeLock)
+                {
+                    barcodes = _reader.From(image);
+                }
+
+                if (barcodes == null)
+                {
+                    hit = null;
+                    return false;
+                }
+
+                for (int i = 0; i < barcodes.Length; i++)
+                {
+                    Barcode barcode = barcodes[i];
+                    if (barcode == null || !barcode.IsValid || string.IsNullOrWhiteSpace(barcode.Text))
+                        continue;
+
+                    Position position = barcode.Position;
+                    hit = new DecodeHit
+                    {
+                        Text = barcode.Text,
+                        CenterX = (position.TopLeft.X + position.TopRight.X + position.BottomRight.X + position.BottomLeft.X) / 4.0,
+                        CenterY = (position.TopLeft.Y + position.TopRight.Y + position.BottomRight.Y + position.BottomLeft.Y) / 4.0,
+                        ScaleX = scaleX,
+                        ScaleY = scaleY
+                    };
+                    return true;
+                }
+
+                hit = null;
+                return false;
+            }
+            finally
+            {
+                if (barcodes != null)
+                {
+                    for (int i = 0; i < barcodes.Length; i++)
+                        barcodes[i]?.Dispose();
+                }
+
+                if (ownsScaled)
+                    scaled?.Dispose();
+            }
+        }
+
+        private QrDetectionResult ToDetectionResult(DecodeHit hit, int roiX)
+        {
+            LastDecodeStrategy = $"{hit.Strategy}, scaleX={hit.ScaleX:F3}, scaleY={hit.ScaleY:F3}";
+            return new QrDetectionResult
+            {
+                Found = true,
+                CenterX = (int)Math.Round(hit.CenterX / hit.ScaleX + roiX),
+                CenterY = (int)Math.Round(hit.CenterY / hit.ScaleY),
+                DecodedText = hit.Text
+            };
+        }
+
+        private double[] BuildScaleYCandidates()
+        {
+            var candidates = new List<double>();
+            double extraScaleY = NormalizeScale(DownscaleFactorY);
+            AddScaleCandidate(candidates, extraScaleY);
+
+            float[] configuredScales = ConfigManager.Config.BaseScaleYs;
+            if (configuredScales != null)
+            {
+                for (int i = 0; i < configuredScales.Length; i++)
+                {
+                    double configured = configuredScales[i];
+                    if (configured > 0.05 && configured < 10 && !double.IsNaN(configured) && !double.IsInfinity(configured))
+                    {
+                        AddScaleCandidate(candidates, extraScaleY / configured);
+                        AddScaleCandidate(candidates, extraScaleY * configured);
+                    }
+                }
+            }
+
+            candidates.Sort((left, right) => Math.Abs(Math.Log(left)).CompareTo(Math.Abs(Math.Log(right))));
+            return candidates.ToArray();
+        }
+
+        private static void AddScaleCandidate(List<double> candidates, double value)
+        {
+            value = Math.Max(0.25, Math.Min(4.0, value));
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (Math.Abs(candidates[i] - value) < 0.005)
+                    return;
+            }
+
+            candidates.Add(value);
+        }
+
+        private static double NormalizeScale(float value)
+        {
+            return value > 0.05f && value < 10f && !float.IsNaN(value) && !float.IsInfinity(value)
+                ? value
+                : 1.0;
+        }
+
+        private static int GetAdaptiveBlockSize(int width, int height)
+        {
+            int maxSize = Math.Min(width, height);
+            if (maxSize < 3)
+                return 0;
+
+            int blockSize = Math.Min(51, maxSize);
+            if (blockSize % 2 == 0)
+                blockSize--;
+            return Math.Max(3, blockSize);
+        }
+
         public void Dispose()
         {
-            if (_disposed) return;
             _disposed = true;
+        }
+
+        private sealed class DecodeHit
+        {
+            public string Text { get; set; }
+            public double CenterX { get; set; }
+            public double CenterY { get; set; }
+            public double ScaleX { get; set; }
+            public double ScaleY { get; set; }
+            public string Strategy { get; set; }
         }
     }
 }
