@@ -62,11 +62,16 @@ namespace CIS_WebInspector.Models
         public int BaseRoiWidth { get; set; } = 6000 / 4;
 
         /// <summary>
-        /// 动态差速拉伸补偿系数。
-        /// 用于补偿线扫相机的拉伸形变（例如 Y 轴被压扁到 0.5）。
-        /// 这里的系数是相对于“原图”的基准变形率。
+        /// 是否在送入 WeChatQRCode 前反转灰度极性。
+        /// 当前 CIS 图像为黑底白码，因此默认开启，转换为识别器更稳定的白底黑码。
         /// </summary>
-        public float[] BaseScaleYs { get; set; } = new float[] { 0.45f, 0.50f, 0.55f, 0.60f, 0.95f, 1.0f, 1.05f };
+        public bool QrInvertPolarity { get; set; } = true;
+
+        /// <summary>
+        /// WeChatQRCode 的 Y 轴形变补偿候选值，按尝试优先级排列。
+        /// 1.0 为原图；0.67 用于补偿纵向拉伸；1.5 用于补偿纵向压缩。
+        /// </summary>
+        public float[] QrScaleYCandidates { get; set; } = new float[] { 1.0f, 0.67f, 1.5f };
 
 
         // ==========================================

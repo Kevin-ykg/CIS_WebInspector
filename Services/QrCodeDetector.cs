@@ -1,21 +1,23 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
-using ZXingCpp;
 
 namespace CIS_WebInspector.Services
 {
     /// <summary>
-    /// 面向 CIS 线扫图像的鲁棒二维码检测器。
-    /// 使用 ZXing-C++ 作为解码后端，并针对反色、反光、局部低对比度和 Y 轴拉伸形变执行分级回退。
+    /// 面向 CIS 线扫图像的 WeChatQRCode 二维码检测器。
+    /// 每个形变候选只调用同一个 CNN 检测/增强/解码后端，不再依赖 ZXing-C++ 回退。
     /// </summary>
     public sealed class QrCodeDetector : IDisposable
     {
         private const double ScaleEpsilon = 0.0001;
-        private readonly BarcodeReader _reader;
         private readonly object _decodeLock = new object();
+        private readonly string _modelDirectory;
+        private WeChatQRCode _detector;
+        private bool _isWarmedUp;
         private bool _disposed;
 
         /// <summary>横向感兴趣区域的起始 X 坐标（自动换算后）。</summary>
@@ -24,40 +26,55 @@ namespace CIS_WebInspector.Services
         /// <summary>横向感兴趣区域的宽度（自动换算后）。</summary>
         public int RoiWidth => ConfigManager.Config.BaseRoiWidth / Math.Max(1, ConfigManager.Config.DownscaleFactor);
 
-        /// <summary>X 轴附加缩放系数。正常保持 1.0。</summary>
-        public float DownscaleFactorX { get; set; } = 1.0f;
-
-        /// <summary>Y 轴附加缩放系数。正常保持 1.0。</summary>
-        public float DownscaleFactorY { get; set; } = 1.0f;
-
-        /// <summary>
-        /// 最近一次调用发生的参数、图像格式或本机库异常。未识别到二维码本身不属于异常。
-        /// </summary>
+        /// <summary>最近一次调用发生的参数、模型或本机库异常；未识别到二维码不属于异常。</summary>
         public string LastError { get; private set; }
 
-        /// <summary>最近一次成功识别使用的预处理路径和缩放系数，便于现场调参。</summary>
+        /// <summary>最近一次成功识别使用的后端、极性和形变补偿系数。</summary>
         public string LastDecodeStrategy { get; private set; }
 
         public QrCodeDetector()
+            : this(null)
         {
-            _reader = new BarcodeReader
+        }
+
+        /// <summary>允许测试或独立组件显式指定四个 WeChatQRCode 模型所在目录。</summary>
+        public QrCodeDetector(string modelDirectory)
+        {
+            _modelDirectory = string.IsNullOrWhiteSpace(modelDirectory)
+                ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "WeChatQRCode")
+                : Path.GetFullPath(modelDirectory);
+        }
+
+        /// <summary>
+        /// 预加载 CNN 与超分辨率模型。应在开始采集前调用，避免首帧承担模型加载耗时。
+        /// </summary>
+        public bool Initialize()
+        {
+            ResetDiagnostics();
+            if (_disposed)
             {
-                Formats = BarcodeFormat.QRCode,
-                Binarizer = Binarizer.LocalAverage,
-                TryHarder = true,
-                TryRotate = true,
-                TryInvert = true,
-                TryDownscale = true,
-                IsPure = false,
-                ReturnErrors = false,
-                MaxNumberOfSymbols = 1
-            };
+                LastError = "二维码检测器已经释放。";
+                return false;
+            }
+
+            try
+            {
+                if (!EnsureDetector())
+                    return false;
+
+                WarmUpDetector();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LastError = $"WeChatQRCode 模型初始化失败：{ex.Message}";
+                return false;
+            }
         }
 
         public QrDetectionResult Detect(byte[] data, int width, int height, int stride, int bitsPerPixel)
         {
-            LastError = null;
-            LastDecodeStrategy = null;
+            ResetDiagnostics();
             if (_disposed)
             {
                 LastError = "二维码检测器已经释放。";
@@ -78,9 +95,7 @@ namespace CIS_WebInspector.Services
             try
             {
                 using (var mat = Mat.FromPixelData(height, width, matType, handle.AddrOfPinnedObject(), stride))
-                {
                     return DetectCore(mat);
-                }
             }
             catch (Exception ex)
             {
@@ -95,8 +110,7 @@ namespace CIS_WebInspector.Services
 
         public QrDetectionResult Detect(IntPtr dataPtr, int width, int height, int stride, int bitsPerPixel)
         {
-            LastError = null;
-            LastDecodeStrategy = null;
+            ResetDiagnostics();
             if (_disposed)
             {
                 LastError = "二维码检测器已经释放。";
@@ -115,15 +129,19 @@ namespace CIS_WebInspector.Services
             try
             {
                 using (var mat = Mat.FromPixelData(height, width, matType, dataPtr, stride))
-                {
                     return DetectCore(mat);
-                }
             }
             catch (Exception ex)
             {
                 LastError = $"二维码检测失败：{ex.Message}";
                 return QrDetectionResult.NotFound;
             }
+        }
+
+        private void ResetDiagnostics()
+        {
+            LastError = null;
+            LastDecodeStrategy = null;
         }
 
         private bool TryGetMatType(int width, int height, int stride, int bitsPerPixel, out MatType matType)
@@ -170,7 +188,7 @@ namespace CIS_WebInspector.Services
             bool ownsGray = false;
             try
             {
-                if (source.Empty())
+                if (source.Empty() || !EnsureDetector())
                     return QrDetectionResult.NotFound;
 
                 if (source.Channels() == 1)
@@ -188,9 +206,8 @@ namespace CIS_WebInspector.Services
                 }
 
                 int safeX = Math.Max(0, Math.Min(RoiX, gray.Width - 1));
-                int configuredWidth = RoiWidth;
-                int safeWidth = configuredWidth > 0
-                    ? Math.Min(configuredWidth, gray.Width - safeX)
+                int safeWidth = RoiWidth > 0
+                    ? Math.Min(RoiWidth, gray.Width - safeX)
                     : gray.Width - safeX;
                 if (safeWidth <= 0)
                 {
@@ -199,40 +216,28 @@ namespace CIS_WebInspector.Services
                 }
 
                 using (var roi = new Mat(gray, new Rect(safeX, 0, safeWidth, gray.Height)))
+                using (var normalizedPolarity = new Mat())
                 {
-                    double scaleX = NormalizeScale(DownscaleFactorX);
-                    double[] scaleYs = BuildScaleYCandidates();
+                    bool inverted = ConfigManager.Config.QrInvertPolarity;
+                    if (inverted)
+                        Cv2.BitwiseNot(roi, normalizedPolarity);
+                    else
+                        roi.CopyTo(normalizedPolarity);
 
-                    // 第一层：保留原始灰度，让 ZXing-C++ 的局部均值二值化器自行处理亮度不均和反色。
-                    if (TryDecodeScaleSweep(roi, scaleX, scaleYs, InterpolationFlags.Linear, "原始灰度", out DecodeHit hit))
-                        return ToDetectionResult(hit, safeX);
-
-                    // 第二层：CLAHE 只在首轮失败后启用，用于反光或暗部导致的局部低对比度。
-                    using (var contrast = new Mat())
-                    using (var clahe = Cv2.CreateCLAHE(2.0, new OpenCvSharp.Size(8, 8)))
+                    double[] scaleCandidates = BuildScaleYCandidates();
+                    for (int i = 0; i < scaleCandidates.Length; i++)
                     {
-                        clahe.Apply(roi, contrast);
-                        if (TryDecodeScaleSweep(contrast, scaleX, scaleYs, InterpolationFlags.Linear, "CLAHE", out hit))
-                            return ToDetectionResult(hit, safeX);
+                        if (!TryDecode(normalizedPolarity, scaleCandidates[i], out DecodeHit hit))
+                            continue;
 
-                        // 第三层：自适应阈值是最终回退，不再用单一 Otsu 阈值抹掉反光区的灰度细节。
-                        int blockSize = GetAdaptiveBlockSize(contrast.Width, contrast.Height);
-                        if (blockSize >= 3)
+                        LastDecodeStrategy = $"WeChatQRCode, polarity={(inverted ? "inverted" : "original")}, scaleY={hit.ScaleY:F3}";
+                        return new QrDetectionResult
                         {
-                            using (var binary = new Mat())
-                            {
-                                Cv2.AdaptiveThreshold(
-                                    contrast,
-                                    binary,
-                                    255,
-                                    AdaptiveThresholdTypes.GaussianC,
-                                    ThresholdTypes.Binary,
-                                    blockSize,
-                                    3);
-                                if (TryDecodeScaleSweep(binary, scaleX, scaleYs, InterpolationFlags.Nearest, "自适应阈值", out hit))
-                                    return ToDetectionResult(hit, safeX);
-                            }
-                        }
+                            Found = true,
+                            CenterX = (int)Math.Round(hit.CenterX + safeX),
+                            CenterY = (int)Math.Round(hit.CenterY / hit.ScaleY),
+                            DecodedText = hit.Text
+                        };
                     }
                 }
 
@@ -240,7 +245,7 @@ namespace CIS_WebInspector.Services
             }
             catch (Exception ex)
             {
-                LastError = $"二维码检测失败：{ex.Message}";
+                LastError = $"WeChatQRCode 检测失败：{ex.Message}";
                 return QrDetectionResult.NotFound;
             }
             finally
@@ -250,40 +255,14 @@ namespace CIS_WebInspector.Services
             }
         }
 
-        private bool TryDecodeScaleSweep(
-            Mat source,
-            double scaleX,
-            IReadOnlyList<double> scaleYs,
-            InterpolationFlags interpolation,
-            string strategy,
-            out DecodeHit hit)
-        {
-            for (int i = 0; i < scaleYs.Count; i++)
-            {
-                if (TryDecode(source, scaleX, scaleYs[i], interpolation, out hit))
-                {
-                    hit.Strategy = strategy;
-                    return true;
-                }
-            }
-
-            hit = null;
-            return false;
-        }
-
-        private bool TryDecode(
-            Mat source,
-            double scaleX,
-            double scaleY,
-            InterpolationFlags interpolation,
-            out DecodeHit hit)
+        private bool TryDecode(Mat source, double scaleY, out DecodeHit hit)
         {
             Mat scaled = null;
             bool ownsScaled = false;
-            Barcode[] barcodes = null;
+            Mat[] boxes = null;
             try
             {
-                if (Math.Abs(scaleX - 1.0) < ScaleEpsilon && Math.Abs(scaleY - 1.0) < ScaleEpsilon)
+                if (Math.Abs(scaleY - 1.0) < ScaleEpsilon)
                 {
                     scaled = source;
                 }
@@ -291,41 +270,24 @@ namespace CIS_WebInspector.Services
                 {
                     scaled = new Mat();
                     ownsScaled = true;
-                    Cv2.Resize(source, scaled, new OpenCvSharp.Size(), scaleX, scaleY, interpolation);
+                    Cv2.Resize(source, scaled, new OpenCvSharp.Size(), 1.0, scaleY, InterpolationFlags.Linear);
                 }
 
-                var image = new ImageView(
-                    scaled.Data,
-                    scaled.Width,
-                    scaled.Height,
-                    ImageFormat.Lum,
-                    checked((int)scaled.Step()),
-                    1);
-
+                string[] decodedTexts;
                 lock (_decodeLock)
-                {
-                    barcodes = _reader.From(image);
-                }
+                    _detector.DetectAndDecode(scaled, out boxes, out decodedTexts);
 
-                if (barcodes == null)
+                int resultCount = Math.Min(decodedTexts?.Length ?? 0, boxes?.Length ?? 0);
+                for (int i = 0; i < resultCount; i++)
                 {
-                    hit = null;
-                    return false;
-                }
-
-                for (int i = 0; i < barcodes.Length; i++)
-                {
-                    Barcode barcode = barcodes[i];
-                    if (barcode == null || !barcode.IsValid || string.IsNullOrWhiteSpace(barcode.Text))
+                    if (string.IsNullOrWhiteSpace(decodedTexts[i]) || !TryGetCenter(boxes[i], out double centerX, out double centerY))
                         continue;
 
-                    Position position = barcode.Position;
                     hit = new DecodeHit
                     {
-                        Text = barcode.Text,
-                        CenterX = (position.TopLeft.X + position.TopRight.X + position.BottomRight.X + position.BottomLeft.X) / 4.0,
-                        CenterY = (position.TopLeft.Y + position.TopRight.Y + position.BottomRight.Y + position.BottomLeft.Y) / 4.0,
-                        ScaleX = scaleX,
+                        Text = decodedTexts[i],
+                        CenterX = centerX,
+                        CenterY = centerY,
                         ScaleY = scaleY
                     };
                     return true;
@@ -336,10 +298,10 @@ namespace CIS_WebInspector.Services
             }
             finally
             {
-                if (barcodes != null)
+                if (boxes != null)
                 {
-                    for (int i = 0; i < barcodes.Length; i++)
-                        barcodes[i]?.Dispose();
+                    for (int i = 0; i < boxes.Length; i++)
+                        boxes[i]?.Dispose();
                 }
 
                 if (ownsScaled)
@@ -347,76 +309,153 @@ namespace CIS_WebInspector.Services
             }
         }
 
-        private QrDetectionResult ToDetectionResult(DecodeHit hit, int roiX)
+        private static bool TryGetCenter(Mat box, out double centerX, out double centerY)
         {
-            LastDecodeStrategy = $"{hit.Strategy}, scaleX={hit.ScaleX:F3}, scaleY={hit.ScaleY:F3}";
-            return new QrDetectionResult
+            centerX = 0;
+            centerY = 0;
+            if (box == null || box.Empty() || box.Depth() != MatType.CV_32F)
+                return false;
+
+            int scalarCount = checked((int)(box.Total() * box.Channels()));
+            if (scalarCount < 8)
+                return false;
+
+            using (Mat flat = box.Reshape(1, 1))
             {
-                Found = true,
-                CenterX = (int)Math.Round(hit.CenterX / hit.ScaleX + roiX),
-                CenterY = (int)Math.Round(hit.CenterY / hit.ScaleY),
-                DecodedText = hit.Text
-            };
+                for (int i = 0; i < 4; i++)
+                {
+                    centerX += flat.Get<float>(0, i * 2);
+                    centerY += flat.Get<float>(0, i * 2 + 1);
+                }
+            }
+
+            centerX /= 4.0;
+            centerY /= 4.0;
+            return true;
         }
 
         private double[] BuildScaleYCandidates()
         {
             var candidates = new List<double>();
-            double extraScaleY = NormalizeScale(DownscaleFactorY);
-            AddScaleCandidate(candidates, extraScaleY);
-
-            float[] configuredScales = ConfigManager.Config.BaseScaleYs;
-            if (configuredScales != null)
+            float[] configured = ConfigManager.Config.QrScaleYCandidates;
+            if (configured != null)
             {
-                for (int i = 0; i < configuredScales.Length; i++)
+                for (int i = 0; i < configured.Length; i++)
                 {
-                    double configured = configuredScales[i];
-                    if (configured > 0.05 && configured < 10 && !double.IsNaN(configured) && !double.IsInfinity(configured))
+                    double value = configured[i];
+                    if (value < 0.25 || value > 4.0 || double.IsNaN(value) || double.IsInfinity(value))
+                        continue;
+
+                    bool duplicate = false;
+                    for (int j = 0; j < candidates.Count; j++)
                     {
-                        AddScaleCandidate(candidates, extraScaleY / configured);
-                        AddScaleCandidate(candidates, extraScaleY * configured);
+                        if (Math.Abs(candidates[j] - value) < 0.005)
+                        {
+                            duplicate = true;
+                            break;
+                        }
                     }
+
+                    if (!duplicate)
+                        candidates.Add(value);
                 }
             }
 
-            candidates.Sort((left, right) => Math.Abs(Math.Log(left)).CompareTo(Math.Abs(Math.Log(right))));
+            if (candidates.Count == 0)
+                candidates.Add(1.0);
             return candidates.ToArray();
         }
 
-        private static void AddScaleCandidate(List<double> candidates, double value)
+        private bool EnsureDetector()
         {
-            value = Math.Max(0.25, Math.Min(4.0, value));
-            for (int i = 0; i < candidates.Count; i++)
+            lock (_decodeLock)
             {
-                if (Math.Abs(candidates[i] - value) < 0.005)
-                    return;
+                if (_detector != null)
+                    return true;
+
+                string detectorProto = Path.Combine(_modelDirectory, "detect.prototxt");
+                string detectorModel = Path.Combine(_modelDirectory, "detect.caffemodel");
+                string superResolutionProto = Path.Combine(_modelDirectory, "sr.prototxt");
+                string superResolutionModel = Path.Combine(_modelDirectory, "sr.caffemodel");
+                string[] requiredFiles = { detectorProto, detectorModel, superResolutionProto, superResolutionModel };
+                for (int i = 0; i < requiredFiles.Length; i++)
+                {
+                    if (File.Exists(requiredFiles[i]))
+                        continue;
+
+                    LastError = $"缺少 WeChatQRCode 模型文件：{requiredFiles[i]}";
+                    return false;
+                }
+
+                _detector = WeChatQRCode.Create(
+                    detectorProto,
+                    detectorModel,
+                    superResolutionProto,
+                    superResolutionModel);
+                return true;
             }
-
-            candidates.Add(value);
         }
 
-        private static double NormalizeScale(float value)
+        private void WarmUpDetector()
         {
-            return value > 0.05f && value < 10f && !float.IsNaN(value) && !float.IsInfinity(value)
-                ? value
-                : 1.0;
-        }
+            lock (_decodeLock)
+            {
+                if (_isWarmedUp)
+                    return;
 
-        private static int GetAdaptiveBlockSize(int width, int height)
-        {
-            int maxSize = Math.Min(width, height);
-            if (maxSize < 3)
-                return 0;
+                int warmUpWidth = Math.Max(64, RoiWidth);
+                const int warmUpHeight = 2500;
+                using (var warmUpImage = new Mat(warmUpHeight, warmUpWidth, MatType.CV_8UC1, Scalar.All(255)))
+                {
+                    double[] scaleCandidates = BuildScaleYCandidates();
+                    for (int i = 0; i < scaleCandidates.Length; i++)
+                    {
+                        Mat scaled = null;
+                        Mat[] boxes = null;
+                        try
+                        {
+                            if (Math.Abs(scaleCandidates[i] - 1.0) < ScaleEpsilon)
+                            {
+                                scaled = warmUpImage;
+                            }
+                            else
+                            {
+                                scaled = new Mat();
+                                Cv2.Resize(warmUpImage, scaled, new OpenCvSharp.Size(), 1.0, scaleCandidates[i], InterpolationFlags.Linear);
+                            }
 
-            int blockSize = Math.Min(51, maxSize);
-            if (blockSize % 2 == 0)
-                blockSize--;
-            return Math.Max(3, blockSize);
+                            _detector.DetectAndDecode(scaled, out boxes, out string[] _);
+                        }
+                        finally
+                        {
+                            if (boxes != null)
+                            {
+                                for (int j = 0; j < boxes.Length; j++)
+                                    boxes[j]?.Dispose();
+                            }
+
+                            if (!ReferenceEquals(scaled, warmUpImage))
+                                scaled?.Dispose();
+                        }
+                    }
+                }
+
+                _isWarmedUp = true;
+            }
         }
 
         public void Dispose()
         {
-            _disposed = true;
+            lock (_decodeLock)
+            {
+                if (_disposed)
+                    return;
+
+                _detector?.Dispose();
+                _detector = null;
+                _isWarmedUp = false;
+                _disposed = true;
+            }
         }
 
         private sealed class DecodeHit
@@ -424,9 +463,7 @@ namespace CIS_WebInspector.Services
             public string Text { get; set; }
             public double CenterX { get; set; }
             public double CenterY { get; set; }
-            public double ScaleX { get; set; }
             public double ScaleY { get; set; }
-            public string Strategy { get; set; }
         }
     }
 }

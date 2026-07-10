@@ -71,6 +71,14 @@ namespace CIS_WebInspector.Services
         // ---- QR 检测器 ----
         private readonly QrCodeDetector _qrDetector = new QrCodeDetector();
 
+        /// <summary>在开始采集前加载 WeChatQRCode 模型，避免阻塞首帧处理。</summary>
+        public bool InitializeQrDetector(out string error)
+        {
+            bool initialized = _qrDetector.Initialize();
+            error = _qrDetector.LastError;
+            return initialized;
+        }
+
         /// <summary>设置图像参数</summary>
         public void Configure(int width, int height, int stride, int bitsPerPixel)
         {

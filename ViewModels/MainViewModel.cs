@@ -333,6 +333,13 @@ namespace CIS_WebInspector.ViewModels
                 return;
             }
 
+            if (!_stitcher.InitializeQrDetector(out string qrInitError))
+            {
+                StatusText = "WeChatQRCode 初始化失败";
+                AddLog($"[QR] WeChatQRCode 初始化失败：{qrInitError}");
+                return;
+            }
+
             FrameCount = 0;
             BrokenCount = 0;
             BufferIndex = 0;

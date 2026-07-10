@@ -23,12 +23,15 @@
     <PackageReference Include="OpenCvSharp4" Version="4.10.*" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.*" />
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.10.*" />
-    <PackageReference Include="ZXingCpp" Version="0.5.1" />
     <PackageReference Include="System.Text.Json" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>
     <Resource Include="logo.png" />
+    <None Update="Assets\WeChatQRCode\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
   <!-- Post-build: copy all native DLLs to output directory -->
