@@ -29,7 +29,7 @@ namespace CIS_WebInspector.Services
         /// <returns>3x3 变换矩阵 (Homography)，失败返回 null</returns>
         public static Mat ComputeTransform(Mat cisMat, Mat tiffMat, out int optimalThresh,
             double stripRatioTiff = 0.08, double stripRatioCisTop = 0.2, double stripRatioCisBot = 0.08,
-            double minCircTiff = 0.85, double minCircCis = 0.75)
+            double minCircTiff = 0.85, double minCircCis = 0.85)
         {
             optimalThresh = 127; // 默认值
 

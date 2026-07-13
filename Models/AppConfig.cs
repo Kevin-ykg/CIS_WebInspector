@@ -18,7 +18,7 @@ namespace CIS_WebInspector.Models
         /// 4 表示宽、高分别压缩到 1/4（面积为 1/16）。
         /// 修改此值无需修改下方的物理坐标锚点，引擎会自动换算。
         /// </summary>
-        public int DownscaleFactor { get; set; } = 4 / 4;
+        public int DownscaleFactor { get; set; } = 4;
 
         /// <summary>
         /// 在线模式下的相机 DMA 环形缓存队列长度。
@@ -38,13 +38,13 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 切割点偏移量：QR 中心 Y 坐标往下的固定行数。
         /// </summary>
-        public int BaseQrOffsetRows { get; set; } = 1800 / 4;
+        public int BaseQrOffsetRows { get; set; } = 1800;
 
         /// <summary>
         /// 跨帧重叠寻找区域的高度。
         /// 必须大于 BaseQrOffsetRows。
         /// </summary>
-        public int BaseOverlapRows { get; set; } = 3800 / 4;
+        public int BaseOverlapRows { get; set; } = 3800;
 
 
         // ==========================================
@@ -54,12 +54,12 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 横向感兴趣区域的起始 X 坐标。
         /// </summary>
-        public int BaseRoiX { get; set; } = 500 / 4;
+        public int BaseRoiX { get; set; } = 500;
 
         /// <summary>
         /// 横向感兴趣区域的宽度。
         /// </summary>
-        public int BaseRoiWidth { get; set; } = 6000 / 4;
+        public int BaseRoiWidth { get; set; } = 6000;
 
         /// <summary>
         /// 是否在送入 WeChatQRCode 前反转灰度极性。
@@ -112,7 +112,7 @@ namespace CIS_WebInspector.Models
         public double MinCircularityTiff { get; set; } = 0.85;
 
         /// <summary>CIS 实拍标志点最低圆度</summary>
-        public double MinCircularityCis { get; set; } = 0.75;
+        public double MinCircularityCis { get; set; } = 0.85;
 
 
         // ==========================================

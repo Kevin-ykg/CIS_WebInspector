@@ -131,20 +131,10 @@ namespace CIS_WebInspector.Services
             int rowsToKeepFromPrevTail = 0;     // 段开始时，需要从上一帧抢捞的行数
             bool skipDetection = false;  // 延迟切割命中时跳过本帧检测
 
-            string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "日志");
-            if (!System.IO.Directory.Exists(logDir))
-                System.IO.Directory.CreateDirectory(logDir);
-            
-            string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-            string dateStr = DateTime.Now.ToString("yyyyMMdd");
-            string dbgLog = System.IO.Path.Combine(logDir, $"SysRunLog_{dateStr}.txt");
-            
             int df = ConfigManager.Config.DownscaleFactor;
 
             Action<string> logAction = (msg) =>
             {
-                string fullMsg = $"[{timeStamp}] {msg}";
-                System.IO.File.AppendAllText(dbgLog, fullMsg + "\n");
                 LogMessageEvent?.Invoke(this, msg);
             };
 

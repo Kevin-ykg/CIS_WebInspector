@@ -8,10 +8,46 @@ namespace CIS_WebInspector.ViewModels
     public class AppSettingsViewModel : ViewModelBase
     {
         public AppConfig Config { get; set; }
-        
+
         public string DebugLogPath { get => Config.DebugLogPath; set { Config.DebugLogPath = value; OnPropertyChanged(nameof(DebugLogPath)); } }
         public string TiffImageDir { get => Config.TiffImageDir; set { Config.TiffImageDir = value; OnPropertyChanged(nameof(TiffImageDir)); } }
         public string CroppedOutputDir { get => Config.CroppedOutputDir; set { Config.CroppedOutputDir = value; OnPropertyChanged(nameof(CroppedOutputDir)); } }
+
+        public int DownscaleFactor
+        {
+            get => Config.DownscaleFactor;
+            set
+            {
+                int oldFactor = Config.DownscaleFactor;
+                if (oldFactor != value && value > 0 && oldFactor > 0)
+                {
+                    double ratio = (double)oldFactor / value;
+                    Config.DownscaleFactor = value;
+
+                    // 自动按比例调整参数
+                    Config.BaseQrOffsetRows = (int)Math.Round(Config.BaseQrOffsetRows / ratio);
+                    Config.BaseOverlapRows = (int)Math.Round(Config.BaseOverlapRows / ratio);
+                    Config.BaseRoiX = (int)Math.Round(Config.BaseRoiX / ratio);
+                    Config.BaseRoiWidth = (int)Math.Round(Config.BaseRoiWidth / ratio);
+
+                    OnPropertyChanged(nameof(DownscaleFactor));
+                    OnPropertyChanged(nameof(BaseQrOffsetRows));
+                    OnPropertyChanged(nameof(BaseOverlapRows));
+                    OnPropertyChanged(nameof(BaseRoiX));
+                    OnPropertyChanged(nameof(BaseRoiWidth));
+                }
+                else if (value > 0)
+                {
+                    Config.DownscaleFactor = value;
+                    OnPropertyChanged(nameof(DownscaleFactor));
+                }
+            }
+        }
+
+        public int BaseQrOffsetRows { get => Config.BaseQrOffsetRows; set { Config.BaseQrOffsetRows = value; OnPropertyChanged(nameof(BaseQrOffsetRows)); } }
+        public int BaseOverlapRows { get => Config.BaseOverlapRows; set { Config.BaseOverlapRows = value; OnPropertyChanged(nameof(BaseOverlapRows)); } }
+        public int BaseRoiX { get => Config.BaseRoiX; set { Config.BaseRoiX = value; OnPropertyChanged(nameof(BaseRoiX)); } }
+        public int BaseRoiWidth { get => Config.BaseRoiWidth; set { Config.BaseRoiWidth = value; OnPropertyChanged(nameof(BaseRoiWidth)); } }
 
         public RelayCommand SaveCommand { get; }
         public RelayCommand CancelCommand { get; }
@@ -27,7 +63,7 @@ namespace CIS_WebInspector.ViewModels
         {
             _window = window;
             MainVm = mainVm;
-            
+
             // 为了防止取消修改时影响全局配置，我们创建一个副本用于绑定
             // 但是为了简单起见，且由于多数应用场景可以接受直接修改单例，
             // 这里直接引用。如果希望取消能回滚，可以做深度拷贝。
@@ -39,7 +75,7 @@ namespace CIS_WebInspector.ViewModels
 
             SaveCommand = new RelayCommand(ExecuteSave);
             CancelCommand = new RelayCommand(ExecuteCancel);
-            
+
             SelectDebugLogCommand = new RelayCommand(ExecuteSelectDebugLog);
             SelectTiffDirCommand = new RelayCommand(ExecuteSelectTiffDir);
             SelectCroppedDirCommand = new RelayCommand(ExecuteSelectCroppedDir);
@@ -99,10 +135,10 @@ namespace CIS_WebInspector.ViewModels
                 // 将修改后的副本覆盖到全局实例
                 var json = System.Text.Json.JsonSerializer.Serialize(Config);
                 var globalConfig = ConfigManager.Config;
-                
+
                 // 将所有属性通过反射或再序列化赋值回去
                 var updatedConfig = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
-                
+
                 foreach (var prop in typeof(AppConfig).GetProperties())
                 {
                     if (prop.CanWrite)

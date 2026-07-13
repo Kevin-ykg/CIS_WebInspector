@@ -74,7 +74,7 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="全局图像压缩比例" Width="180"/>
-                            <TextBox Text="{Binding Config.DownscaleFactor}"/>
+                            <TextBox Text="{Binding DownscaleFactor}"/>
                         </StackPanel>
                         <TextBlock Text="例如 1 表示不压缩，4 表示宽、高分别压缩到 1/4。" Style="{StaticResource ParamDescription}"/>
 
@@ -126,13 +126,13 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="切割点固定行偏移" Width="180"/>
-                            <TextBox Text="{Binding Config.BaseQrOffsetRows}"/>
+                            <TextBox Text="{Binding BaseQrOffsetRows}"/>
                         </StackPanel>
                         <TextBlock Text="QR 中心 Y 坐标往下的固定行数 (相对原图)。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="跨帧重叠区域高度" Width="180"/>
-                            <TextBox Text="{Binding Config.BaseOverlapRows}"/>
+                            <TextBox Text="{Binding BaseOverlapRows}"/>
                         </StackPanel>
                         <TextBlock Text="必须大于上面设定的切割点偏移量。" Style="{StaticResource ParamDescription}"/>
 
@@ -156,13 +156,13 @@
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="二维码感兴趣区 X 坐标" Width="180"/>
-                            <TextBox Text="{Binding Config.BaseRoiX}"/>
+                            <TextBox Text="{Binding BaseRoiX}"/>
                         </StackPanel>
                         <TextBlock Text="寻找二维码时的横向起始搜索位置（相对于原图）。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="二维码感兴趣区宽度" Width="180"/>
-                            <TextBox Text="{Binding Config.BaseRoiWidth}"/>
+                            <TextBox Text="{Binding BaseRoiWidth}"/>
                         </StackPanel>
                         <TextBlock Text="寻找二维码时的横向搜索区域总宽度（相对于原图）。" Style="{StaticResource ParamDescription}"/>
                     </StackPanel>
