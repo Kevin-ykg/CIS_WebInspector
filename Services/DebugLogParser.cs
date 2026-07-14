@@ -36,6 +36,7 @@ namespace CIS_WebInspector.Services
                     if (line.Contains(keyword1) && line.Contains(keyword2))
                     {
                         lastMatchLine = line;
+                        break;
                     }
                 }
             }

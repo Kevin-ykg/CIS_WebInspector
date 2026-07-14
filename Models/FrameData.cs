@@ -46,6 +46,12 @@ namespace CIS_WebInspector.Models
         /// <summary>二维码中心Y坐标（像素）</summary>
         public int CenterY { get; set; }
 
+        /// <summary>
+        /// 二维码在输入图像 Y 方向上的像素高度。
+        /// 检测器内部使用过 Y 轴缩放补偿时，该值已还原到输入图像坐标系。
+        /// </summary>
+        public double PixelHeight { get; set; }
+
         /// <summary>二维码解码文本内容</summary>
         public string DecodedText { get; set; }
 
@@ -74,6 +80,18 @@ namespace CIS_WebInspector.Models
 
         /// <summary>结束二维码解码文本</summary>
         public string EndQrText { get; set; }
+
+        /// <summary>当前拼接段第 0 行在连续采集数据中的全局 Y 坐标。</summary>
+        public long SegmentStartGlobalY { get; set; }
+
+        /// <summary>第二个二维码中心在连续采集数据中的全局 Y 坐标。</summary>
+        public long EndQrGlobalY { get; set; }
+
+        /// <summary>第二个二维码中心在当前拼接图中的局部 Y 坐标。</summary>
+        public double EndQrCenterY { get; set; }
+
+        /// <summary>第二个二维码在当前处理分辨率下的 Y 方向像素高度。</summary>
+        public double EndQrPixelHeight { get; set; }
 
         /// <summary>位深（8 或 24）</summary>
         public int BitsPerPixel { get; set; }

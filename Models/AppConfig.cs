@@ -99,14 +99,29 @@ namespace CIS_WebInspector.Models
         /// <summary>排版原点 Y 偏移（mm）</summary>
         public double LayoutOriginYmm { get; set; } = 65.0;
 
-        /// <summary>标志点检测：TIFF 设计图上下端条带占图像高度的比例</summary>
-        public double MarkStripRatioTiff { get; set; } = 0.08;
+        /// <summary>TIFF 排版图物理高度（mm）</summary>
+        public double MarkTiffHeightMm { get; set; } = 1000.0;
 
-        /// <summary>标志点检测：CIS 实拍图上端条带占图像高度的比例（mark点靠下时可加大）</summary>
-        public double MarkStripRatioCisTop { get; set; } = 0.2;
+        /// <summary>TIFF 上排 Mark 圆心距离图像顶端的物理距离（mm）</summary>
+        public double MarkTiffTopCenterYmm { get; set; } = 50.0;
 
-        /// <summary>标志点检测：CIS 实拍图下端条带占图像高度的比例</summary>
-        public double MarkStripRatioCisBot { get; set; } = 0.08;
+        /// <summary>TIFF 下排 Mark 圆心距离图像底端的物理距离（mm）</summary>
+        public double MarkTiffBottomOffsetMm { get; set; } = 30.0;
+
+        /// <summary>圆形 Mark 的物理直径（mm）</summary>
+        public double MarkDiameterMm { get; set; } = 20.0;
+
+        /// <summary>CIS 上下两排 Mark 圆心的物理间距（mm）</summary>
+        public double MarkCisRowSpacingMm { get; set; } = 920.0;
+
+        /// <summary>二维码的物理高度（mm），用于换算 CIS 纵向像素/mm</summary>
+        public double MarkQrPhysicalHeightMm { get; set; } = 60.0;
+
+        /// <summary>Mark 首次搜索时，圆边缘以外的物理边距（mm）</summary>
+        public double MarkInitialSearchMarginMm { get; set; } = 15.0;
+
+        /// <summary>首次搜索点数不足时使用的扩展物理边距（mm）</summary>
+        public double MarkExpandedSearchMarginMm { get; set; } = 40.0;
 
         /// <summary>TIFF 标志点最低圆度</summary>
         public double MinCircularityTiff { get; set; } = 0.85;

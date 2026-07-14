@@ -59,11 +59,13 @@ namespace CIS_WebInspector.Services
         private bool _hasDeferredCut = false;
         private int _deferredCutRemaining = 0;
         private QrDetectionResult _deferredQrResult;
+        private long _deferredQrGlobalY = long.MinValue;
 
         // ---- 段累积（按需增长，完成后释放） ----
         private readonly List<SegmentChunk> _segChunks = new List<SegmentChunk>();
         private long _segTotalRows;
         private string _segStartQrText;
+        private long _segStartGlobalY = long.MinValue;
 
         // ---- 图像参数 ----
         private int _width, _height, _stride, _bpp;
@@ -95,6 +97,7 @@ namespace CIS_WebInspector.Services
             _prevTail = null;
             _prevTailRows = 0;
             _segStartQrText = null;
+            _segStartGlobalY = long.MinValue;
             _segTotalRows = 0;
             _globalProcessedRows = 0;
             _lastQrGlobalY = -999999;
@@ -102,6 +105,7 @@ namespace CIS_WebInspector.Services
             _hasDeferredCut = false;
             _deferredCutRemaining = 0;
             _deferredQrResult = null;
+            _deferredQrGlobalY = long.MinValue;
             ClearChunks();
         }
 
@@ -125,6 +129,7 @@ namespace CIS_WebInspector.Services
 
             // ======== 双重 QR 检测 ========
             QrDetectionResult qrResult = null;
+            long qrGlobalY = long.MinValue;
             int cutRowInCurr = -1;       // 切割点在当前帧的行号
             bool cutInPrevTail = false;  // 切割点是否落在上一帧的尾部
             int rowsToDiscardFromLastChunk = 0; // 段结束时，需要从上一帧退回的行数
@@ -148,9 +153,11 @@ namespace CIS_WebInspector.Services
                     // 延迟切割点落在当前帧内，执行切割
                     logAction($"  [Deferred] Executing deferred cut at row {_deferredCutRemaining * df} (Original) in current frame");
                     qrResult = _deferredQrResult;
+                    qrGlobalY = _deferredQrGlobalY;
                     cutRowInCurr = _deferredCutRemaining;
                     _hasDeferredCut = false;
                     _deferredQrResult = null;
+                    _deferredQrGlobalY = long.MinValue;
                     skipDetection = true;
                 }
                 else
@@ -174,7 +181,7 @@ namespace CIS_WebInspector.Services
             {
                 var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
                 string currentQrDiagnostic = fResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
-                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
+                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Height={fResult.PixelHeight * df:F1} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
                 if (fResult.Found)
                 {
                     long globalY = _globalProcessedRows + fResult.CenterY;
@@ -188,6 +195,7 @@ namespace CIS_WebInspector.Services
                         {
                             logAction($"  [Current] Accepted! cutRow={cutRow * df} (Original)");
                             qrResult = fResult;
+                            qrGlobalY = globalY;
                             _lastQrGlobalY = globalY;
                             cutRowInCurr = cutRow;
                         }
@@ -198,6 +206,7 @@ namespace CIS_WebInspector.Services
                             _hasDeferredCut = true;
                             _deferredCutRemaining = cutRow - height;
                             _deferredQrResult = fResult;
+                            _deferredQrGlobalY = globalY;
                             _lastQrGlobalY = globalY;
                         }
                     }
@@ -216,7 +225,7 @@ namespace CIS_WebInspector.Services
 
                 var ovResult = _qrDetector.Detect(overlapImg, _width, overlapH, _stride, _bpp);
                 string overlapQrDiagnostic = ovResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
-                logAction($"  [Overlap] Detect: Found={ovResult.Found}, Y={ovResult.CenterY * df} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
+                logAction($"  [Overlap] Detect: Found={ovResult.Found}, Y={ovResult.CenterY * df} (Original), Height={ovResult.PixelHeight * df:F1} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
                 if (ovResult.Found)
                 {
                     long globalY = _globalProcessedRows - _prevTailRows + ovResult.CenterY;
@@ -229,6 +238,7 @@ namespace CIS_WebInspector.Services
                         {
                             logAction($"  [Overlap] Accepted! cutRowInOverlap={cutRowInOverlap * df} (Original)");
                             qrResult = ovResult;
+                            qrGlobalY = globalY;
                             _lastQrGlobalY = globalY;
 
                             if (cutRowInOverlap < _prevTailRows)
@@ -251,6 +261,7 @@ namespace CIS_WebInspector.Services
                             _hasDeferredCut = true;
                             _deferredCutRemaining = cutRowInOverlap - overlapH;
                             _deferredQrResult = ovResult;
+                            _deferredQrGlobalY = globalY;
                             _lastQrGlobalY = globalY;
                         }
                     }
@@ -283,6 +294,7 @@ namespace CIS_WebInspector.Services
                     if (qrFound)
                     {
                         _segStartQrText = qrResult.DecodedText;
+                        _segStartGlobalY = qrGlobalY + QrOffsetRows;
                         _segTotalRows = 0;
                         ClearChunks();
 
@@ -325,10 +337,11 @@ namespace CIS_WebInspector.Services
                             if (cutRowInCurr > 0) AddChunk(frameData, 0, cutRowInCurr);
                         }
 
-                        EmitSegment(qrResult.DecodedText);
+                        EmitSegment(qrResult, qrGlobalY);
 
                         // ---- 开启新一段 ----
                         _segStartQrText = qrResult.DecodedText;
+                        _segStartGlobalY = qrGlobalY + QrOffsetRows;
                         _segTotalRows = 0;
 
                         if (cutInPrevTail)
@@ -403,11 +416,19 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>将累积的段数据组装为最终图像并触发事件</summary>
-        private void EmitSegment(string endQrText)
+        private void EmitSegment(QrDetectionResult endQrResult, long endQrGlobalY)
         {
             if (_segTotalRows <= 0 || _segChunks.Count == 0) return;
 
+            if (endQrResult == null || endQrGlobalY == long.MinValue || _segStartGlobalY == long.MinValue)
+            {
+                LogMessageEvent?.Invoke(this, "[ImageStitcher] 拼接段缺少二维码全局坐标，已拒绝输出。");
+                ClearChunks();
+                return;
+            }
+
             int totalHeight = (int)_segTotalRows;
+            double endQrCenterY = endQrGlobalY - _segStartGlobalY;
             byte[] stitched = new byte[_stride * totalHeight];
             int offset = 0;
 
@@ -429,7 +450,11 @@ namespace CIS_WebInspector.Services
                 Stride = _stride,
                 BitsPerPixel = _bpp,
                 StartQrText = _segStartQrText,
-                EndQrText = endQrText
+                EndQrText = endQrResult.DecodedText,
+                SegmentStartGlobalY = _segStartGlobalY,
+                EndQrGlobalY = endQrGlobalY,
+                EndQrCenterY = endQrCenterY,
+                EndQrPixelHeight = endQrResult.PixelHeight
             });
         }
 

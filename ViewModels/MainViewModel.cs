@@ -694,13 +694,22 @@ namespace CIS_WebInspector.ViewModels
 
                 // 4. 计算变换矩阵，并获取自动计算的最佳二值化阈值
                 int optimalThresh = 127;
-                Mat H = ImageAligner.ComputeTransform(cisMat, tiffMat, out optimalThresh, config.MarkStripRatioTiff, config.MarkStripRatioCisTop, config.MarkStripRatioCisBot, config.MinCircularityTiff, config.MinCircularityCis);
+                var qrAnchor = new CisQrAnchor
+                {
+                    GlobalCenterY = result.EndQrGlobalY,
+                    SegmentStartGlobalY = result.SegmentStartGlobalY,
+                    PixelHeight = result.EndQrPixelHeight
+                };
+                var alignmentOptions = MarkAlignmentOptions.FromConfig(config);
+                Mat H = ImageAligner.ComputeTransform(
+                    cisMat, tiffMat, qrAnchor, alignmentOptions,
+                    out optimalThresh, out string alignmentDiagnostic);
                 if (H == null || H.Empty())
                 {
-                    AddLog("[缺陷流水线] 图像对齐失败，无法计算有效的变换矩阵。");
+                    AddLog($"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}");
                     return;
                 }
-                AddLog($"变换矩阵计算成功！自动最佳二值化阈值: {optimalThresh}");
+                AddLog($"变换矩阵计算成功！自动最佳二值化阈值: {optimalThresh}；{alignmentDiagnostic}");
 
                 // 5. 图像变换
                 AddLog("正在将 CIS 图像变换到 TIFF 空间...");

@@ -174,31 +174,61 @@
                 <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="TIFF 条带高度比例" Width="180"/>
-                            <TextBox Text="{Binding Config.MarkStripRatioTiff}"/>
+                            <TextBlock Text="TIFF 物理高度 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkTiffHeightMm}"/>
                         </StackPanel>
-                        <TextBlock Text="标志点检测：TIFF 设计图上下端条带占图像高度的比例。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="用于计算 TIFF 下排 Mark 的绝对物理位置。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="CIS 上端条带比例" Width="180"/>
-                            <TextBox Text="{Binding Config.MarkStripRatioCisTop}"/>
+                            <TextBlock Text="TIFF 上排圆心 Y (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkTiffTopCenterYmm}"/>
                         </StackPanel>
-                        <TextBlock Text="标志点检测：CIS 实拍图上端条带占图像高度的比例。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="上排 Mark 圆心距离 TIFF 顶端的物理距离。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="CIS 下端条带比例" Width="180"/>
-                            <TextBox Text="{Binding Config.MarkStripRatioCisBot}"/>
+                            <TextBlock Text="TIFF 下排距底端 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkTiffBottomOffsetMm}"/>
                         </StackPanel>
-                        <TextBlock Text="标志点检测：CIS 实拍图下端条带占图像高度的比例。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="下排 Mark 圆心距离 TIFF 底端的物理距离。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="TIFF 标志点最低圆度" Width="180"/>
+                            <TextBlock Text="Mark 圆直径 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkDiameterMm}"/>
+                        </StackPanel>
+                        <TextBlock Text="用于计算物理搜索窗口和候选轮廓尺寸。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="CIS 上下排间距 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkCisRowSpacingMm}"/>
+                        </StackPanel>
+                        <TextBlock Text="从第二个二维码所在的下排 Mark 向上推算上排位置。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="二维码物理高度 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkQrPhysicalHeightMm}"/>
+                        </StackPanel>
+                        <TextBlock Text="结合识别到的二维码像素高度换算 CIS 纵向像素/mm。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="首次搜索边距 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkInitialSearchMarginMm}"/>
+                        </StackPanel>
+                        <TextBlock Text="首次 ROI 在圆半径以外保留的物理边距。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="扩展搜索边距 (mm)" Width="220"/>
+                            <TextBox Text="{Binding Config.MarkExpandedSearchMarginMm}"/>
+                        </StackPanel>
+                        <TextBlock Text="首次有效 Mark 少于两个时使用的第二级物理边距。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="TIFF 标志点最低圆度" Width="220"/>
                             <TextBox Text="{Binding Config.MinCircularityTiff}"/>
                         </StackPanel>
                         <TextBlock Text="形状过滤：越接近 1 要求越圆。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="CIS 标志点最低圆度" Width="180"/>
+                            <TextBlock Text="CIS 标志点最低圆度" Width="220"/>
                             <TextBox Text="{Binding Config.MinCircularityCis}"/>
                         </StackPanel>
                         <TextBlock Text="形状过滤：实拍图像一般阈值略低。" Style="{StaticResource ParamDescription}"/>

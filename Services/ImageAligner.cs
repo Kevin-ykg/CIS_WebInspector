@@ -1,13 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CIS_WebInspector.Models;
 using OpenCvSharp;
 
 namespace CIS_WebInspector.Services
 {
+    /// <summary>
+    /// 根据物理位置约束提取圆形 Mark，并计算 CIS 实拍图到 TIFF 排版图的变换矩阵。
+    /// </summary>
     public class ImageAligner
     {
-        // 返回找到的标志点中心坐标 (X, Y)
+        private const int MinimumPointsPerRow = 2;
+        private const double MaximumRowScaleDifference = 0.15;
+
         public class MarkerPoint
         {
             public double X { get; set; }
@@ -16,458 +22,782 @@ namespace CIS_WebInspector.Services
             public double Circularity { get; set; }
         }
 
+        private sealed class MarkerRegionSpec
+        {
+            public string Name { get; set; }
+            public double TiffCenterY { get; set; }
+            public double CisCenterY { get; set; }
+            public double TiffDiameterPixels { get; set; }
+            public double CisDiameterPixels { get; set; }
+            public double TiffPixelsPerMm { get; set; }
+            public double CisPixelsPerMm { get; set; }
+        }
+
+        private sealed class RowDetectionResult
+        {
+            public List<MarkerPoint> Points { get; set; } = new List<MarkerPoint>();
+            public int Threshold { get; set; } = 127;
+            public Rect SearchRect { get; set; }
+            public bool UsedExpandedWindow { get; set; }
+        }
+
         /// <summary>
         /// 计算 CIS 实拍图到 TIFF 排版图的变换矩阵。
+        /// 第二个二维码的全局 Y 是 CIS 下排 Mark 圆心的权威坐标；提取 ROI 时，
+        /// 通过减去拼接段全局起始 Y 转换为 cisMat 内的局部坐标。
         /// </summary>
-        /// <param name="cisMat">CIS 扫描大图 (BGR或单通道)</param>
-        /// <param name="tiffMat">TIFF 排版原图 (BGR, 已处理完 alpha)</param>
-        /// <param name="stripRatioTiff">TIFF 设计图上下端检测条带比例</param>
-        /// <param name="stripRatioCisTop">CIS 实拍图上端检测条带比例</param>
-        /// <param name="stripRatioCisBot">CIS 实拍图下端检测条带比例</param>
-        /// <param name="minCircTiff">TIFF 圆度阈值</param>
-        /// <param name="minCircCis">CIS 圆度阈值</param>
-        /// <returns>3x3 变换矩阵 (Homography)，失败返回 null</returns>
-        public static Mat ComputeTransform(Mat cisMat, Mat tiffMat, out int optimalThresh,
-            double stripRatioTiff = 0.08, double stripRatioCisTop = 0.2, double stripRatioCisBot = 0.08,
-            double minCircTiff = 0.85, double minCircCis = 0.85)
+        public static Mat ComputeTransform(
+            Mat cisMat,
+            Mat tiffMat,
+            CisQrAnchor qrAnchor,
+            MarkAlignmentOptions options,
+            out int optimalThresh,
+            out string diagnostic)
         {
-            optimalThresh = 127; // 默认值
+            optimalThresh = 127;
+            diagnostic = null;
 
-            int hTiff = tiffMat.Height;
-            int wTiff = tiffMat.Width;
-            int hCis = cisMat.Height;
-            int wCis = cisMat.Width;
+            if (!ValidateInputs(cisMat, tiffMat, qrAnchor, options, out diagnostic))
+                return null;
 
-            int stripHTiff = (int)(hTiff * stripRatioTiff);
-            int stripHCisTop = (int)(hCis * stripRatioCisTop);
-            int stripHCisBot = (int)(hCis * stripRatioCisBot);
+            double tiffPixelsPerMm = options.LayoutDpi / 25.4;
+            double cisPixelsPerMm = qrAnchor.PixelHeight / options.QrPhysicalHeightMm;
+            double cisBottomCenterY = qrAnchor.GlobalCenterY - qrAnchor.SegmentStartGlobalY;
+            double cisTopCenterY = cisBottomCenterY - options.CisRowSpacingMm * cisPixelsPerMm;
 
-            // TIFF 上下端条带检测
-            Mat tiffTop = tiffMat.Clone(new Rect(0, 0, wTiff, stripHTiff));
-            Mat tiffBot = tiffMat.Clone(new Rect(0, hTiff - stripHTiff, wTiff, stripHTiff));
-
-            // CIS 图像通道统一
-            Mat cisGray;
-            if (cisMat.Channels() == 1)
-                cisGray = cisMat.Clone();
-            else if (cisMat.Channels() == 4)
+            var regions = new List<MarkerRegionSpec>
             {
-                Mat cisBgr = new Mat();
-                Cv2.CvtColor(cisMat, cisBgr, ColorConversionCodes.BGRA2BGR);
-                cisGray = cisBgr.CvtColor(ColorConversionCodes.BGR2GRAY);
-            }
-            else
-                cisGray = cisMat.CvtColor(ColorConversionCodes.BGR2GRAY);
-
-            // CIS 上下端使用不同的 strip 比例
-            Mat cisTop = cisGray.Clone(new Rect(0, 0, wCis, stripHCisTop));
-            Mat cisBot = cisGray.Clone(new Rect(0, hCis - stripHCisBot, wCis, stripHCisBot));
-
-            var tiffTopPts = DetectTiff(tiffTop, 0, minCircTiff);
-            var tiffBotPts = DetectTiff(tiffBot, hTiff - stripHTiff, minCircTiff);
-
-            var cisTopResult = DetectJpg(cisTop, 0, minCircCis);
-            var cisTopPtsRaw = cisTopResult.Item1;
-            int topThresh = cisTopResult.Item2;
-            optimalThresh = topThresh; // 记录得到的最佳阈值
-
-            
-            // CIS Top 面积过滤
-            List<MarkerPoint> cisTopPts = cisTopPtsRaw;
-            double refArea = 0;
-            if (cisTopPtsRaw.Count >= 3)
-            {
-                var areas = cisTopPtsRaw.Select(p => p.Area).OrderBy(a => a).ToList();
-                double medArea = areas[areas.Count / 2];
-                cisTopPts = cisTopPtsRaw.Where(p => p.Area < medArea * 2.5).ToList();
-                refArea = medArea;
-            }
-
-            var cisBotResult = DetectJpg(cisBot, hCis - stripHCisBot, minCircCis, refArea);
-            var cisBotPts = cisBotResult.Item1;
-            int botThresh = cisBotResult.Item2;
-
-            var matchedTop = MatchRows(tiffTopPts, cisTopPts);
-            var matchedBot = MatchRows(tiffBotPts, cisBotPts);
-
-            // 验证下端匹配质量
-            bool bottomOk = true;
-            if (matchedBot.Item1.Count >= 2 && matchedBot.Item2.Count >= 2)
-            {
-                if (matchedTop.Item1.Count >= 2 && matchedTop.Item2.Count >= 2)
+                new MarkerRegionSpec
                 {
-                    double topSx = (matchedTop.Item2.Last().X - matchedTop.Item2.First().X) / Math.Max(matchedTop.Item1.Last().X - matchedTop.Item1.First().X, 1);
-                    double botSx = (matchedBot.Item2.Last().X - matchedBot.Item2.First().X) / Math.Max(matchedBot.Item1.Last().X - matchedBot.Item1.First().X, 1);
-                    if (Math.Abs(topSx - botSx) / Math.Max(topSx, 0.01) > 0.15)
+                    Name = "Top",
+                    TiffCenterY = options.TiffTopCenterYmm * tiffPixelsPerMm,
+                    CisCenterY = cisTopCenterY,
+                    TiffDiameterPixels = options.MarkDiameterMm * tiffPixelsPerMm,
+                    CisDiameterPixels = options.MarkDiameterMm * cisPixelsPerMm,
+                    TiffPixelsPerMm = tiffPixelsPerMm,
+                    CisPixelsPerMm = cisPixelsPerMm
+                },
+                new MarkerRegionSpec
+                {
+                    Name = "Bottom",
+                    TiffCenterY = (options.TiffHeightMm - options.TiffBottomOffsetMm) * tiffPixelsPerMm,
+                    CisCenterY = cisBottomCenterY,
+                    TiffDiameterPixels = options.MarkDiameterMm * tiffPixelsPerMm,
+                    CisDiameterPixels = options.MarkDiameterMm * cisPixelsPerMm,
+                    TiffPixelsPerMm = tiffPixelsPerMm,
+                    CisPixelsPerMm = cisPixelsPerMm
+                }
+            };
+
+            foreach (MarkerRegionSpec region in regions)
+            {
+                if (region.TiffCenterY < 0 || region.TiffCenterY >= tiffMat.Height)
+                {
+                    diagnostic =
+                        $"TIFF {region.Name} 预测圆心 Y={region.TiffCenterY:F1} " +
+                        $"超出图像高度 {tiffMat.Height}。";
+                    return null;
+                }
+
+                if (region.CisCenterY < 0 || region.CisCenterY >= cisMat.Height)
+                {
+                    diagnostic =
+                        $"CIS {region.Name} 预测圆心 Y={region.CisCenterY:F1} " +
+                        $"超出图像高度 {cisMat.Height}。";
+                    return null;
+                }
+            }
+
+            using (Mat cisGray = ConvertToGray(cisMat))
+            {
+                var allTiffPoints = new List<Point2f>();
+                var allCisPoints = new List<Point2f>();
+                var rowScaleValues = new List<double>();
+                var rowDiagnostics = new List<string>();
+                double referenceArea = 0;
+
+                for (int regionIndex = 0; regionIndex < regions.Count; regionIndex++)
+                {
+                    MarkerRegionSpec region = regions[regionIndex];
+
+                    RowDetectionResult tiffRow = DetectTiffAdaptive(tiffMat, region, options);
+                    RowDetectionResult cisRow = DetectCisAdaptive(cisGray, region, options, referenceArea);
+
+                    if (regionIndex == 0 && cisRow.Points.Count >= 3)
                     {
-                        bottomOk = false;
+                        double medianArea = Median(cisRow.Points.Select(p => p.Area));
+                        cisRow.Points = cisRow.Points.Where(p => p.Area < medianArea * 2.5).ToList();
+                    }
+
+                    if (regionIndex == 0 && cisRow.Points.Count > 0)
+                    {
+                        referenceArea = Median(cisRow.Points.Select(p => p.Area));
+                        optimalThresh = cisRow.Threshold;
+                    }
+
+                    var matched = MatchRows(tiffRow.Points, cisRow.Points);
+                    int matchedCount = Math.Min(matched.Item1.Count, matched.Item2.Count);
+                    rowDiagnostics.Add(
+                        $"{region.Name}: TIFF={tiffRow.Points.Count}, CIS={cisRow.Points.Count}, " +
+                        $"Matched={matchedCount}, TIFF-ROI={FormatRect(tiffRow.SearchRect)}, " +
+                        $"CIS-ROI={FormatRect(cisRow.SearchRect)}, " +
+                        $"Expanded={(tiffRow.UsedExpandedWindow || cisRow.UsedExpandedWindow)}");
+
+                    if (matchedCount < MinimumPointsPerRow)
+                    {
+                        diagnostic =
+                            $"{region.Name} 排有效对应 Mark 少于 {MinimumPointsPerRow} 个。" +
+                            string.Join(" | ", rowDiagnostics);
+                        return null;
+                    }
+
+                    double rowScale = EstimateHorizontalScale(matched.Item1, matched.Item2);
+                    if (!double.IsNaN(rowScale) && !double.IsInfinity(rowScale))
+                        rowScaleValues.Add(rowScale);
+
+                    allTiffPoints.AddRange(matched.Item1.Select(p => new Point2f((float)p.X, (float)p.Y)));
+                    allCisPoints.AddRange(matched.Item2.Select(p => new Point2f((float)p.X, (float)p.Y)));
+                }
+
+                if (allTiffPoints.Count < 4 || allCisPoints.Count < 4)
+                {
+                    diagnostic = "有效对应点少于 4 个，无法计算稳定的二维变换。";
+                    return null;
+                }
+
+                if (rowScaleValues.Count >= 2)
+                {
+                    double scaleDifference = Math.Abs(rowScaleValues[0] - rowScaleValues[1]) /
+                                             Math.Max(Math.Abs(rowScaleValues[0]), 1e-6);
+                    if (scaleDifference > MaximumRowScaleDifference)
+                    {
+                        diagnostic =
+                            $"上下排 Mark 的横向尺度差异 {scaleDifference:P1} 超过允许值 " +
+                            $"{MaximumRowScaleDifference:P0}。" + string.Join(" | ", rowDiagnostics);
+                        return null;
                     }
                 }
-            }
-            else
-            {
-                bottomOk = false;
-            }
 
-            var allTiffPts = new List<Point2f>();
-            var allCisPts = new List<Point2f>();
-
-            allTiffPts.AddRange(matchedTop.Item1.Select(p => new Point2f((float)p.X, (float)p.Y)));
-            allCisPts.AddRange(matchedTop.Item2.Select(p => new Point2f((float)p.X, (float)p.Y)));
-
-            if (bottomOk)
-            {
-                allTiffPts.AddRange(matchedBot.Item1.Select(p => new Point2f((float)p.X, (float)p.Y)));
-                allCisPts.AddRange(matchedBot.Item2.Select(p => new Point2f((float)p.X, (float)p.Y)));
-            }
-
-            if (allTiffPts.Count < 3)
-            {
-                Console.WriteLine("[ImageAligner] 匹配点太少，无法计算矩阵。");
-                return null;
-            }
-
-            // 计算变换矩阵 (CIS -> TIFF)
-            // allCisPts 是 src, allTiffPts 是 dst
-            Mat H = null;
-            
-            if (allTiffPts.Count >= 6)
-            {
-                H = Cv2.FindHomography(InputArray.Create(allCisPts), InputArray.Create(allTiffPts), HomographyMethods.Ransac, 5.0);
-                // 这里为了稳健性可以加角度或缩放限制判断，不满足退化为 Affine
-            }
-            else if (allTiffPts.Count >= 4)
-            {
-                var inliers = new Mat();
-                var affine = Cv2.EstimateAffine2D(InputArray.Create(allCisPts), InputArray.Create(allTiffPts), inliers, RobustEstimationAlgorithms.RANSAC, 5.0);
-                if (affine != null && !affine.Empty())
+                Mat transform = ComputeRobustTransform(allCisPoints, allTiffPoints);
+                if (transform == null || transform.Empty() || !IsFiniteTransform(transform))
                 {
-                    H = new Mat(3, 3, MatType.CV_64FC1);
-                    H.Set<double>(0, 0, affine.At<double>(0, 0));
-                    H.Set<double>(0, 1, affine.At<double>(0, 1));
-                    H.Set<double>(0, 2, affine.At<double>(0, 2));
-                    H.Set<double>(1, 0, affine.At<double>(1, 0));
-                    H.Set<double>(1, 1, affine.At<double>(1, 1));
-                    H.Set<double>(1, 2, affine.At<double>(1, 2));
-                    H.Set<double>(2, 0, 0);
-                    H.Set<double>(2, 1, 0);
-                    H.Set<double>(2, 2, 1);
-                }
-            }
-
-            // 兜底方案 (3点约束仿射)
-            if (H == null || H.Empty())
-            {
-                double expectedSy = (double)hTiff / hCis;
-                double sxEst = 1.0;
-                double angleEst = 0.0;
-                
-                if (matchedTop.Item2.Count >= 2)
-                {
-                    sxEst = (matchedTop.Item1.Last().X - matchedTop.Item1.First().X) / Math.Max(matchedTop.Item2.Last().X - matchedTop.Item2.First().X, 1);
-                    double dy = matchedTop.Item1.Last().Y - matchedTop.Item1.First().Y;
-                    double dx = matchedTop.Item1.Last().X - matchedTop.Item1.First().X;
-                    double dy_s = matchedTop.Item2.Last().Y - matchedTop.Item2.First().Y;
-                    double dx_s = matchedTop.Item2.Last().X - matchedTop.Item2.First().X;
-                    angleEst = Math.Atan2(dy, dx) - Math.Atan2(dy_s, dx_s);
+                    transform?.Dispose();
+                    diagnostic = "RANSAC 未能计算出有效的 CIS→TIFF 变换矩阵。" +
+                                 string.Join(" | ", rowDiagnostics);
+                    return null;
                 }
 
-                double cosA = Math.Cos(angleEst);
-                double sinA = Math.Sin(angleEst);
-                
-                double sMeanX = allCisPts.Average(p => p.X);
-                double sMeanY = allCisPts.Average(p => p.Y);
-                double dMeanX = allTiffPts.Average(p => p.X);
-                double dMeanY = allTiffPts.Average(p => p.Y);
-
-                double tx = dMeanX - (sxEst * cosA * sMeanX - expectedSy * sinA * sMeanY);
-                double ty = dMeanY - (sxEst * sinA * sMeanX + expectedSy * cosA * sMeanY);
-
-                H = new Mat(3, 3, MatType.CV_64FC1);
-                H.Set<double>(0, 0, sxEst * cosA);
-                H.Set<double>(0, 1, -expectedSy * sinA);
-                H.Set<double>(0, 2, tx);
-                H.Set<double>(1, 0, sxEst * sinA);
-                H.Set<double>(1, 1, expectedSy * cosA);
-                H.Set<double>(1, 2, ty);
-                H.Set<double>(2, 0, 0);
-                H.Set<double>(2, 1, 0);
-                H.Set<double>(2, 2, 1);
+                diagnostic =
+                    $"QR(globalY={qrAnchor.GlobalCenterY}, segmentStart={qrAnchor.SegmentStartGlobalY}, " +
+                    $"localY={cisBottomCenterY:F1}, height={qrAnchor.PixelHeight:F1}, " +
+                    $"cisPxPerMm={cisPixelsPerMm:F4}) | " + string.Join(" | ", rowDiagnostics);
+                return transform;
             }
-
-            return H;
         }
 
-        private static List<MarkerPoint> DetectTiff(Mat stripBgr, int yOffset, double minCirc)
+        private static bool ValidateInputs(
+            Mat cisMat,
+            Mat tiffMat,
+            CisQrAnchor qrAnchor,
+            MarkAlignmentOptions options,
+            out string error)
+        {
+            if (cisMat == null || cisMat.Empty())
+            {
+                error = "CIS 图像为空。";
+                return false;
+            }
+
+            if (tiffMat == null || tiffMat.Empty())
+            {
+                error = "TIFF 图像为空。";
+                return false;
+            }
+
+            if (qrAnchor == null)
+            {
+                error = "缺少第二个二维码的全局坐标锚点。";
+                return false;
+            }
+
+            if (options == null)
+            {
+                error = "缺少 Mark 配准参数。";
+                return false;
+            }
+
+            double[] numericOptions =
+            {
+                options.LayoutDpi,
+                options.TiffHeightMm,
+                options.TiffTopCenterYmm,
+                options.TiffBottomOffsetMm,
+                options.MarkDiameterMm,
+                options.CisRowSpacingMm,
+                options.QrPhysicalHeightMm,
+                options.InitialSearchMarginMm,
+                options.ExpandedSearchMarginMm,
+                options.MinCircularityTiff,
+                options.MinCircularityCis
+            };
+            if (numericOptions.Any(value => double.IsNaN(value) || double.IsInfinity(value)))
+            {
+                error = "Mark 配准参数包含 NaN 或无穷大。";
+                return false;
+            }
+
+            if (qrAnchor.GlobalCenterY < 0 || qrAnchor.SegmentStartGlobalY < 0)
+            {
+                error = "二维码全局 Y 或拼接段起始全局 Y 无效。";
+                return false;
+            }
+
+            if (qrAnchor.PixelHeight <= 1 || double.IsNaN(qrAnchor.PixelHeight) || double.IsInfinity(qrAnchor.PixelHeight))
+            {
+                error = $"第二个二维码像素高度无效：{qrAnchor.PixelHeight:F3}。";
+                return false;
+            }
+
+            if (options.LayoutDpi <= 0 || options.TiffHeightMm <= 0 ||
+                options.TiffTopCenterYmm < 0 || options.TiffBottomOffsetMm < 0 ||
+                options.TiffBottomOffsetMm >= options.TiffHeightMm ||
+                options.MarkDiameterMm <= 0 || options.CisRowSpacingMm <= 0 ||
+                options.QrPhysicalHeightMm <= 0 || options.InitialSearchMarginMm < 0 ||
+                options.ExpandedSearchMarginMm < options.InitialSearchMarginMm ||
+                options.MinCircularityTiff <= 0 || options.MinCircularityTiff > 1 ||
+                options.MinCircularityCis <= 0 || options.MinCircularityCis > 1)
+            {
+                error = "Mark 配准物理参数或圆度阈值无效。";
+                return false;
+            }
+
+            double centerYInSegment = qrAnchor.CenterYInSegment;
+            if (centerYInSegment < 0 || centerYInSegment >= cisMat.Height)
+            {
+                error =
+                    $"第二个二维码全局 Y 转换后的图内坐标 {centerYInSegment:F1} " +
+                    $"超出 CIS 高度 {cisMat.Height}。";
+                return false;
+            }
+
+            error = null;
+            return true;
+        }
+
+        private static Mat ConvertToGray(Mat source)
+        {
+            var gray = new Mat();
+            if (source.Channels() == 1)
+                source.CopyTo(gray);
+            else if (source.Channels() == 4)
+                Cv2.CvtColor(source, gray, ColorConversionCodes.BGRA2GRAY);
+            else if (source.Channels() == 3)
+                Cv2.CvtColor(source, gray, ColorConversionCodes.BGR2GRAY);
+            else
+            {
+                gray.Dispose();
+                throw new ArgumentException($"不支持的 CIS 通道数：{source.Channels()}。");
+            }
+            return gray;
+        }
+
+        private static RowDetectionResult DetectTiffAdaptive(
+            Mat image,
+            MarkerRegionSpec region,
+            MarkAlignmentOptions options)
+        {
+            Rect initialRect = BuildSearchRect(
+                image.Size(), region.TiffCenterY, region.TiffDiameterPixels,
+                region.TiffPixelsPerMm, options.InitialSearchMarginMm, region.Name, "TIFF");
+
+            List<MarkerPoint> points;
+            using (var roi = new Mat(image, initialRect))
+            {
+                points = DetectTiff(
+                    roi, initialRect.Y, options.MinCircularityTiff,
+                    region.TiffDiameterPixels, region.TiffCenterY);
+            }
+
+            var result = new RowDetectionResult { Points = points, SearchRect = initialRect };
+            if (points.Count >= MinimumPointsPerRow ||
+                options.ExpandedSearchMarginMm <= options.InitialSearchMarginMm)
+                return result;
+
+            Rect expandedRect = BuildSearchRect(
+                image.Size(), region.TiffCenterY, region.TiffDiameterPixels,
+                region.TiffPixelsPerMm, options.ExpandedSearchMarginMm, region.Name, "TIFF");
+            using (var roi = new Mat(image, expandedRect))
+            {
+                result.Points = DetectTiff(
+                    roi, expandedRect.Y, options.MinCircularityTiff,
+                    region.TiffDiameterPixels, region.TiffCenterY);
+            }
+            result.SearchRect = expandedRect;
+            result.UsedExpandedWindow = true;
+            return result;
+        }
+
+        private static RowDetectionResult DetectCisAdaptive(
+            Mat imageGray,
+            MarkerRegionSpec region,
+            MarkAlignmentOptions options,
+            double referenceArea)
+        {
+            Rect initialRect = BuildSearchRect(
+                imageGray.Size(), region.CisCenterY, region.CisDiameterPixels,
+                region.CisPixelsPerMm, options.InitialSearchMarginMm, region.Name, "CIS");
+
+            Tuple<List<MarkerPoint>, int> detected;
+            using (var roi = new Mat(imageGray, initialRect))
+            {
+                detected = DetectJpg(
+                    roi, initialRect.Y, options.MinCircularityCis, referenceArea,
+                    region.CisDiameterPixels, region.CisCenterY);
+            }
+
+            var result = new RowDetectionResult
+            {
+                Points = detected.Item1,
+                Threshold = detected.Item2,
+                SearchRect = initialRect
+            };
+
+            if (result.Points.Count >= MinimumPointsPerRow ||
+                options.ExpandedSearchMarginMm <= options.InitialSearchMarginMm)
+                return result;
+
+            Rect expandedRect = BuildSearchRect(
+                imageGray.Size(), region.CisCenterY, region.CisDiameterPixels,
+                region.CisPixelsPerMm, options.ExpandedSearchMarginMm, region.Name, "CIS");
+            using (var roi = new Mat(imageGray, expandedRect))
+            {
+                detected = DetectJpg(
+                    roi, expandedRect.Y, options.MinCircularityCis, referenceArea,
+                    region.CisDiameterPixels, region.CisCenterY);
+            }
+            result.Points = detected.Item1;
+            result.Threshold = detected.Item2;
+            result.SearchRect = expandedRect;
+            result.UsedExpandedWindow = true;
+            return result;
+        }
+
+        private static Rect BuildSearchRect(
+            Size imageSize,
+            double centerY,
+            double diameterPixels,
+            double pixelsPerMm,
+            double marginMm,
+            string regionName,
+            string imageName)
+        {
+            if (centerY < 0 || centerY >= imageSize.Height)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(centerY),
+                    $"{imageName} {regionName} 预测圆心 Y={centerY:F1} 超出图像高度 {imageSize.Height}。");
+            }
+
+            double halfHeight = diameterPixels * 0.5 + marginMm * pixelsPerMm;
+            int y0 = Math.Max(0, (int)Math.Floor(centerY - halfHeight));
+            int y1 = Math.Min(imageSize.Height, (int)Math.Ceiling(centerY + halfHeight));
+            if (imageSize.Width <= 0 || y1 <= y0)
+                throw new ArgumentOutOfRangeException(nameof(imageSize), $"{imageName} {regionName} 搜索区域为空。");
+
+            return new Rect(0, y0, imageSize.Width, y1 - y0);
+        }
+
+        private static List<MarkerPoint> DetectTiff(
+            Mat strip,
+            int yOffset,
+            double minCircularity,
+            double expectedDiameterPixels,
+            double expectedCenterY)
         {
             var markers = new List<MarkerPoint>();
-            double stripArea = stripBgr.Width * stripBgr.Height;
+            double stripArea = Math.Max(1.0, (double)strip.Width * strip.Height);
+            Mat bgr = strip;
+            bool ownsBgr = false;
 
-            Mat stripF = new Mat();
-            stripBgr.ConvertTo(stripF, MatType.CV_32FC3);
-
-            // 计算与白色的距离
-            Mat[] channels = Cv2.Split(stripF);
-            
-            Mat bDiff = new Mat();
-            Cv2.Subtract(channels[0], new Scalar(255), bDiff);
-            Mat bSq = new Mat();
-            Cv2.Multiply(bDiff, bDiff, bSq);
-
-            Mat gDiff = new Mat();
-            Cv2.Subtract(channels[1], new Scalar(255), gDiff);
-            Mat gSq = new Mat();
-            Cv2.Multiply(gDiff, gDiff, gSq);
-
-            Mat rDiff = new Mat();
-            Cv2.Subtract(channels[2], new Scalar(255), rDiff);
-            Mat rSq = new Mat();
-            Cv2.Multiply(rDiff, rDiff, rSq);
-
-            Mat distSq = new Mat();
-            Cv2.Add(bSq, gSq, distSq);
-            Cv2.Add(distSq, rSq, distSq);
-            
-            Mat dist = new Mat();
-            Cv2.Sqrt(distSq, dist);
-
-            Mat distU8 = new Mat();
-            dist.ConvertTo(distU8, MatType.CV_8UC1, 255.0 / 441.7);
-            
-            Mat binary = new Mat();
-            Cv2.Threshold(distU8, binary, 25, 255, ThresholdTypes.Binary);
-
-            Point[][] contours;
-            HierarchyIndex[] hierarchy;
-            Cv2.FindContours(binary, out contours, out hierarchy, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
-            foreach (var cnt in contours)
+            try
             {
-                double area = Cv2.ContourArea(cnt);
-                double perimeter = Cv2.ArcLength(cnt, true);
-                if (perimeter == 0) continue;
-
-                double ratio = area / stripArea;
-                if (ratio < 0.001 || ratio > 0.05) continue;
-
-                double circ = 4 * Math.PI * area / (perimeter * perimeter);
-                if (circ < minCirc) continue;
-
-                var M = Cv2.Moments(cnt);
-                if (M.M00 == 0) continue;
-
-                double cx = M.M10 / M.M00;
-                double cy = M.M01 / M.M00 + yOffset;
-                markers.Add(new MarkerPoint { X = cx, Y = cy, Area = area, Circularity = circ });
-            }
-
-            return ClusterY(markers, stripBgr.Height * 0.12);
-        }
-
-        private static Tuple<List<MarkerPoint>, int> DetectJpg(Mat stripGray, int yOffset, double minCirc, double refArea = 0)
-        {
-            double stripArea = stripGray.Width * stripGray.Height;
-            
-            Mat claheImg = new Mat();
-            using (var clahe = Cv2.CreateCLAHE(2.0, new Size(4, 4)))
-            {
-                clahe.Apply(stripGray, claheImg);
-            }
-            
-            Mat blurred = new Mat();
-            Cv2.GaussianBlur(claheImg, blurred, new Size(3, 3), 0);
-
-            List<MarkerPoint> bestCircles = new List<MarkerPoint>();
-            int bestThresh = 120;
-            int[] thresholds = new int[] { 20, 30, 40, 50, 60, 70, 80, 100, 120, 140, 160, 180 };
-
-            foreach (int thresh in thresholds)
-            {
-                Mat binary = new Mat();
-                Cv2.Threshold(blurred, binary, thresh, 255, ThresholdTypes.Binary);
-
-                int nonZero = Cv2.CountNonZero(binary);
-                if ((double)nonZero / (binary.Width * binary.Height) > 0.5)
+                if (strip.Channels() == 1)
                 {
-                    Cv2.BitwiseNot(binary, binary);
+                    bgr = new Mat();
+                    ownsBgr = true;
+                    Cv2.CvtColor(strip, bgr, ColorConversionCodes.GRAY2BGR);
+                }
+                else if (strip.Channels() == 4)
+                {
+                    bgr = new Mat();
+                    ownsBgr = true;
+                    Cv2.CvtColor(strip, bgr, ColorConversionCodes.BGRA2BGR);
+                }
+                else if (strip.Channels() != 3)
+                {
+                    return markers;
                 }
 
-                int border = 15;
-                Cv2.Rectangle(binary, new Point(0, 0), new Point(binary.Width, border), Scalar.Black, -1);
-                Cv2.Rectangle(binary, new Point(0, binary.Height - border), new Point(binary.Width, binary.Height), Scalar.Black, -1);
-                Cv2.Rectangle(binary, new Point(0, 0), new Point(border, binary.Height), Scalar.Black, -1);
-                Cv2.Rectangle(binary, new Point(binary.Width - border, 0), new Point(binary.Width, binary.Height), Scalar.Black, -1);
-
-                Mat kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
-                Cv2.MorphologyEx(binary, binary, MorphTypes.Open, kernel, null, 2);
-
-                Point[][] contours;
-                HierarchyIndex[] hierarchy;
-                Cv2.FindContours(binary, out contours, out hierarchy, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
-                var circles = new List<MarkerPoint>();
-                foreach (var cnt in contours)
+                using (var stripFloat = new Mat())
+                using (var bDiff = new Mat())
+                using (var bSq = new Mat())
+                using (var gDiff = new Mat())
+                using (var gSq = new Mat())
+                using (var rDiff = new Mat())
+                using (var rSq = new Mat())
+                using (var distSq = new Mat())
+                using (var dist = new Mat())
+                using (var distU8 = new Mat())
+                using (var binary = new Mat())
                 {
-                    double area = Cv2.ContourArea(cnt);
-                    double perimeter = Cv2.ArcLength(cnt, true);
-                    if (perimeter == 0) continue;
-
-                    double ratio = area / stripArea;
-                    if (ratio < 0.001 || ratio > 0.05) continue;
-
-                    double circ = 4 * Math.PI * area / (perimeter * perimeter);
-                    if (circ < minCirc) continue;
-
-                    if (refArea > 0)
+                    bgr.ConvertTo(stripFloat, MatType.CV_32FC3);
+                    Mat[] channels = Cv2.Split(stripFloat);
+                    try
                     {
-                        if (area < refArea * 0.3 || area > refArea * 3.0) continue;
+                        Cv2.Subtract(channels[0], Scalar.All(255), bDiff);
+                        Cv2.Multiply(bDiff, bDiff, bSq);
+                        Cv2.Subtract(channels[1], Scalar.All(255), gDiff);
+                        Cv2.Multiply(gDiff, gDiff, gSq);
+                        Cv2.Subtract(channels[2], Scalar.All(255), rDiff);
+                        Cv2.Multiply(rDiff, rDiff, rSq);
+                        Cv2.Add(bSq, gSq, distSq);
+                        Cv2.Add(distSq, rSq, distSq);
+                        Cv2.Sqrt(distSq, dist);
+                        dist.ConvertTo(distU8, MatType.CV_8UC1, 255.0 / 441.7);
+                        Cv2.Threshold(distU8, binary, 25, 255, ThresholdTypes.Binary);
+                    }
+                    finally
+                    {
+                        foreach (Mat channel in channels)
+                            channel.Dispose();
                     }
 
-                    var M = Cv2.Moments(cnt);
-                    if (M.M00 == 0) continue;
-
-                    double cx = M.M10 / M.M00;
-                    double cy = M.M01 / M.M00 + yOffset;
-                    circles.Add(new MarkerPoint { X = cx, Y = cy, Area = area, Circularity = circ });
-                }
-
-                circles = ClusterY(circles, stripGray.Height * 0.12);
-                if (circles.Count > bestCircles.Count)
-                {
-                    bestCircles = circles;
-                    bestThresh = thresh;
-                }
-
-                if (bestCircles.Count >= 7) // fallback to 3-5 is common, but loop breaks at 7
-                {
-                    break;
+                    Cv2.FindContours(
+                        binary, out Point[][] contours, out HierarchyIndex[] _,
+                        RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+                    AddValidMarkers(
+                        contours, markers, stripArea, yOffset, minCircularity,
+                        expectedDiameterPixels, false);
                 }
             }
+            finally
+            {
+                if (ownsBgr)
+                    bgr.Dispose();
+            }
 
-            return new Tuple<List<MarkerPoint>, int>(bestCircles, bestThresh);
+            return ClusterY(markers, Math.Max(3.0, expectedDiameterPixels * 0.5), expectedCenterY);
         }
 
-        private static List<MarkerPoint> ClusterY(List<MarkerPoint> markers, double tol)
+        private static Tuple<List<MarkerPoint>, int> DetectJpg(
+            Mat stripGray,
+            int yOffset,
+            double minCircularity,
+            double referenceArea,
+            double expectedDiameterPixels,
+            double expectedCenterY)
         {
-            if (markers.Count <= 3)
+            double stripArea = Math.Max(1.0, (double)stripGray.Width * stripGray.Height);
+            using (var claheImage = new Mat())
+            using (var blurred = new Mat())
+            using (var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5)))
             {
-                return markers.OrderBy(m => m.X).ToList();
-            }
+                using (var clahe = Cv2.CreateCLAHE(2.0, new Size(4, 4)))
+                    clahe.Apply(stripGray, claheImage);
+                Cv2.GaussianBlur(claheImage, blurred, new Size(3, 3), 0);
 
-            var ys = markers.Select(m => m.Y).ToArray();
-            var indices = Enumerable.Range(0, ys.Length).OrderBy(i => ys[i]).ToArray();
-            var clusters = new List<List<int>>();
-            var used = new HashSet<int>();
+                var bestCircles = new List<MarkerPoint>();
+                int bestThreshold = 120;
+                int[] thresholds = { 20, 30, 40, 50, 60, 70, 80, 100, 120, 140, 160, 180 };
 
-            foreach (int i in indices)
-            {
-                if (used.Contains(i)) continue;
-                var cl = new List<int> { i };
-                used.Add(i);
-                for (int j = 0; j < ys.Length; j++)
+                foreach (int threshold in thresholds)
                 {
-                    if (used.Contains(j)) continue;
-                    if (Math.Abs(ys[j] - ys[i]) < tol)
+                    using (var binary = new Mat())
                     {
-                        cl.Add(j);
-                        used.Add(j);
-                    }
-                }
-                clusters.Add(cl);
-            }
+                        Cv2.Threshold(blurred, binary, threshold, 255, ThresholdTypes.Binary);
+                        int nonZero = Cv2.CountNonZero(binary);
+                        if ((double)nonZero / Math.Max(1, binary.Width * binary.Height) > 0.5)
+                            Cv2.BitwiseNot(binary, binary);
 
-            var best = clusters.OrderByDescending(c => Math.Min(c.Count, 5))
-                               .ThenByDescending(c => c.Sum(idx => markers[idx].Area))
-                               .FirstOrDefault();
+                        int border = Math.Min(15, Math.Max(2, binary.Height / 20));
+                        Cv2.Rectangle(binary, new Rect(0, 0, binary.Width, Math.Min(border, binary.Height)), Scalar.Black, -1);
+                        Cv2.Rectangle(binary, new Rect(0, Math.Max(0, binary.Height - border), binary.Width, Math.Min(border, binary.Height)), Scalar.Black, -1);
+                        Cv2.Rectangle(binary, new Rect(0, 0, Math.Min(border, binary.Width), binary.Height), Scalar.Black, -1);
+                        Cv2.Rectangle(binary, new Rect(Math.Max(0, binary.Width - border), 0, Math.Min(border, binary.Width), binary.Height), Scalar.Black, -1);
+                        Cv2.MorphologyEx(binary, binary, MorphTypes.Open, kernel, null, 2);
 
-            if (best != null)
-            {
-                return best.Select(idx => markers[idx]).OrderBy(m => m.X).ToList();
-            }
-            return markers.OrderBy(m => m.X).ToList();
-        }
+                        Cv2.FindContours(
+                            binary, out Point[][] contours, out HierarchyIndex[] _,
+                            RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+                        var circles = new List<MarkerPoint>();
+                        AddValidMarkers(
+                            contours, circles, stripArea, yOffset, minCircularity,
+                            expectedDiameterPixels, true, referenceArea);
+                        circles = ClusterY(
+                            circles, Math.Max(3.0, expectedDiameterPixels * 0.5), expectedCenterY);
 
-        private static Tuple<List<MarkerPoint>, List<MarkerPoint>> MatchRows(List<MarkerPoint> ptsTiff, List<MarkerPoint> ptsCis)
-        {
-            if (ptsTiff.Count == 0 || ptsCis.Count == 0)
-                return new Tuple<List<MarkerPoint>, List<MarkerPoint>>(new List<MarkerPoint>(), new List<MarkerPoint>());
-
-            var s = ptsTiff.OrderBy(p => p.X).ToList();
-            var d = ptsCis.OrderBy(p => p.X).ToList();
-
-            if (s.Count == d.Count)
-            {
-                return new Tuple<List<MarkerPoint>, List<MarkerPoint>>(s, d);
-            }
-
-            var sNorm = new double[s.Count];
-            double sRange = Math.Max(s.Last().X - s.First().X, 1);
-            for (int i = 0; i < s.Count; i++) sNorm[i] = (s[i].X - s.First().X) / sRange;
-
-            var dNorm = new double[d.Count];
-            double dRange = Math.Max(d.Last().X - d.First().X, 1);
-            for (int i = 0; i < d.Count; i++) dNorm[i] = (d[i].X - d.First().X) / dRange;
-
-            var ms = new List<MarkerPoint>();
-            var md = new List<MarkerPoint>();
-            var used = new HashSet<int>();
-
-            if (s.Count <= d.Count)
-            {
-                for (int i = 0; i < s.Count; i++)
-                {
-                    int bestJ = -1;
-                    double bestDist = double.MaxValue;
-                    for (int j = 0; j < d.Count; j++)
-                    {
-                        if (used.Contains(j)) continue;
-                        double dist = Math.Abs(dNorm[j] - sNorm[i]);
-                        if (dist < bestDist)
+                        if (circles.Count > bestCircles.Count ||
+                            (circles.Count == bestCircles.Count &&
+                             RowDistance(circles, expectedCenterY) < RowDistance(bestCircles, expectedCenterY)))
                         {
-                            bestDist = dist;
-                            bestJ = j;
+                            bestCircles = circles;
+                            bestThreshold = threshold;
                         }
+
+                        if (bestCircles.Count >= 7)
+                            break;
                     }
-                    if (bestJ != -1)
-                    {
-                        ms.Add(s[i]);
-                        md.Add(d[bestJ]);
-                        used.Add(bestJ);
-                    }
+                }
+
+                return Tuple.Create(bestCircles, bestThreshold);
+            }
+        }
+
+        private static void AddValidMarkers(
+            Point[][] contours,
+            List<MarkerPoint> output,
+            double stripArea,
+            int yOffset,
+            double minCircularity,
+            double expectedDiameterPixels,
+            bool allowWiderSizeRange,
+            double referenceArea = 0)
+        {
+            double minHeightFactor = allowWiderSizeRange ? 0.35 : 0.55;
+            double maxHeightFactor = allowWiderSizeRange ? 2.20 : 1.60;
+
+            foreach (Point[] contour in contours)
+            {
+                double area = Cv2.ContourArea(contour);
+                double perimeter = Cv2.ArcLength(contour, true);
+                if (perimeter <= 0)
+                    continue;
+
+                double areaRatio = area / stripArea;
+                if (areaRatio < 0.0001 || areaRatio > 0.20)
+                    continue;
+
+                double circularity = 4 * Math.PI * area / (perimeter * perimeter);
+                if (circularity < minCircularity)
+                    continue;
+
+                Rect bounds = Cv2.BoundingRect(contour);
+                if (expectedDiameterPixels > 0 &&
+                    (bounds.Height < expectedDiameterPixels * minHeightFactor ||
+                     bounds.Height > expectedDiameterPixels * maxHeightFactor))
+                    continue;
+
+                if (referenceArea > 0 && (area < referenceArea * 0.3 || area > referenceArea * 3.0))
+                    continue;
+
+                Moments moments = Cv2.Moments(contour);
+                if (Math.Abs(moments.M00) < double.Epsilon)
+                    continue;
+
+                output.Add(new MarkerPoint
+                {
+                    X = moments.M10 / moments.M00,
+                    Y = moments.M01 / moments.M00 + yOffset,
+                    Area = area,
+                    Circularity = circularity
+                });
+            }
+        }
+
+        private static List<MarkerPoint> ClusterY(
+            List<MarkerPoint> markers,
+            double tolerance,
+            double expectedCenterY)
+        {
+            if (markers.Count <= 1)
+                return markers.OrderBy(m => m.X).ToList();
+
+            var clusters = new List<List<MarkerPoint>>();
+            foreach (MarkerPoint marker in markers.OrderBy(m => m.Y))
+            {
+                List<MarkerPoint> target = clusters.FirstOrDefault(cluster =>
+                    Math.Abs(marker.Y - cluster.Average(p => p.Y)) <= tolerance);
+                if (target == null)
+                {
+                    target = new List<MarkerPoint>();
+                    clusters.Add(target);
+                }
+                target.Add(marker);
+            }
+
+            List<List<MarkerPoint>> eligible = clusters.Where(c => c.Count >= MinimumPointsPerRow).ToList();
+            if (eligible.Count == 0)
+                eligible = clusters;
+
+            List<MarkerPoint> best = eligible
+                .OrderBy(c => Math.Abs(c.Average(p => p.Y) - expectedCenterY))
+                .ThenByDescending(c => c.Count)
+                .ThenByDescending(c => c.Sum(p => p.Area))
+                .First();
+            return best.OrderBy(p => p.X).ToList();
+        }
+
+        private static Tuple<List<MarkerPoint>, List<MarkerPoint>> MatchRows(
+            List<MarkerPoint> tiffPoints,
+            List<MarkerPoint> cisPoints)
+        {
+            if (tiffPoints.Count == 0 || cisPoints.Count == 0)
+                return Tuple.Create(new List<MarkerPoint>(), new List<MarkerPoint>());
+
+            List<MarkerPoint> tiff = tiffPoints.OrderBy(p => p.X).ToList();
+            List<MarkerPoint> cis = cisPoints.OrderBy(p => p.X).ToList();
+            if (tiff.Count == cis.Count)
+                return Tuple.Create(tiff, cis);
+
+            double[] tiffNormalized = NormalizeX(tiff);
+            double[] cisNormalized = NormalizeX(cis);
+            var matchedTiff = new List<MarkerPoint>();
+            var matchedCis = new List<MarkerPoint>();
+
+            if (tiff.Count <= cis.Count)
+            {
+                var usedCis = new HashSet<int>();
+                for (int i = 0; i < tiff.Count; i++)
+                {
+                    int best = FindNearestUnused(tiffNormalized[i], cisNormalized, usedCis);
+                    if (best < 0)
+                        continue;
+                    matchedTiff.Add(tiff[i]);
+                    matchedCis.Add(cis[best]);
+                    usedCis.Add(best);
                 }
             }
             else
             {
-                for (int j = 0; j < d.Count; j++)
+                var usedTiff = new HashSet<int>();
+                for (int i = 0; i < cis.Count; i++)
                 {
-                    int bestI = -1;
-                    double bestDist = double.MaxValue;
-                    for (int i = 0; i < s.Count; i++)
-                    {
-                        if (used.Contains(i)) continue;
-                        double dist = Math.Abs(sNorm[i] - dNorm[j]);
-                        if (dist < bestDist)
-                        {
-                            bestDist = dist;
-                            bestI = i;
-                        }
-                    }
-                    if (bestI != -1)
-                    {
-                        ms.Add(s[bestI]);
-                        md.Add(d[j]);
-                        used.Add(bestI);
-                    }
+                    int best = FindNearestUnused(cisNormalized[i], tiffNormalized, usedTiff);
+                    if (best < 0)
+                        continue;
+                    matchedTiff.Add(tiff[best]);
+                    matchedCis.Add(cis[i]);
+                    usedTiff.Add(best);
                 }
             }
 
-            return new Tuple<List<MarkerPoint>, List<MarkerPoint>>(ms, md);
+            return Tuple.Create(matchedTiff, matchedCis);
         }
 
-        public static Mat WarpToTiffSpace(Mat cisMat, Mat H, Size tiffSize)
+        private static double[] NormalizeX(List<MarkerPoint> points)
         {
-            Mat warped = new Mat();
-            Cv2.WarpPerspective(cisMat, warped, H, tiffSize);
+            double min = points.First().X;
+            double range = Math.Max(points.Last().X - min, 1.0);
+            return points.Select(p => (p.X - min) / range).ToArray();
+        }
+
+        private static int FindNearestUnused(double target, double[] candidates, HashSet<int> used)
+        {
+            int bestIndex = -1;
+            double bestDistance = double.MaxValue;
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (used.Contains(i))
+                    continue;
+                double distance = Math.Abs(candidates[i] - target);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestIndex = i;
+                }
+            }
+            return bestIndex;
+        }
+
+        private static double EstimateHorizontalScale(
+            List<MarkerPoint> tiffPoints,
+            List<MarkerPoint> cisPoints)
+        {
+            if (tiffPoints.Count < 2 || cisPoints.Count < 2)
+                return double.NaN;
+            double cisSpan = cisPoints.Last().X - cisPoints.First().X;
+            if (Math.Abs(cisSpan) < 1e-6)
+                return double.NaN;
+            return (tiffPoints.Last().X - tiffPoints.First().X) / cisSpan;
+        }
+
+        private static Mat ComputeRobustTransform(List<Point2f> cisPoints, List<Point2f> tiffPoints)
+        {
+            Mat transform = null;
+            if (cisPoints.Count >= 6)
+            {
+                using (InputArray src = InputArray.Create(cisPoints))
+                using (InputArray dst = InputArray.Create(tiffPoints))
+                {
+                    transform = Cv2.FindHomography(src, dst, HomographyMethods.Ransac, 5.0);
+                }
+                if (transform != null && !transform.Empty())
+                    return transform;
+                transform?.Dispose();
+            }
+
+            using (var inliers = new Mat())
+            using (InputArray src = InputArray.Create(cisPoints))
+            using (InputArray dst = InputArray.Create(tiffPoints))
+            using (Mat affine = Cv2.EstimateAffine2D(
+                src, dst, inliers, RobustEstimationAlgorithms.RANSAC, 5.0))
+            {
+                if (affine == null || affine.Empty())
+                    return null;
+
+                var homography = Mat.Eye(3, 3, MatType.CV_64FC1).ToMat();
+                for (int row = 0; row < 2; row++)
+                {
+                    for (int col = 0; col < 3; col++)
+                        homography.Set(row, col, affine.At<double>(row, col));
+                }
+                return homography;
+            }
+        }
+
+        private static bool IsFiniteTransform(Mat transform)
+        {
+            if (transform.Rows != 3 || transform.Cols != 3)
+                return false;
+            for (int row = 0; row < 3; row++)
+            {
+                for (int col = 0; col < 3; col++)
+                {
+                    double value = transform.At<double>(row, col);
+                    if (double.IsNaN(value) || double.IsInfinity(value))
+                        return false;
+                }
+            }
+            return true;
+        }
+
+        private static double Median(IEnumerable<double> values)
+        {
+            double[] sorted = values.OrderBy(v => v).ToArray();
+            if (sorted.Length == 0)
+                return 0;
+            int middle = sorted.Length / 2;
+            return sorted.Length % 2 == 0
+                ? (sorted[middle - 1] + sorted[middle]) * 0.5
+                : sorted[middle];
+        }
+
+        private static double RowDistance(List<MarkerPoint> points, double expectedCenterY)
+        {
+            return points.Count == 0
+                ? double.MaxValue
+                : Math.Abs(points.Average(p => p.Y) - expectedCenterY);
+        }
+
+        private static string FormatRect(Rect rect)
+        {
+            return $"({rect.X},{rect.Y},{rect.Width},{rect.Height})";
+        }
+
+        public static Mat WarpToTiffSpace(Mat cisMat, Mat transform, Size tiffSize)
+        {
+            var warped = new Mat();
+            Cv2.WarpPerspective(cisMat, warped, transform, tiffSize);
             return warped;
         }
     }
