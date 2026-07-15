@@ -52,6 +52,9 @@ namespace CIS_WebInspector.Models
         /// </summary>
         public double PixelHeight { get; set; }
 
+        /// <summary>二维码在输入图像 X 方向上的像素宽度。</summary>
+        public double PixelWidth { get; set; }
+
         /// <summary>二维码解码文本内容</summary>
         public string DecodedText { get; set; }
 
@@ -90,8 +93,14 @@ namespace CIS_WebInspector.Models
         /// <summary>第二个二维码中心在当前拼接图中的局部 Y 坐标。</summary>
         public double EndQrCenterY { get; set; }
 
+        /// <summary>第二个二维码中心在当前拼接图中的 X 坐标。</summary>
+        public double EndQrCenterX { get; set; }
+
         /// <summary>第二个二维码在当前处理分辨率下的 Y 方向像素高度。</summary>
         public double EndQrPixelHeight { get; set; }
+
+        /// <summary>第二个二维码在当前处理分辨率下的 X 方向像素宽度。</summary>
+        public double EndQrPixelWidth { get; set; }
 
         /// <summary>位深（8 或 24）</summary>
         public int BitsPerPixel { get; set; }

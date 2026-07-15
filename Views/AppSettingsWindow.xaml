@@ -232,6 +232,78 @@
                             <TextBox Text="{Binding Config.MinCircularityCis}"/>
                         </StackPanel>
                         <TextBlock Text="形状过滤：实拍图像一般阈值略低。" Style="{StaticResource ParamDescription}"/>
+
+                        <Separator Margin="0,4,0,14" Background="#FF4A4A5E"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="启用侧边 Mark 非线性矫正" Width="220"/>
+                            <CheckBox IsChecked="{Binding Config.EnableSideMarkNonlinearAlignment}"/>
+                        </StackPanel>
+                        <TextBlock Text="关闭时仅使用上下两排 20 mm Mark 计算全局 H0；侧边检测失败也会明确降级到 H0。"
+                                   Style="{StaticResource ParamDescription}"/>
+
+                        <Expander Foreground="White" Margin="0,0,0,12">
+                            <Expander.Header>
+                                <TextBlock Text="侧边 4 mm Mark 参数" Foreground="#FF7EC8E3" FontWeight="SemiBold"/>
+                            </Expander.Header>
+                            <StackPanel Margin="18,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="左右 Mark 对数" Width="202"/>
+                                    <TextBox Text="{Binding Config.SideMarkPairCount}"/>
+                                </StackPanel>
+                                <TextBlock Text="左右两侧同层各一个圆，默认 9 对。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="小圆直径 (mm)" Width="202"/>
+                                    <TextBox Text="{Binding Config.SideMarkDiameterMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="侧边 Mark 的物理直径。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="材料宽度 (mm)" Width="202"/>
+                                    <TextBox Text="{Binding Config.MarkSheetWidthMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="左右两侧物体总宽度，默认 586 mm。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="TIFF 圆心距边缘 (mm)" Width="202"/>
+                                    <TextBox Text="{Binding Config.TiffSideMarkEdgeOffsetMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="TIFF 左右小圆圆心到最近边缘的距离。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="二维码到左 Mark (mm)" Width="202"/>
+                                    <TextBox Text="{Binding Config.CisQrToLeftMarkMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="CIS 第二个二维码中心到左侧小圆圆心的横向距离。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="左右 Mark 间距 (mm)" Width="202"/>
+                                    <TextBox Text="{Binding Config.CisSideMarkSpanMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="CIS 左右两列小圆圆心的物理间距。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="首次/扩展边距 (mm)" Width="202"/>
+                                    <TextBox Text="{Binding Config.SideMarkInitialSearchMarginMm}" Width="70"/>
+                                    <TextBlock Text=" / " Margin="6,0"/>
+                                    <TextBox Text="{Binding Config.SideMarkExpandedSearchMarginMm}" Width="70"/>
+                                </StackPanel>
+                                <TextBlock Text="小 ROI 首次未检出时再使用扩展窗口。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="每侧最少有效点" Width="202"/>
+                                    <TextBox Text="{Binding Config.SideMarkMinValidPerColumn}"/>
+                                </StackPanel>
+                                <TextBlock Text="低于该数量或连续缺失两层时，自动降级到 H0。" Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Remap 分块行数" Width="202"/>
+                                    <TextBox Text="{Binding Config.NonlinearRemapStripeRows}"/>
+                                </StackPanel>
+                                <TextBlock Text="按目标行分块生成映射，避免创建整幅 mapX/mapY。" Style="{StaticResource ParamDescription}"/>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

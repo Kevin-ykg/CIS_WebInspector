@@ -565,6 +565,9 @@ namespace CIS_WebInspector.ViewModels
         // ---- 离线缺陷检测流水线 ----
         private void RunDefectPipeline(StitchedImageResult result)
         {
+            Mat tiffMat = null;
+            Mat alphaMask = null;
+            Mat cisMat = null;
             try
             {
                 AddLog("开始执行离线缺陷检测流水线...");
@@ -592,7 +595,6 @@ namespace CIS_WebInspector.ViewModels
 
                 // 2. 加载 TIFF 原图
                 AddLog($"正在加载 TIFF 原图...");
-                Mat tiffMat = null;
                 if (System.IO.File.Exists(layoutInfo.TiffFullPath))
                 {
                     tiffMat = OpenCvSharp.Cv2.ImRead(layoutInfo.TiffFullPath, OpenCvSharp.ImreadModes.Unchanged);
@@ -612,7 +614,6 @@ namespace CIS_WebInspector.ViewModels
                 // 如果 TIFF 是 4 通道，分离 Alpha 通道作为原始设计二值掩膜，然后 alpha 融合到白底
                 // 参照 align_diff.py: alpha_mask = channels[3] 作为完美设计二值图像
                 // 注意：TIFF 原图可能非常大，不能创建多个全尺寸 float32 Mat，改用逐行处理
-                Mat alphaMask = null;
                 if (tiffMat.Channels() == 4)
                 {
                     int h = tiffMat.Height;
@@ -681,7 +682,6 @@ namespace CIS_WebInspector.ViewModels
                 // 3. 构建 CIS 图像的 Mat（保持原始通道，不做强制转换）
                 AddLog($"正在计算图像对齐变换矩阵...");
                 var matType = result.BitsPerPixel == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
-                Mat cisMat = null;
                 var handle = System.Runtime.InteropServices.GCHandle.Alloc(result.Data, System.Runtime.InteropServices.GCHandleType.Pinned);
                 try
                 {
@@ -696,24 +696,30 @@ namespace CIS_WebInspector.ViewModels
                 int optimalThresh = 127;
                 var qrAnchor = new CisQrAnchor
                 {
+                    CenterX = result.EndQrCenterX,
                     GlobalCenterY = result.EndQrGlobalY,
                     SegmentStartGlobalY = result.SegmentStartGlobalY,
+                    PixelWidth = result.EndQrPixelWidth,
                     PixelHeight = result.EndQrPixelHeight
                 };
                 var alignmentOptions = MarkAlignmentOptions.FromConfig(config);
-                Mat H = ImageAligner.ComputeTransform(
-                    cisMat, tiffMat, qrAnchor, alignmentOptions,
-                    out optimalThresh, out string alignmentDiagnostic);
-                if (H == null || H.Empty())
+                using (AlignmentResult alignment = ImageAligner.ComputeTransform(
+                           cisMat, tiffMat, qrAnchor, alignmentOptions,
+                           out optimalThresh, out string alignmentDiagnostic))
                 {
-                    AddLog($"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}");
-                    return;
-                }
-                AddLog($"变换矩阵计算成功！自动最佳二值化阈值: {optimalThresh}；{alignmentDiagnostic}");
+                    if (alignment?.GlobalTransform == null || alignment.GlobalTransform.Empty())
+                    {
+                        AddLog($"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}");
+                        return;
+                    }
+                    AddLog(
+                        $"变换矩阵计算成功！模式={alignment.Mode}, 质量={alignment.QualityStatus}, " +
+                        $"自动最佳二值化阈值={optimalThresh}；{alignmentDiagnostic}");
 
-                // 5. 图像变换
-                AddLog("正在将 CIS 图像变换到 TIFF 空间...");
-                Mat cisWarped = ImageAligner.WarpToTiffSpace(cisMat, H, tiffMat.Size());
+                    // 5. 图像变换
+                    AddLog("正在将 CIS 图像变换到 TIFF 空间...");
+                    using (Mat cisWarped = ImageAligner.WarpToTiffSpace(cisMat, alignment, tiffMat.Size()))
+                    {
 
                 // 6. 裁切小图 + 缺陷检测
                 int finalCisThresh = optimalThresh + config.DefectCisThreshOffset;
@@ -764,11 +770,23 @@ namespace CIS_WebInspector.ViewModels
                     });
                 }
 
-                AddLog($"[缺陷流水线] 全部完成！共 {totalParts} 个零件 | 合格 {passCount} | 不合格 {failCount} | 结果保存在: {outDir}");
+                        AddLog(
+                            $"[缺陷流水线] 全部完成！共 {totalParts} 个零件 | 合格 {passCount} | " +
+                            $"不合格 {failCount} | 全局对准={alignment.Mode}/{alignment.QualityStatus} | " +
+                            $"检测={alignment.DetectionMilliseconds:F1}ms, 建图={alignment.MapGenerationMilliseconds:F1}ms, " +
+                            $"变换={alignment.RemapMilliseconds:F1}ms | 结果保存在: {outDir}");
+                    }
+                }
             }
             catch (Exception ex)
             {
                 AddLog($"[缺陷流水线] 执行发生严重异常: {ex.Message}\n{ex.StackTrace}");
+            }
+            finally
+            {
+                cisMat?.Dispose();
+                alphaMask?.Dispose();
+                tiffMat?.Dispose();
             }
         }
 

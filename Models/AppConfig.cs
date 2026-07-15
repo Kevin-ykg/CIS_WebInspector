@@ -117,6 +117,9 @@ namespace CIS_WebInspector.Models
         /// <summary>二维码的物理高度（mm），用于换算 CIS 纵向像素/mm</summary>
         public double MarkQrPhysicalHeightMm { get; set; } = 60.0;
 
+        /// <summary>二维码物理宽度（mm），用于换算 CIS 横向像素/mm。</summary>
+        public double MarkQrPhysicalWidthMm { get; set; } = 60.0;
+
         /// <summary>Mark 首次搜索时，圆边缘以外的物理边距（mm）</summary>
         public double MarkInitialSearchMarginMm { get; set; } = 15.0;
 
@@ -128,6 +131,42 @@ namespace CIS_WebInspector.Models
 
         /// <summary>CIS 实拍标志点最低圆度</summary>
         public double MinCircularityCis { get; set; } = 0.85;
+
+        /// <summary>
+        /// 是否使用左右侧边 4 mm Mark 构建非线性残差网格。
+        /// 默认关闭；关闭或网格质量不合格时仅使用上下两排 20 mm Mark 的 H0。
+        /// </summary>
+        public bool EnableSideMarkNonlinearAlignment { get; set; } = false;
+
+        /// <summary>左右侧边小圆的对数。</summary>
+        public int SideMarkPairCount { get; set; } = 9;
+
+        /// <summary>侧边小圆物理直径（mm）。</summary>
+        public double SideMarkDiameterMm { get; set; } = 4.0;
+
+        /// <summary>材料总宽度（mm）。</summary>
+        public double MarkSheetWidthMm { get; set; } = 586.0;
+
+        /// <summary>TIFF 左右侧小圆圆心到最近材料边缘的距离（mm）。</summary>
+        public double TiffSideMarkEdgeOffsetMm { get; set; } = 2.5;
+
+        /// <summary>CIS 第二个二维码中心到左侧小圆圆心的横向距离（mm）。</summary>
+        public double CisQrToLeftMarkMm { get; set; } = 36.5;
+
+        /// <summary>CIS 左右侧小圆圆心之间的物理距离（mm）。</summary>
+        public double CisSideMarkSpanMm { get; set; } = 581.0;
+
+        /// <summary>侧边小圆首次搜索窗口在圆半径外增加的边距（mm）。</summary>
+        public double SideMarkInitialSearchMarginMm { get; set; } = 3.0;
+
+        /// <summary>首次未检出时使用的扩展搜索边距（mm）。</summary>
+        public double SideMarkExpandedSearchMarginMm { get; set; } = 8.0;
+
+        /// <summary>每侧至少需要的有效内部小圆数量。</summary>
+        public int SideMarkMinValidPerColumn { get; set; } = 7;
+
+        /// <summary>非线性 Remap 每次生成和处理的目标图行数。</summary>
+        public int NonlinearRemapStripeRows { get; set; } = 256;
 
 
         // ==========================================

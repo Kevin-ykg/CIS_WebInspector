@@ -181,7 +181,7 @@ namespace CIS_WebInspector.Services
             {
                 var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
                 string currentQrDiagnostic = fResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
-                logAction($"  [Current] Detect: Found={fResult.Found}, Y={fResult.CenterY * df} (Original), Height={fResult.PixelHeight * df:F1} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
+                logAction($"  [Current] Detect: Found={fResult.Found}, X={fResult.CenterX * df}, Y={fResult.CenterY * df} (Original), Width={fResult.PixelWidth * df:F1}, Height={fResult.PixelHeight * df:F1} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
                 if (fResult.Found)
                 {
                     long globalY = _globalProcessedRows + fResult.CenterY;
@@ -225,7 +225,7 @@ namespace CIS_WebInspector.Services
 
                 var ovResult = _qrDetector.Detect(overlapImg, _width, overlapH, _stride, _bpp);
                 string overlapQrDiagnostic = ovResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
-                logAction($"  [Overlap] Detect: Found={ovResult.Found}, Y={ovResult.CenterY * df} (Original), Height={ovResult.PixelHeight * df:F1} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
+                logAction($"  [Overlap] Detect: Found={ovResult.Found}, X={ovResult.CenterX * df}, Y={ovResult.CenterY * df} (Original), Width={ovResult.PixelWidth * df:F1}, Height={ovResult.PixelHeight * df:F1} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
                 if (ovResult.Found)
                 {
                     long globalY = _globalProcessedRows - _prevTailRows + ovResult.CenterY;
@@ -453,7 +453,9 @@ namespace CIS_WebInspector.Services
                 EndQrText = endQrResult.DecodedText,
                 SegmentStartGlobalY = _segStartGlobalY,
                 EndQrGlobalY = endQrGlobalY,
+                EndQrCenterX = endQrResult.CenterX,
                 EndQrCenterY = endQrCenterY,
+                EndQrPixelWidth = endQrResult.PixelWidth,
                 EndQrPixelHeight = endQrResult.PixelHeight
             });
         }

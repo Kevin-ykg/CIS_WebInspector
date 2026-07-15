@@ -236,6 +236,7 @@ namespace CIS_WebInspector.Services
                             Found = true,
                             CenterX = (int)Math.Round(hit.CenterX + safeX),
                             CenterY = (int)Math.Round(hit.CenterY / hit.ScaleY),
+                            PixelWidth = hit.PixelWidth,
                             PixelHeight = hit.PixelHeight / hit.ScaleY,
                             DecodedText = hit.Text
                         };
@@ -282,7 +283,9 @@ namespace CIS_WebInspector.Services
                 for (int i = 0; i < resultCount; i++)
                 {
                     if (string.IsNullOrWhiteSpace(decodedTexts[i]) ||
-                        !TryGetGeometry(boxes[i], out double centerX, out double centerY, out double pixelHeight))
+                        !TryGetGeometry(
+                            boxes[i], out double centerX, out double centerY,
+                            out double pixelWidth, out double pixelHeight))
                         continue;
 
                     hit = new DecodeHit
@@ -290,6 +293,7 @@ namespace CIS_WebInspector.Services
                         Text = decodedTexts[i],
                         CenterX = centerX,
                         CenterY = centerY,
+                        PixelWidth = pixelWidth,
                         PixelHeight = pixelHeight,
                         ScaleY = scaleY
                     };
@@ -317,10 +321,16 @@ namespace CIS_WebInspector.Services
         /// 两组对边中，Y 投影较大的一组视为二维码的纵向边，避免使用欧氏长度
         /// 时混入 CIS 横向分辨率。
         /// </summary>
-        private static bool TryGetGeometry(Mat box, out double centerX, out double centerY, out double pixelHeight)
+        private static bool TryGetGeometry(
+            Mat box,
+            out double centerX,
+            out double centerY,
+            out double pixelWidth,
+            out double pixelHeight)
         {
             centerX = 0;
             centerY = 0;
+            pixelWidth = 0;
             pixelHeight = 0;
             if (box == null || box.Empty() || box.Depth() != MatType.CV_32F)
                 return false;
@@ -331,21 +341,30 @@ namespace CIS_WebInspector.Services
 
             using (Mat flat = box.Reshape(1, 1))
             {
+                var xs = new double[4];
                 var ys = new double[4];
                 for (int i = 0; i < 4; i++)
                 {
                     double x = flat.Get<float>(0, i * 2);
+                    xs[i] = x;
                     ys[i] = flat.Get<float>(0, i * 2 + 1);
                     centerX += x;
                     centerY += ys[i];
                 }
 
+                double edge0X = Math.Abs(xs[1] - xs[0]);
+                double edge1X = Math.Abs(xs[2] - xs[1]);
+                double edge2X = Math.Abs(xs[3] - xs[2]);
+                double edge3X = Math.Abs(xs[0] - xs[3]);
                 double edge0Y = Math.Abs(ys[1] - ys[0]);
                 double edge1Y = Math.Abs(ys[2] - ys[1]);
                 double edge2Y = Math.Abs(ys[3] - ys[2]);
                 double edge3Y = Math.Abs(ys[0] - ys[3]);
+                double xPair02 = (edge0X + edge2X) * 0.5;
+                double xPair13 = (edge1X + edge3X) * 0.5;
                 double oppositePair02 = (edge0Y + edge2Y) * 0.5;
                 double oppositePair13 = (edge1Y + edge3Y) * 0.5;
+                pixelWidth = Math.Max(xPair02, xPair13);
                 pixelHeight = Math.Max(oppositePair02, oppositePair13);
             }
 
@@ -483,6 +502,7 @@ namespace CIS_WebInspector.Services
             public string Text { get; set; }
             public double CenterX { get; set; }
             public double CenterY { get; set; }
+            public double PixelWidth { get; set; }
             public double PixelHeight { get; set; }
             public double ScaleY { get; set; }
         }
