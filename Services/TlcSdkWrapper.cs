@@ -4,6 +4,10 @@ using System.Runtime.InteropServices;
 
 namespace CIS_WebInspector.Services
 {
+    /// <summary>
+    /// tlc.dll 的最薄 P/Invoke 边界。原生函数返回 0 表示成功；返回的字符串指针由 SDK 管理，
+    /// 托管侧只立即复制为 string，不缓存或释放该指针。上层负责串行化设备操作和展示错误。
+    /// </summary>
     public static class TlcSdkWrapper
     {
         private const string DllName = "tlc.dll";
@@ -95,6 +99,7 @@ namespace CIS_WebInspector.Services
             int size = 0;
             if (enum_all_card_ports(ref ptr, ref size) == 0 && size > 0 && ptr != IntPtr.Zero)
             {
+                // 立即复制 SDK 返回的 ANSI 缓冲区；不把原生指针暴露给 ViewModel。
                 string portsStr = Marshal.PtrToStringAnsi(ptr, size);
                 if (!string.IsNullOrEmpty(portsStr))
                 {

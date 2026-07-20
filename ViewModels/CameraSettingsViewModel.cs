@@ -8,6 +8,10 @@ using Microsoft.Win32;
 
 namespace CIS_WebInspector.ViewModels
 {
+    /// <summary>
+    /// Volans 采集卡原生属性的通用编辑页。属性值变化会立即写入当前设备；
+    /// 写入失败时重新读取硬件值，并临时退订事件以避免回滚再次触发写入。
+    /// </summary>
     public class CameraSettingsViewModel : ViewModelBase
     {
         private readonly CisCameraEngine _cameraEngine;
@@ -24,6 +28,7 @@ namespace CIS_WebInspector.ViewModels
             LoadProperties();
         }
 
+        /// <summary>枚举当前设备支持的属性，并订阅 Value 变化实现即时写入。</summary>
         private void LoadProperties()
         {
             var props = _cameraEngine.GetAllProperties();
@@ -36,6 +41,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>转发单项属性写入；失败时以硬件实际值回滚绑定模型。</summary>
         private void Model_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == nameof(CameraPropertyModel.Value) && sender is CameraPropertyModel model)

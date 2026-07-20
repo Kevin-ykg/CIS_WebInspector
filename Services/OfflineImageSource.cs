@@ -76,6 +76,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>从第一张图重新开始定时播放；每次 Start 都重置当前文件索引。</summary>
         public void StartGrab()
         {
             if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning) return;
@@ -108,9 +109,10 @@ namespace CIS_WebInspector.Services
 
         private int _isProcessing = 0;
 
+        /// <summary>读取下一张文件、统一通道/尺寸并复制为独立帧缓冲；文件顺序就是模拟采集顺序。</summary>
         private void OnTimerTick(object state)
         {
-            // 防重入锁：如果上一帧还没处理完，跳过本次 Tick
+            // 防重入只跳过计时器 Tick，不跳过图像：_currentIndex 仅在当前处理成功后递增。
             if (System.Threading.Interlocked.CompareExchange(ref _isProcessing, 1, 0) != 0)
                 return;
 
@@ -182,6 +184,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>停止并释放 Timer，但保留当前索引，供 ResumeGrab 断点继续。</summary>
         public void StopGrab()
         {
             IsRunning = false;
@@ -190,11 +193,13 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>设置模拟帧间隔（毫秒）</summary>
+        /// <summary>设置模拟帧间隔；仅影响之后创建的 Timer。</summary>
         public void SetInterval(int intervalMs)
         {
             _intervalMs = Math.Max(10, intervalMs);
         }
 
+        /// <summary>停止模拟播放并释放 Timer；磁盘图像均在单个 Tick 内打开和释放。</summary>
         public void Dispose()
         {
             StopGrab();

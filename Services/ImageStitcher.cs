@@ -14,8 +14,8 @@ namespace CIS_WebInspector.Services
     ///   - 段数据按需累积，完成后立即释放 chunk 引用
     /// 
     /// QR 检测策略：
-    ///   - 每帧到达时，先构造重叠图像（上一帧尾部 + 当前帧头部）进行 QR 检测
-    ///   - 再对当前帧整体进行 QR 检测（覆盖 QR 完全在帧内部的情况）
+    ///   - 每帧到达时，先检测当前帧整体（覆盖 QR 完全位于帧内的常见情况）
+    ///   - 当前帧未命中时，再检测“上一帧尾部 + 当前帧头部”的重叠图像
     ///   - 双重检测确保跨帧边界的 QR 码不会被遗漏
     /// 
     /// 状态机：
@@ -49,6 +49,7 @@ namespace CIS_WebInspector.Services
         private int _prevTailRows;
 
         // ---- 全局行坐标追踪（用于防止二维码重复检测） ----
+        // 坐标单位始终是 DownscaleFactor 处理后的行；写日志/映射原图时再统一换算，避免混用尺度。
         private long _globalProcessedRows = 0;
         private long _lastQrGlobalY = -999999;
         
@@ -114,18 +115,59 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public void ProcessFrame(IntPtr dataPtr, byte[] dataArray, int width, int height, int stride, int bpp)
         {
+            ProcessFrameCore(dataPtr, dataArray, width, height, stride, bpp, false);
+        }
+
+        /// <summary>
+        /// 处理由调用方独占持有的托管帧缓冲区。
+        /// 本方法在返回前不会修改或保留该缓冲区；需要跨帧保存的数据仍会复制到内部块中。
+        /// </summary>
+        public void ProcessOwnedFrame(byte[] dataArray, int width, int height, int stride, int bpp)
+        {
+            if (dataArray == null)
+                throw new ArgumentNullException(nameof(dataArray));
+
+            int requiredBytes = checked(stride * height);
+            if (dataArray.Length < requiredBytes)
+                throw new ArgumentException("托管帧缓冲区长度不足。", nameof(dataArray));
+
+            ProcessFrameCore(IntPtr.Zero, dataArray, width, height, stride, bpp, true);
+        }
+
+        /// <summary>
+        /// 单线程执行一帧的二维码检测与状态机推进。reuseManagedBuffer 只影响当前帧是否需要复制，
+        /// 任何要跨帧保留的尾部和段数据都会由本类重新分配，避免引用调用方可变缓冲区。
+        /// </summary>
+        private void ProcessFrameCore(
+            IntPtr dataPtr,
+            byte[] dataArray,
+            int width,
+            int height,
+            int stride,
+            int bpp,
+            bool reuseManagedBuffer)
+        {
             if (_width != width || _height != height)
                 Configure(width, height, stride, bpp);
 
-            // 将帧数据拷贝到托管内存
+            // 原始公开入口仍保持深拷贝语义；有明确所有权的队列帧可直接读取，
+            // 避免每帧一次整图分配与复制。跨帧数据由 AddChunk/SaveTail 独立复制。
             int totalBytes = stride * height;
-            byte[] frameData = new byte[totalBytes];
-            if (dataArray != null)
-                Buffer.BlockCopy(dataArray, 0, frameData, 0, Math.Min(dataArray.Length, totalBytes));
-            else if (dataPtr != IntPtr.Zero)
-                Marshal.Copy(dataPtr, frameData, 0, totalBytes);
+            byte[] frameData;
+            if (reuseManagedBuffer)
+            {
+                frameData = dataArray;
+            }
             else
-                return;
+            {
+                frameData = new byte[totalBytes];
+                if (dataArray != null)
+                    Buffer.BlockCopy(dataArray, 0, frameData, 0, Math.Min(dataArray.Length, totalBytes));
+                else if (dataPtr != IntPtr.Zero)
+                    Marshal.Copy(dataPtr, frameData, 0, totalBytes);
+                else
+                    return;
+            }
 
             // ======== 双重 QR 检测 ========
             QrDetectionResult qrResult = null;
@@ -185,6 +227,7 @@ namespace CIS_WebInspector.Services
                 if (fResult.Found)
                 {
                     long globalY = _globalProcessedRows + fResult.CenterY;
+                    // 同一个二维码可能在当前帧与重叠图中重复命中，全局 Y 间隔用于去重。
                     if (globalY - _lastQrGlobalY > 1000) // 防重复检测
                     {
                         int cutRow = fResult.CenterY + QrOffsetRows;
@@ -268,6 +311,7 @@ namespace CIS_WebInspector.Services
                 }
             }
 
+            // 只有切割位置已经落入已拥有的像素范围才算 qrFound；仅识别但仍在延迟切割中的 QR 不推进状态机。
             bool qrFound = cutInPrevTail || (cutRowInCurr >= 0);
 
             // ---- 异常监控逻辑 ----
@@ -337,6 +381,7 @@ namespace CIS_WebInspector.Services
                             if (cutRowInCurr > 0) AddChunk(frameData, 0, cutRowInCurr);
                         }
 
+                        // 当前结束二维码同时作为下一段的起始二维码，连续材料段之间不会产生空洞。
                         EmitSegment(qrResult, qrGlobalY);
 
                         // ---- 开启新一段 ----
@@ -380,7 +425,7 @@ namespace CIS_WebInspector.Services
             _segTotalRows += rows;
         }
 
-        /// <summary>回溯裁剪：去掉最后一个 chunk 末尾的多余行</summary>
+        /// <summary>回溯裁剪：跨帧重叠检测发现切点位于上一帧时，去掉最后一个 chunk 末尾的多余行。</summary>
         private void TrimLastChunkTail(int discardRows)
         {
             if (_segChunks.Count == 0 || discardRows <= 0) return;
@@ -415,7 +460,10 @@ namespace CIS_WebInspector.Services
             Buffer.BlockCopy(frameData, srcOffset, _prevTail, 0, tailBytes);
         }
 
-        /// <summary>将累积的段数据组装为最终图像并触发事件</summary>
+        /// <summary>
+        /// 将累积块按行顺序复制成连续缓冲区并触发事件；结果对象拥有该新缓冲区。
+        /// 同时把结束二维码的全局坐标换算成拼接段局部坐标，供后续 Mark 对准使用。
+        /// </summary>
         private void EmitSegment(QrDetectionResult endQrResult, long endQrGlobalY)
         {
             if (_segTotalRows <= 0 || _segChunks.Count == 0) return;
@@ -460,6 +508,7 @@ namespace CIS_WebInspector.Services
             });
         }
 
+        /// <summary>释放段块对大数组的引用并清零累计行数，便于 GC 尽快回收上一段。</summary>
         private void ClearChunks()
         {
             foreach (var c in _segChunks)

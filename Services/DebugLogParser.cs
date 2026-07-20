@@ -6,6 +6,10 @@ using CIS_WebInspector.Models;
 
 namespace CIS_WebInspector.Services
 {
+    /// <summary>
+    /// 从上游排版系统的 Debug.log 中还原“二维码 → TIFF 文件 → 零件物理坐标”关系。
+    /// 本类只负责解析，不做像素换算；毫米坐标由后续 <see cref="PatchCropper"/> 按 LayoutDpi 转换。
+    /// </summary>
     public class DebugLogParser
     {
         /// <summary>
@@ -27,7 +31,7 @@ namespace CIS_WebInspector.Services
             
             string lastMatchLine = null;
             
-            // 逐行读取，寻找同时包含二维码和 formattingFilename 的最后一行
+            // 当前协议按日志顺序采用第一条匹配记录；二维码应能唯一标识一次排版任务。
             using (var reader = new StreamReader(logFilePath))
             {
                 string line;
@@ -46,7 +50,7 @@ namespace CIS_WebInspector.Services
                 return null;
             }
 
-            // 提取 "[" 以后的 JSON 字符串
+            // 日志前缀不是 JSON；第一个 '[' 之后才是 cuttingInput 数组。
             int pos = lastMatchLine.IndexOf('[');
             if (pos < 0)
             {
@@ -68,7 +72,7 @@ namespace CIS_WebInspector.Services
                         {
                             var layoutInfo = new LayoutInfo();
 
-                            // 1. 获取文件名
+                            // 路径可能来自 Windows 或 Linux，最终只取文件名并拼接本机 TIFF 目录。
                             if (cuttingInput.TryGetProperty("formattingFilename", out var formatFileElem))
                             {
                                 string formatFileName = formatFileElem.GetString();
@@ -76,7 +80,7 @@ namespace CIS_WebInspector.Services
                                 layoutInfo.TiffFullPath = Path.Combine(tiffImageDir, layoutInfo.TiffFileName);
                             }
 
-                            // 2. 获取排版坐标
+                            // relative* 字段保持上游定义的毫米坐标，不在解析阶段混入 DPI/像素语义。
                             if (cuttingInput.TryGetProperty("sourceFileLocation", out var sourceFileLocation) && 
                                 sourceFileLocation.ValueKind == JsonValueKind.Array)
                             {

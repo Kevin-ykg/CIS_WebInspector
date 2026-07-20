@@ -9,7 +9,9 @@ using OpenCvSharp;
 namespace CIS_WebInspector.Services
 {
     /// <summary>
-    /// 根据物理位置约束提取圆形 Mark，并计算 CIS 实拍图到 TIFF 排版图的变换矩阵。
+    /// 根据物理位置约束提取圆形 Mark，并计算 CIS 实拍图到 TIFF 排版图的变换。
+    /// 上下两排 20 mm Mark 始终负责全局 H0；启用开关后，左右 4 mm Mark 只描述
+    /// H0 无法解释的边缘残差，不参与 H0 拟合，也不会改变中心列的全局基准。
     /// </summary>
     public class ImageAligner
     {
@@ -17,6 +19,7 @@ namespace CIS_WebInspector.Services
         private const double MaximumRowScaleDifference = 0.15;
         private const double MaximumAdjacentJacobianScaleRatio = 2.0;
 
+        /// <summary>统一描述 TIFF/CIS 中的圆形候选；Score 越小表示越接近期望位置和尺寸。</summary>
         public class MarkerPoint
         {
             public double X { get; set; }
@@ -28,6 +31,7 @@ namespace CIS_WebInspector.Services
             public double Score { get; set; }
         }
 
+        /// <summary>一排大 Mark 在两个图像坐标系中的预测几何信息。</summary>
         private sealed class MarkerRegionSpec
         {
             public string Name { get; set; }
@@ -39,6 +43,7 @@ namespace CIS_WebInspector.Services
             public double CisPixelsPerMm { get; set; }
         }
 
+        /// <summary>单排自适应检测结果，同时保留阈值和最终搜索窗口用于诊断。</summary>
         private sealed class RowDetectionResult
         {
             public List<MarkerPoint> Points { get; set; } = new List<MarkerPoint>();
@@ -47,6 +52,7 @@ namespace CIS_WebInspector.Services
             public bool UsedExpandedWindow { get; set; }
         }
 
+        /// <summary>单个侧边小 Mark 的检测状态；失败原因用于决定是否降级到 H0。</summary>
         private sealed class SideMarkerDetection
         {
             public MarkerPoint Point { get; set; }
@@ -57,6 +63,7 @@ namespace CIS_WebInspector.Services
             public bool Found => Point != null;
         }
 
+        /// <summary>通过质量门控后的三列残差网格及留一验证指标。</summary>
         private sealed class SideGridData
         {
             public double[] GridX { get; set; }
@@ -89,8 +96,10 @@ namespace CIS_WebInspector.Services
 
             Stopwatch detectionWatch = Stopwatch.StartNew();
 
+            // TIFF 使用固定 DPI；CIS 的纵向比例由已知 60 mm 二维码在当前处理图中的像素高度标定。
             double tiffPixelsPerMm = options.LayoutDpi / 25.4;
             double cisPixelsPerMm = qrAnchor.PixelHeight / options.QrPhysicalHeightMm;
+            // 二维码 Y 是连续采集坐标，减去段起点后才是本张 cisMat 内的局部行号。
             double cisBottomCenterY = qrAnchor.GlobalCenterY - qrAnchor.SegmentStartGlobalY;
             double cisTopCenterY = cisBottomCenterY - options.CisRowSpacingMm * cisPixelsPerMm;
 
@@ -155,16 +164,19 @@ namespace CIS_WebInspector.Services
 
                     if (regionIndex == 0 && cisRow.Points.Count >= 3)
                     {
+                        // 顶排偶尔会把大块反光/背景连通域纳入候选，使用本排中位面积剔除明显巨型轮廓。
                         double medianArea = Median(cisRow.Points.Select(p => p.Area));
                         cisRow.Points = cisRow.Points.Where(p => p.Area < medianArea * 2.5).ToList();
                     }
 
                     if (regionIndex == 0 && cisRow.Points.Count > 0)
                     {
+                        // 顶排建立本次曝光下的面积/阈值参考，底排复用它抑制尺寸完全不同的伪圆。
                         referenceArea = Median(cisRow.Points.Select(p => p.Area));
                         optimalThresh = cisRow.Threshold;
                     }
 
+                    // 不直接按候选数量或绝对 X 配对，而按一排 Mark 的归一化横向次序寻找对应关系。
                     var matched = MatchRows(tiffRow.Points, cisRow.Points);
                     int matchedCount = Math.Min(matched.Item1.Count, matched.Item2.Count);
                     rowDiagnostics.Add(
@@ -207,6 +219,7 @@ namespace CIS_WebInspector.Services
 
                 if (rowScaleValues.Count >= 2)
                 {
+                    // 上下排横向尺度应基本一致；差异过大通常意味着一排发生错配，而不是合理透视。
                     double scaleDifference = Math.Abs(rowScaleValues[0] - rowScaleValues[1]) /
                                              Math.Max(Math.Abs(rowScaleValues[0]), 1e-6);
                     if (scaleDifference > MaximumRowScaleDifference)
@@ -218,6 +231,7 @@ namespace CIS_WebInspector.Services
                     }
                 }
 
+                // H0 方向固定为 CIS→TIFF；Remap 需要的 TIFF→CIS 逆矩阵在此一次求出并随结果持有。
                 Mat transform = ComputeRobustTransform(allCisPoints, allTiffPoints);
                 if (transform == null || transform.Empty() || !IsFiniteTransform(transform))
                 {
@@ -277,6 +291,8 @@ namespace CIS_WebInspector.Services
             out string diagnostic)
         {
             var noControlPoints = new List<AlignmentControlPoint>();
+            // 侧边功能是可选增强项：关闭或质量检查失败时都显式返回 GlobalOnly，
+            // 保证已有上下 Mark 的 H0 路径可继续运行，并通过质量状态/诊断信息暴露降级原因。
             if (!options.EnableSideMarkNonlinearAlignment)
             {
                 diagnostic = "Nonlinear=DisabledByConfig: 侧边 4 mm Mark 功能已关闭，仅使用上下两排 20 mm Mark 计算 H0。";
@@ -335,6 +351,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>验证侧边增强专用参数；失败不否定 H0，只阻止构建非线性网格。</summary>
         private static bool ValidateSideAlignmentInputs(
             CisQrAnchor qrAnchor,
             MarkAlignmentOptions options,
@@ -368,6 +385,10 @@ namespace CIS_WebInspector.Services
             return true;
         }
 
+        /// <summary>
+        /// 在 TIFF 目标空间建立左/中/右三列控制网格，检测左右实点并计算 CIS 源空间残差。
+        /// 中心列和上下边界为虚拟零残差点；任何点数或拓扑质量不合格都返回 false。
+        /// </summary>
         private static bool TryBuildSideGrid(
             Mat cisGray,
             Mat tiffMat,
@@ -378,6 +399,8 @@ namespace CIS_WebInspector.Services
             out string error)
         {
             grid = null;
+            // 三列控制网格：左右列来自实测残差，中心列与上下边界固定为零。
+            // 因此边缘补偿会向中心平滑衰减，且不改写 H0 在中心区域的结果。
             int pairCount = options.SideMarkPairCount;
             int rowCount = pairCount + 2;
             double tiffPxPerMm = options.LayoutDpi / 25.4;
@@ -409,6 +432,8 @@ namespace CIS_WebInspector.Services
                 return false;
             }
 
+            // H0 逆映射提供随 Y 倾斜的列趋势；二维码物理距离只校正底部的水平整体偏移，
+            // 不强迫 CIS 左右 Mark 列竖直，也不强迫同层左右点具有完全相同的 Y。
             double leftBottomAnchorX = qrAnchor.CenterX - options.CisQrToLeftMarkMm * cisPxPerMmX;
             double rightBottomAnchorX = leftBottomAnchorX + options.CisSideMarkSpanMm * cisPxPerMmX;
             Point2d leftBottomCoarse = ApplyHomography(
@@ -430,6 +455,7 @@ namespace CIS_WebInspector.Services
             {
                 for (int column = 0; column < 3; column++)
                 {
+                    // 先为所有网格点建立 H0 粗预测；只有左右内部九层会被实际小圆检测覆盖。
                     var expected = new Point2d(gridX[column], gridY[row]);
                     Point2d coarse = ApplyHomography(inverseGlobalTransform, expected);
                     records[row, column] = new AlignmentControlPoint
@@ -482,6 +508,7 @@ namespace CIS_WebInspector.Services
                     if (!cisDetection.Found &&
                         Math.Abs(homographyPrediction.Y - physicalPrediction.Y) > 1.0)
                     {
+                        // 物理 Y 预测未命中时再尝试 H0 的 Y，兼容二维码尺度估计误差，但不会扩大到全图搜索。
                         SideMarkerDetection fallback = DetectSideMarkerAdaptive(
                             cisGray, homographyPrediction, cisDiameterX, cisDiameterY,
                             cisPxPerMmX, cisPxPerMmY,
@@ -499,6 +526,7 @@ namespace CIS_WebInspector.Services
                     Point2d residual = new Point2d(0, 0);
                     if (valid)
                     {
+                        // 残差定义在 CIS 源空间：实测点 - H0^-1(TIFF 期望点)。
                         residual = new Point2d(
                             cisDetection.Point.X - coarseCis.X,
                             cisDetection.Point.Y - coarseCis.Y);
@@ -533,6 +561,7 @@ namespace CIS_WebInspector.Services
                 }
             }
 
+            // 先把与同列上下趋势明显不一致的误检当作缺点，再统一执行有效点/连续缺失检查。
             int leftOutliers = RemoveResidualOutliers(
                 residuals, 0, leftValid, gridY, cisPxPerMmX, cisPxPerMmY);
             int rightOutliers = RemoveResidualOutliers(
@@ -555,6 +584,7 @@ namespace CIS_WebInspector.Services
                 return false;
             }
 
+            // 仅允许孤立缺点用同列上下残差线性补齐；连续缺失已在上方拒绝整个非线性网格。
             FillMissingResiduals(residuals, 0, leftValid, gridY, records);
             FillMissingResiduals(residuals, 2, rightValid, gridY, records);
             for (int row = 1; row <= pairCount; row++)
@@ -589,6 +619,7 @@ namespace CIS_WebInspector.Services
 
             List<double> leaveOneOutErrors = ComputeLeaveOneOutErrors(
                 residuals, leftValid, rightValid, gridY, cisPxPerMmX, cisPxPerMmY);
+            // 留一指标只写入诊断，不在这里增加新的可调门槛，避免过度复杂化降级条件。
             double leaveOneOutMedian = Median(leaveOneOutErrors);
             double leaveOneOutMaximum = leaveOneOutErrors.Count == 0 ? 0 : leaveOneOutErrors.Max();
 
@@ -616,6 +647,9 @@ namespace CIS_WebInspector.Services
             return true;
         }
 
+        /// <summary>
+        /// 用同列上下邻点插值预测当前残差，以中位数/MAD 剔除孤立异常值；返回被剔除点数。
+        /// </summary>
         private static int RemoveResidualOutliers(
             Point2d[,] residuals,
             int column,
@@ -624,6 +658,7 @@ namespace CIS_WebInspector.Services
             double pixelsPerMmX,
             double pixelsPerMmY)
         {
+            // 留一预测误差使用物理毫米计算，避免 CIS X/Y 像素分辨率不同导致阈值偏向某一方向。
             var errors = new List<Tuple<int, double>>();
             for (int row = 1; row < valid.Length - 1; row++)
             {
@@ -679,6 +714,7 @@ namespace CIS_WebInspector.Services
             return false;
         }
 
+        /// <summary>只对已经通过“无连续缺点”检查的孤立缺层进行同列线性插值。</summary>
         private static void FillMissingResiduals(
             Point2d[,] residuals,
             int column,
@@ -725,6 +761,7 @@ namespace CIS_WebInspector.Services
             return -1;
         }
 
+        /// <summary>逐个隐藏实测内部点，用上下邻点预测并统计毫米误差，避免用建模点自评精度。</summary>
         private static List<double> ComputeLeaveOneOutErrors(
             Point2d[,] residuals,
             bool[] leftValid,
@@ -786,6 +823,7 @@ namespace CIS_WebInspector.Services
                 first.Y + (second.Y - first.Y) * t);
         }
 
+        /// <summary>验证残差网格映射后仍保持左右/上下顺序，且每个网格单元无翻折和突变。</summary>
         private static bool ValidateControlGridTopology(
             Mat inverseTransform,
             double[] gridX,
@@ -793,6 +831,8 @@ namespace CIS_WebInspector.Services
             Point2d[,] residuals,
             out string error)
         {
+            // 把网格逆映射到 CIS 后检查点序、单元有向面积和相邻尺度变化，
+            // 防止错误 Mark 生成局部翻折或突变，即使单点残差看起来并不大。
             int rows = gridY.Length;
             int columns = gridX.Length;
             var source = new Point2d[rows, columns];
@@ -926,6 +966,7 @@ namespace CIS_WebInspector.Services
                    !double.IsNaN(point.Y) && !double.IsInfinity(point.Y);
         }
 
+        /// <summary>校验全局对准所需图像、二维码锚点和物理参数，并检查锚点确实位于当前拼接段。</summary>
         private static bool ValidateInputs(
             Mat cisMat,
             Mat tiffMat,
@@ -1015,6 +1056,7 @@ namespace CIS_WebInspector.Services
             return true;
         }
 
+        /// <summary>返回独立灰度 Mat；即使输入已是单通道也复制，调用方始终拥有返回值。</summary>
         private static Mat ConvertToGray(Mat source)
         {
             var gray = new Mat();
@@ -1032,6 +1074,7 @@ namespace CIS_WebInspector.Services
             return gray;
         }
 
+        /// <summary>先在物理预测的小条带检测 TIFF 大圆，点数不足时才扩大条带，减少干扰轮廓。</summary>
         private static RowDetectionResult DetectTiffAdaptive(
             Mat image,
             MarkerRegionSpec region,
@@ -1068,6 +1111,7 @@ namespace CIS_WebInspector.Services
             return result;
         }
 
+        /// <summary>在 CIS 预测条带执行多阈值大圆检测，并在必要时使用扩展窗口重试。</summary>
         private static RowDetectionResult DetectCisAdaptive(
             Mat imageGray,
             MarkerRegionSpec region,
@@ -1113,6 +1157,7 @@ namespace CIS_WebInspector.Services
             return result;
         }
 
+        /// <summary>检测单个 4 mm 侧边 Mark；仅首次 ROI 失败时扩大窗口，不进行全图搜索。</summary>
         private static SideMarkerDetection DetectSideMarkerAdaptive(
             Mat image,
             Point2d expectedCenter,
@@ -1157,6 +1202,7 @@ namespace CIS_WebInspector.Services
             return result;
         }
 
+        /// <summary>按 X/Y 独立像素比例把圆直径和毫米余量换算为侧边小 ROI，并裁剪到图像边界。</summary>
         private static Rect BuildPointSearchRect(
             Size imageSize,
             Point2d center,
@@ -1177,6 +1223,9 @@ namespace CIS_WebInspector.Services
             return new Rect(x0, y0, x1 - x0, y1 - y0);
         }
 
+        /// <summary>
+        /// 对 ROI 做局部对比度增强，并同时尝试明/暗两种极性；候选综合位置、面积、尺寸和圆度评分。
+        /// </summary>
         private static MarkerPoint DetectBestSideMarker(
             Mat image,
             Rect searchRect,
@@ -1197,6 +1246,7 @@ namespace CIS_WebInspector.Services
                 Cv2.GaussianBlur(enhanced, blurred, new Size(3, 3), 0);
 
                 MarkerPoint best = null;
+                // TIFF 与 CIS 的前景极性可能不同，双极性检测可避免把材料亮暗约定写死。
                 for (int polarity = 0; polarity < 2; polarity++)
                 {
                     ThresholdTypes thresholdType = ThresholdTypes.Otsu |
@@ -1249,6 +1299,7 @@ namespace CIS_WebInspector.Services
                         double sizeError =
                             Math.Abs(bounds.Width / Math.Max(expectedDiameterX, 1e-6) - 1.0) +
                             Math.Abs(bounds.Height / Math.Max(expectedDiameterY, 1e-6) - 1.0);
+                        // 位置偏差权重最高：局部 ROI 中宁可拒绝形状相似的邻近结构，也不跨层串点。
                         double score =
                             4.0 * Math.Sqrt(normalizedX * normalizedX + normalizedY * normalizedY) +
                             1.5 * areaError + sizeError + (1.0 - circularity);
@@ -1271,6 +1322,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>为上下大圆构造全宽横向条带；纵向高度由物理直径和搜索余量决定。</summary>
         private static Rect BuildSearchRect(
             Size imageSize,
             double centerY,
@@ -1296,6 +1348,7 @@ namespace CIS_WebInspector.Services
             return new Rect(0, y0, imageSize.Width, y1 - y0);
         }
 
+        /// <summary>以“像素颜色到白色的距离”分割 TIFF 彩色排版 Mark，再筛选圆形轮廓。</summary>
         private static List<MarkerPoint> DetectTiff(
             Mat strip,
             int yOffset,
@@ -1339,6 +1392,7 @@ namespace CIS_WebInspector.Services
                 using (var distU8 = new Mat())
                 using (var binary = new Mat())
                 {
+                    // 透明背景合成白底后，使用三通道到纯白的欧氏距离比单通道阈值更适合彩色 Mark。
                     bgr.ConvertTo(stripFloat, MatType.CV_32FC3);
                     Mat[] channels = Cv2.Split(stripFloat);
                     try
@@ -1378,6 +1432,9 @@ namespace CIS_WebInspector.Services
             return ClusterY(markers, Math.Max(3.0, expectedDiameterPixels * 0.5), expectedCenterY);
         }
 
+        /// <summary>
+        /// 对 CIS 条带扫描一组灰度阈值，选择有效圆数量最多且 Y 最接近预测排的结果，并返回所用阈值。
+        /// </summary>
         private static Tuple<List<MarkerPoint>, int> DetectJpg(
             Mat stripGray,
             int yOffset,
@@ -1399,6 +1456,7 @@ namespace CIS_WebInspector.Services
                 int bestThreshold = 120;
                 int[] thresholds = { 20, 30, 40, 50, 60, 70, 80, 100, 120, 140, 160, 180 };
 
+                // 反光和曝光会改变前景灰度，固定阈值不稳定；有限阈值表保持成本可控且结果可诊断。
                 foreach (int threshold in thresholds)
                 {
                     using (var binary = new Mat())
@@ -1442,6 +1500,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>按面积占比、圆度、直径和可选参考面积把轮廓转换为 Mark 圆心。</summary>
         private static void AddValidMarkers(
             Point[][] contours,
             List<MarkerPoint> output,
@@ -1493,6 +1552,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>把同一条带内的候选按 Y 聚类，选择最接近物理预测且点数充足的一排。</summary>
         private static List<MarkerPoint> ClusterY(
             List<MarkerPoint> markers,
             double tolerance,
@@ -1526,6 +1586,9 @@ namespace CIS_WebInspector.Services
             return best.OrderBy(p => p.X).ToList();
         }
 
+        /// <summary>
+        /// 对上下大圆按归一化 X 顺序一一配对；两侧候选数不一致时，每个候选最多使用一次。
+        /// </summary>
         private static Tuple<List<MarkerPoint>, List<MarkerPoint>> MatchRows(
             List<MarkerPoint> tiffPoints,
             List<MarkerPoint> cisPoints)
@@ -1598,6 +1661,7 @@ namespace CIS_WebInspector.Services
             return bestIndex;
         }
 
+        /// <summary>用一排最左/最右匹配点估计横向尺度，供上下排一致性门控使用。</summary>
         private static double EstimateHorizontalScale(
             List<MarkerPoint> tiffPoints,
             List<MarkerPoint> cisPoints)
@@ -1613,6 +1677,8 @@ namespace CIS_WebInspector.Services
         private static Mat ComputeRobustTransform(List<Point2f> cisPoints, List<Point2f> tiffPoints)
         {
             Mat transform = null;
+            // 点数充足时使用 RANSAC Homography；数据不足或求解失败时退到更受约束的仿射模型，
+            // 并提升成 3×3 形式，使后续 Warp/Remap 使用统一接口。
             if (cisPoints.Count >= 6)
             {
                 using (InputArray src = InputArray.Create(cisPoints))
@@ -1688,6 +1754,10 @@ namespace CIS_WebInspector.Services
             return $"({point.X:F1},{point.Y:F1})";
         }
 
+        /// <summary>
+        /// 把 CIS 变换到 TIFF 目标尺寸。GlobalOnly 走 WarpPerspective；非线性模式按条带生成逆映射并 Remap。
+        /// 返回新 Mat，所有权交给调用方。
+        /// </summary>
         public static Mat WarpToTiffSpace(Mat cisMat, AlignmentResult alignment, Size tiffSize)
         {
             if (cisMat == null || cisMat.Empty())
@@ -1698,6 +1768,7 @@ namespace CIS_WebInspector.Services
             if (!alignment.IsNonlinear || alignment.GridX == null ||
                 alignment.GridY == null || alignment.ResidualGrid == null)
             {
+                // 关闭侧边功能或网格降级时，完整复用传统 H0 + WarpPerspective 路径。
                 var globalWarped = new Mat();
                 Stopwatch warpWatch = Stopwatch.StartNew();
                 Cv2.WarpPerspective(
@@ -1711,6 +1782,8 @@ namespace CIS_WebInspector.Services
                 return globalWarped;
             }
 
+            // 非线性路径使用目标驱动的逆映射：每个 TIFF 像素先经 H0^-1 找到 CIS，
+            // 再叠加双线性插值残差，最终仅由 Remap 采样一次，避免二次 Warp 模糊。
             var warped = new Mat(tiffSize, cisMat.Type(), Scalar.All(0));
             int stripeRows = Math.Max(1, alignment.StripeRows);
             var leftWeights = new float[tiffSize.Width];
@@ -1719,6 +1792,7 @@ namespace CIS_WebInspector.Services
             double mapMilliseconds = 0;
             double remapMilliseconds = 0;
 
+            // mapX/mapY 只覆盖一个条带并循环复用，避免为超大 TIFF 常驻两张全幅 float 映射。
             using (var mapX = new Mat())
             using (var mapY = new Mat())
             using (var remappedStripe = new Mat())
@@ -1767,6 +1841,8 @@ namespace CIS_WebInspector.Services
             float[] leftWeights,
             float[] rightWeights)
         {
+            // 左残差从左边缘线性衰减到中心 0，右残差从中心 0 线性增长到右边缘；
+            // 纸张标记范围之外保持最近侧的残差，纵向网格之外则由 FillRemapStripe 仅使用 H0。
             double leftX = gridX[0];
             double centerX = gridX[1];
             double rightX = gridX[2];
@@ -1805,6 +1881,7 @@ namespace CIS_WebInspector.Services
             float[] leftWeights,
             float[] rightWeights)
         {
+            // 逆矩阵元素在循环外读取，行内直接写 float 指针；各 Parallel.For 行互不重叠。
             double h00 = inverseTransform.At<double>(0, 0);
             double h01 = inverseTransform.At<double>(0, 1);
             double h02 = inverseTransform.At<double>(0, 2);
@@ -1849,6 +1926,7 @@ namespace CIS_WebInspector.Services
             });
         }
 
+        /// <summary>定位目标 Y 所在的相邻网格层并返回 0..1 插值系数；网格外返回 false。</summary>
         private static bool TryGetGridInterval(
             double[] gridY,
             double targetY,

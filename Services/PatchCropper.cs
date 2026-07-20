@@ -1,13 +1,23 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
 namespace CIS_WebInspector.Services
 {
+    /// <summary>
+    /// 把排版日志中的毫米坐标映射为 TIFF 目标空间 ROI，并行执行零件级检测。
+    /// 裁切 Mat 均为父图的零拷贝视图，必须在父图释放前完成使用；本类同时负责批次诊断图和性能基线输出。
+    /// </summary>
     public class PatchCropper
     {
+        private static readonly object PerformanceFileSync = new object();
+
         /// <summary>
         /// 根据排版坐标，从对齐后的 CIS 图、TIFF 图和 Alpha 掩膜上裁切零件小图，
         /// 同时执行缺陷检测并返回结果列表。
@@ -24,14 +34,16 @@ namespace CIS_WebInspector.Services
         /// <returns>每个零件的缺陷检测结果列表</returns>
         public static (List<PatchDefectResult> Results, string GlobalImagePath, byte[] GlobalImageBytes) CropAndSave(Mat cisWarped, Mat tiffMat, Mat alphaMask,
             List<PartLocation> parts, string outputDir, double scale, double originXmm, double originYmm,
-            int cisBaseThresh, AppConfig config)
+            int cisBaseThresh, AppConfig config, Action<string> performanceLog = null)
         {
 
+            // 每个检测批次使用独立时间目录，避免覆盖上一批零件图和性能基线。
             if (!Directory.Exists(outputDir))
             {
                 Directory.CreateDirectory(outputDir);
             }
 
+            // origin 表示排版坐标系原点在 TIFF 图像中的毫米偏移；scale 为 TIFF px/mm。
             int originX = (int)(originXmm * scale);
             int originY = (int)(originYmm * scale);
 
@@ -40,7 +52,8 @@ namespace CIS_WebInspector.Services
 
             int count = 0;
 
-            // 翻转逻辑：readlog.cpp 中 flip(BW_org, BW_org, 0);
+            // 排版日志沿用 readlog.cpp 的纵向坐标约定；与其 flip(..., 0) 保持一致后，
+            // 同一组 ROI 才能同时落在 TIFF、Alpha 和已对准 CIS 的对应零件上。
             Mat flippedCis = new Mat();
             Mat flippedTiff = new Mat();
             Cv2.Flip(cisWarped, flippedCis, FlipMode.X);
@@ -55,8 +68,14 @@ namespace CIS_WebInspector.Services
 
             try
             {
-            var resultsBag = new System.Collections.Concurrent.ConcurrentBag<PatchDefectResult>();
-            int maxParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount));
+            // ConcurrentBag 只用于线程安全汇总，结果顺序不参与判定；显示时依赖 PartId/GlobalRoi。
+            var resultsBag = new ConcurrentBag<PatchDefectResult>();
+            var partElapsedMilliseconds = new ConcurrentBag<long>();
+            // 自动模式最多使用 4 个 worker，显式配置仍受 CPU 数和安全上限 16 约束。
+            int automaticParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount));
+            int maxParallelism = config.DefectMaxParallelism <= 0
+                ? automaticParallelism
+                : Math.Max(1, Math.Min(Math.Min(16, Environment.ProcessorCount), config.DefectMaxParallelism));
             var parallelOptions = new System.Threading.Tasks.ParallelOptions
             {
                 MaxDegreeOfParallelism = maxParallelism
@@ -64,17 +83,21 @@ namespace CIS_WebInspector.Services
             PatchSiftTemplateCache templateCache = config.EnableSiftLocalAlign
                 ? new PatchSiftTemplateCache()
                 : null;
-            var patchStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            long managedBytesBefore = GC.GetTotalMemory(false);
+            long privateBytesBefore = GetPrivateBytes();
+            var patchStopwatch = Stopwatch.StartNew();
 
             try
             {
                 System.Threading.Tasks.Parallel.ForEach<PartLocation, PatchSiftWorker>(
                     parts,
                     parallelOptions,
+                    // SIFT/Matcher 不是跨线程共享对象；每个并行 worker 独占一组，只共享只读模板特征缓存。
                     () => templateCache != null ? new PatchSiftWorker(templateCache) : null,
                     (part, _, worker) =>
                     {
                         if (part.HotInkTaskID != null && part.HotInkTaskID.Contains("QRCode"))
+                            // 排版日志中的二维码区域是定位基准，不属于需要判定的产品零件。
                             return worker;
 
                         int x = (int)(originX + part.RelativeTopLeftX * scale);
@@ -82,6 +105,7 @@ namespace CIS_WebInspector.Services
                         int w = (int)((part.RelativeBottomRightX - part.RelativeTopLeftX) * scale);
                         int h = (int)((part.RelativeBottomRightY - part.RelativeTopLeftY) * scale);
 
+                        // 边界零件允许 ROI 被图像边界裁剪；裁剪后为空则跳过，防止 OpenCV Rect 异常。
                         x = Math.Max(0, x);
                         y = Math.Max(0, y);
                         w = Math.Min(w, imgWidth - x);
@@ -91,8 +115,10 @@ namespace CIS_WebInspector.Services
                             return worker;
 
                         Rect roi = new Rect(x, y, w, h);
+                        var partStopwatch = Stopwatch.StartNew();
                         try
                         {
+                            // 子 Mat 仅引用翻转后大图的 ROI，不复制像素；using 限定其生命周期，避免悬空引用。
                             using (Mat cisPatch = new Mat(flippedCis, roi))
                             using (Mat tiffPatch = new Mat(flippedTiff, roi))
                             {
@@ -105,6 +131,7 @@ namespace CIS_WebInspector.Services
                                     Cv2.ImWrite(tiffName, tiffPatch, prms);
                                 }
 
+                                // 缺陷模板以 TIFF Alpha 为准；没有 Alpha 时仅能保存裁图，不能产生可靠差分结果。
                                 if (flippedAlpha != null)
                                 {
                                     using (Mat alphaPatch = new Mat(flippedAlpha, roi))
@@ -141,28 +168,63 @@ namespace CIS_WebInspector.Services
                         {
                             Console.WriteLine($"裁切/检测 {part.HotInkTaskID} 异常: {ex.Message}");
                         }
+                        finally
+                        {
+                            partStopwatch.Stop();
+                            partElapsedMilliseconds.Add(partStopwatch.ElapsedMilliseconds);
+                        }
 
                         return worker;
                     },
                     worker => worker?.Dispose());
 
-                if (templateCache != null)
+                patchStopwatch.Stop();
+                long[] durations = partElapsedMilliseconds.OrderBy(value => value).ToArray();
+                long managedBytesAfter = GC.GetTotalMemory(false);
+                long privateBytesAfter = GetPrivateBytes();
+                long cacheHits = templateCache?.HitCount ?? 0;
+                long cacheMisses = templateCache?.MissCount ?? 0;
+                long cacheRequests = cacheHits + cacheMisses;
+                double cacheHitRate = cacheRequests == 0 ? 0.0 : (double)cacheHits / cacheRequests;
+                string summary =
+                    $"[性能基线] 零件 {durations.Length}，总耗时 {patchStopwatch.ElapsedMilliseconds}ms，" +
+                    $"并行度 {maxParallelism}，P50/P95/最大 {Percentile(durations, 0.50)}/" +
+                    $"{Percentile(durations, 0.95)}/{Percentile(durations, 1.00)}ms，" +
+                    $"模板 {templateCache?.Count ?? 0}，缓存命中 {cacheHits}/{cacheRequests} ({cacheHitRate:P0})。";
+
+                Console.WriteLine(summary);
+                try
                 {
-                    patchStopwatch.Stop();
-                    Console.WriteLine(
-                        $"[PatchCropper] 局部配准/缺陷检测耗时 {patchStopwatch.ElapsedMilliseconds}ms，" +
-                        $"SIFT 模板缓存 {templateCache.Count} 个，并行度 {maxParallelism}。");
+                    performanceLog?.Invoke(summary);
                 }
+                catch
+                {
+                    // 性能日志不能影响检测主流程。
+                }
+
+                // 性能 CSV 用于比较同一设备/数据集上的趋势，不参与 Pass/Fail，也不是验收阈值。
+                TryAppendPerformanceBaseline(
+                    outputDir,
+                    durations.Length,
+                    resultsBag.Count,
+                    patchStopwatch.ElapsedMilliseconds,
+                    maxParallelism,
+                    durations,
+                    templateCache,
+                    managedBytesAfter - managedBytesBefore,
+                    privateBytesAfter - privateBytesBefore);
             }
             finally
             {
                 templateCache?.Dispose();
             }
 
+            // 并行汇总顺序不稳定，但每个结果都带 PartId 和 GlobalRoi，不依赖列表下标关联零件。
             var results = new List<PatchDefectResult>(resultsBag);
             Console.WriteLine($"[PatchCropper] 共成功处理 {count} 个零件，检测完成 {results.Count} 个。");
 
             // --- 全局缺陷可视化保存与显示 ---
+            // 下列缩放和绘框仅服务于 UI/报告，不回流到检测算法，避免预览分辨率影响判定。
             byte[] globalImageBytes = null;
             string combinedPath = null;
             try
@@ -265,6 +327,99 @@ namespace CIS_WebInspector.Services
                 flippedTiff.Dispose();
                 flippedCis.Dispose();
             }
+        }
+
+        /// <summary>从已排序耗时数组读取 nearest-rank 分位数；空数组返回 0。</summary>
+        private static long Percentile(long[] sortedValues, double percentile)
+        {
+            if (sortedValues == null || sortedValues.Length == 0)
+                return 0;
+
+            int index = (int)Math.Ceiling(percentile * sortedValues.Length) - 1;
+            index = Math.Max(0, Math.Min(sortedValues.Length - 1, index));
+            return sortedValues[index];
+        }
+
+        /// <summary>读取进程 Private Bytes，失败时返回 0；该数据只用于趋势诊断。</summary>
+        private static long GetPrivateBytes()
+        {
+            try
+            {
+                using (Process process = Process.GetCurrentProcess())
+                    return process.PrivateMemorySize64;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// 追加本批次和跨批次性能 CSV。任何文件错误都只记录日志，不影响已经完成的缺陷结果。
+        /// </summary>
+        private static void TryAppendPerformanceBaseline(
+            string outputDir,
+            int partCount,
+            int resultCount,
+            long totalElapsedMilliseconds,
+            int maxParallelism,
+            long[] sortedDurations,
+            PatchSiftTemplateCache templateCache,
+            long managedBytesDelta,
+            long privateBytesDelta)
+        {
+            try
+            {
+                string batchPath = Path.Combine(outputDir, "PerformanceBaseline.csv");
+                string parentDirectory = Directory.GetParent(outputDir)?.FullName;
+                string aggregatePath = string.IsNullOrWhiteSpace(parentDirectory)
+                    ? null
+                    : Path.Combine(parentDirectory, "PerformanceBaselines.csv");
+                string header =
+                    "Timestamp,Parts,Results,ElapsedMs,Parallelism,P50Ms,P95Ms,MaxMs," +
+                    "CacheUnique,CacheHits,CacheMisses,CacheExactComparisons,CacheKeyMs,CacheCompareMs," +
+                    "ManagedDeltaMB,PrivateDeltaMB" + Environment.NewLine;
+                string row = string.Join(",", new[]
+                {
+                    DateTime.Now.ToString("O", CultureInfo.InvariantCulture),
+                    partCount.ToString(CultureInfo.InvariantCulture),
+                    resultCount.ToString(CultureInfo.InvariantCulture),
+                    totalElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
+                    maxParallelism.ToString(CultureInfo.InvariantCulture),
+                    Percentile(sortedDurations, 0.50).ToString(CultureInfo.InvariantCulture),
+                    Percentile(sortedDurations, 0.95).ToString(CultureInfo.InvariantCulture),
+                    Percentile(sortedDurations, 1.00).ToString(CultureInfo.InvariantCulture),
+                    (templateCache?.Count ?? 0).ToString(CultureInfo.InvariantCulture),
+                    (templateCache?.HitCount ?? 0).ToString(CultureInfo.InvariantCulture),
+                    (templateCache?.MissCount ?? 0).ToString(CultureInfo.InvariantCulture),
+                    (templateCache?.ExactComparisonCount ?? 0).ToString(CultureInfo.InvariantCulture),
+                    (templateCache?.QuickKeyElapsedMilliseconds ?? 0.0).ToString("F3", CultureInfo.InvariantCulture),
+                    (templateCache?.ExactComparisonElapsedMilliseconds ?? 0.0).ToString("F3", CultureInfo.InvariantCulture),
+                    (managedBytesDelta / 1048576.0).ToString("F3", CultureInfo.InvariantCulture),
+                    (privateBytesDelta / 1048576.0).ToString("F3", CultureInfo.InvariantCulture)
+                }) + Environment.NewLine;
+
+                lock (PerformanceFileSync)
+                {
+                    AppendPerformanceRow(batchPath, header, row);
+                    if (!string.IsNullOrWhiteSpace(aggregatePath) &&
+                        !string.Equals(batchPath, aggregatePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AppendPerformanceRow(aggregatePath, header, row);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PatchCropper] 写入性能基线失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>首次创建时写表头，后续只追加一行；外层锁负责同进程并发写入互斥。</summary>
+        private static void AppendPerformanceRow(string path, string header, string row)
+        {
+            bool writeHeader = !File.Exists(path);
+            File.AppendAllText(path, (writeHeader ? header : string.Empty) + row);
         }
     }
 }

@@ -46,6 +46,9 @@ namespace CIS_WebInspector.Services
         public ulong FrameCount { get; private set; }
         public ulong BrokenCount { get; private set; }
 
+        /// <summary>
+        /// 打开首个 Volans 设备、加载 .arcf、读取图像几何并注册帧回调；失败通过 ErrorOccurred 返回原因。
+        /// </summary>
         public bool Initialize(string configPath)
         {
             try
@@ -107,14 +110,14 @@ namespace CIS_WebInspector.Services
                 LineStride = (_lineBytes + 3) / 4 * 4;
                 _bufferSize = LineStride * (int)height;
 
-                // 非阻塞采集模式
+                // 非阻塞采集让 SDK 通过回调交付帧，应用侧不能在回调外继续引用 SDK 缓冲区。
                 b = b && _device.setProperty((uint)AriPropertyType.AriProp_GrabBlockMode,
                     (uint)AriDef_GrabBlockMode.ARI_GRAB_NON_BLOCK);
 
                 // 接收残余帧（线阵相机）
                 b = b && _device.setProperty((uint)AriPropertyType.AriProp_EnableRemainingFrames, 1);
 
-                // 分配非托管内存池
+                // 用户缓冲模式下由本类分配并最终释放；内部缓冲模式仍通过 SDK 拷贝到该池后统一处理。
                 for (int i = 0; i < BufferCount; ++i)
                 {
                     IntPtr ptr = Marshal.AllocHGlobal(_bufferSize);
@@ -160,6 +163,8 @@ namespace CIS_WebInspector.Services
 
         private void RegisterCallback()
         {
+            // SDK 回调中的设备缓冲区会被采集卡循环复用。回调内完成缩小并复制到独立 byte[]，
+            // FrameReady 订阅者才能把帧放入异步队列而不读取到下一帧覆盖后的内容。
             _callbackImageReady = new VolansEventHandler(
                 delegate (uint arg0, uint arg1)
                 {
@@ -190,6 +195,7 @@ namespace CIS_WebInspector.Services
                     IntPtr originalData = _imgBuffers[(int)arg0];
                     var matType = BitsPerPixel == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
                     
+                    // originalMat 是 SDK 非托管缓冲区的非拥有视图；不得从此作用域返回或异步保存该 Mat。
                     using (var originalMat = OpenCvSharp.Mat.FromPixelData((int)ImageHeight, (int)ImageWidth, matType, originalData, (int)LineStride))
                     using (var resizedMat = new OpenCvSharp.Mat())
                     {
@@ -216,7 +222,7 @@ namespace CIS_WebInspector.Services
                             }
                         }
 
-                        // 触发帧就绪事件
+                        // data 已经是独立托管副本，事件回调返回后仍可由有界帧队列安全持有。
                         FrameCount++;
                         bool isBroken = arg1 != 0;
                         if (isBroken) BrokenCount++;
@@ -239,6 +245,7 @@ namespace CIS_WebInspector.Services
                 _callbackImageReady);
         }
 
+        /// <summary>清零统计并启动 SDK 非阻塞采集；重复启动直接忽略。</summary>
         public void StartGrab()
         {
             if (_device == null || IsRunning) return;
@@ -249,6 +256,7 @@ namespace CIS_WebInspector.Services
             _device.startGrab(0);
         }
 
+        /// <summary>停止 SDK 继续产生回调；已进入回调的处理仍会自然返回。</summary>
         public void StopGrab()
         {
             if (_device == null || !IsRunning) return;
@@ -299,6 +307,7 @@ namespace CIS_WebInspector.Services
             return _device.saveConfigurationFile(configPath);
         }
 
+        /// <summary>按“停采 → 关闭设备 → 释放用户缓冲池”的顺序清理所有原生资源。</summary>
         public void Dispose()
         {
             if (_disposed) return;
