@@ -5,6 +5,10 @@ using CIS_WebInspector.Services;
 
 namespace CIS_WebInspector.ViewModels
 {
+    /// <summary>
+    /// 全局参数设置页。界面绑定配置副本，保存时才一次性覆盖进程配置并落盘，
+    /// 因此取消窗口不会把尚未确认的参数带入正在运行的主流程。
+    /// </summary>
     public class AppSettingsViewModel : ViewModelBase
     {
         public AppConfig Config { get; set; }
@@ -24,7 +28,8 @@ namespace CIS_WebInspector.ViewModels
                     double ratio = (double)oldFactor / value;
                     Config.DownscaleFactor = value;
 
-                    // 自动按比例调整参数
+                    // Base* 参数保存原始采集尺度值。改变缩小倍数时同步调整，
+                    // 使除以 DownscaleFactor 后的实际处理 ROI/偏移尽量保持不变。
                     Config.BaseQrOffsetRows = (int)Math.Round(Config.BaseQrOffsetRows / ratio);
                     Config.BaseOverlapRows = (int)Math.Round(Config.BaseOverlapRows / ratio);
                     Config.BaseRoiX = (int)Math.Round(Config.BaseRoiX / ratio);
@@ -64,12 +69,7 @@ namespace CIS_WebInspector.ViewModels
             _window = window;
             MainVm = mainVm;
 
-            // 为了防止取消修改时影响全局配置，我们创建一个副本用于绑定
-            // 但是为了简单起见，且由于多数应用场景可以接受直接修改单例，
-            // 这里直接引用。如果希望取消能回滚，可以做深度拷贝。
-            // 这里我们采用直接引用的方式，因为保存时直接序列化。
-            // 提示：由于用户希望修改后能保存或取消，如果直接绑定会立即生效。
-            // 为了实现真正的“取消”，我们可以利用 JSON 序列化做一个深拷贝。
+            // JSON 深拷贝把编辑会话与全局单例隔离；这是“取消不生效”的关键边界。
             var json = System.Text.Json.JsonSerializer.Serialize(ConfigManager.Config);
             Config = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
 
@@ -132,11 +132,11 @@ namespace CIS_WebInspector.ViewModels
         {
             try
             {
-                // 将修改后的副本覆盖到全局实例
+                // 保持 ConfigManager.Config 对象引用不变，逐属性复制，避免已持有该引用的界面失效。
                 var json = System.Text.Json.JsonSerializer.Serialize(Config);
                 var globalConfig = ConfigManager.Config;
 
-                // 将所有属性通过反射或再序列化赋值回去
+                // 先反序列化得到类型完整的快照，再复制所有可写配置项。
                 var updatedConfig = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
 
                 foreach (var prop in typeof(AppConfig).GetProperties())

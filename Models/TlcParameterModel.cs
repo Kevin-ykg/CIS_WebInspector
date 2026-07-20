@@ -4,12 +4,16 @@ using System.Runtime.CompilerServices;
 
 namespace CIS_WebInspector.Models
 {
+    /// <summary>下拉型 TLC 参数的显示文本与原生接口实际取值。</summary>
     public class TlcParameterOption
     {
         public string DisplayText { get; set; }
         public string Value { get; set; }
     }
 
+    /// <summary>
+    /// TLC 设置页的一项参数元数据；MatchKeys 对应 SDK 回读文本，ApplyAction 封装具体下发命令。
+    /// </summary>
     public class TlcParameterModel : INotifyPropertyChanged
     {
         private string _value;

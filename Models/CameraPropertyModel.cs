@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace CIS_WebInspector.Models
 {
+    /// <summary>采集卡枚举属性的可绑定模型；Value 变化由 ViewModel 转发到底层设备。</summary>
     public class CameraPropertyModel : INotifyPropertyChanged
     {
         private uint _value;

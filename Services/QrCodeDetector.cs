@@ -72,6 +72,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>从托管像素缓冲区同步检测；方法返回前不会保留 data 的指针或 Mat 视图。</summary>
         public QrDetectionResult Detect(byte[] data, int width, int height, int stride, int bitsPerPixel)
         {
             ResetDiagnostics();
@@ -94,6 +95,7 @@ namespace CIS_WebInspector.Services
             GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
             try
             {
+                // Mat 只借用固定后的数组内存，不拥有像素；DetectCore 必须在 handle.Free 前同步完成。
                 using (var mat = Mat.FromPixelData(height, width, matType, handle.AddrOfPinnedObject(), stride))
                     return DetectCore(mat);
             }
@@ -108,6 +110,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>兼容原生缓冲区入口；调用方必须保证指针在整个同步检测期间有效。</summary>
         public QrDetectionResult Detect(IntPtr dataPtr, int width, int height, int stride, int bitsPerPixel)
         {
             ResetDiagnostics();
@@ -138,12 +141,14 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>每次公开调用前清空上次诊断，区分“本次未命中”与历史异常。</summary>
         private void ResetDiagnostics()
         {
             LastError = null;
             LastDecodeStrategy = null;
         }
 
+        /// <summary>校验尺寸、位深和 stride，并映射到 OpenCV MatType。</summary>
         private bool TryGetMatType(int width, int height, int stride, int bitsPerPixel, out MatType matType)
         {
             matType = default;
@@ -182,6 +187,9 @@ namespace CIS_WebInspector.Services
             return true;
         }
 
+        /// <summary>
+        /// 统一检测主路径：转灰度 → 截取横向 ROI → 极性归一化 → 逐个纵向尺度候选调用 WeChatQRCode。
+        /// </summary>
         private QrDetectionResult DetectCore(Mat source)
         {
             Mat gray = null;
@@ -215,7 +223,9 @@ namespace CIS_WebInspector.Services
                     safeWidth = gray.Width;
                 }
 
+                // CIS 上二维码只限制横向安装区域，纵向保留全帧，以覆盖二维码跨帧拼接后的任意 Y。
                 using (var roi = new Mat(gray, new Rect(safeX, 0, safeWidth, gray.Height)))
+
                 using (var normalizedPolarity = new Mat())
                 {
                     bool inverted = ConfigManager.Config.QrInvertPolarity;
@@ -224,6 +234,7 @@ namespace CIS_WebInspector.Services
                     else
                         roi.CopyTo(normalizedPolarity);
 
+                    // 线扫速度变化主要表现为纵向压缩/拉伸，因此只枚举 scaleY；命中后再把 Y/高度还原。
                     double[] scaleCandidates = BuildScaleYCandidates();
                     for (int i = 0; i < scaleCandidates.Length; i++)
                     {
@@ -257,6 +268,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>以指定 Y 缩放补偿执行一次检测，并从首个有效解码框提取中心和像素尺寸。</summary>
         private bool TryDecode(Mat source, double scaleY, out DecodeHit hit)
         {
             Mat scaled = null;
@@ -276,6 +288,7 @@ namespace CIS_WebInspector.Services
                 }
 
                 string[] decodedTexts;
+                // OpenCV DNN/超分辨率检测器实例不按线程安全使用，所有调用与释放共用同一把锁。
                 lock (_decodeLock)
                     _detector.DetectAndDecode(scaled, out boxes, out decodedTexts);
 
@@ -373,6 +386,7 @@ namespace CIS_WebInspector.Services
             return true;
         }
 
+        /// <summary>过滤无效或重复的纵向缩放配置；配置为空时至少保留原尺度 1.0。</summary>
         private double[] BuildScaleYCandidates()
         {
             var candidates = new List<double>();
@@ -405,6 +419,7 @@ namespace CIS_WebInspector.Services
             return candidates.ToArray();
         }
 
+        /// <summary>检查四个模型文件并延迟创建唯一检测器实例；创建和并发解码共用同一锁。</summary>
         private bool EnsureDetector()
         {
             lock (_decodeLock)
@@ -435,6 +450,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>用小型空图预热 DNN，仅为消除首帧初始化抖动，预热结果不参与业务判断。</summary>
         private void WarmUpDetector()
         {
             lock (_decodeLock)
@@ -483,6 +499,7 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>在无并发解码时释放 WeChatQRCode 原生资源；可重复调用。</summary>
         public void Dispose()
         {
             lock (_decodeLock)

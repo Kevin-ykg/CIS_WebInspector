@@ -31,6 +31,23 @@ namespace CIS_WebInspector.Models
         /// </summary>
         public int MaxFramesWithoutQr { get; set; } = 10;
 
+        /// <summary>
+        /// 二维码检测与拼接的有界帧队列容量。队列只允许一个消费者，确保帧顺序稳定。
+        /// 建议保持较小，避免大尺寸帧在内存中堆积。
+        /// </summary>
+        public int FrameProcessingQueueCapacity { get; set; } = 3;
+
+        /// <summary>
+        /// 在线采集向处理队列提交一帧时允许等待的最长时间（ms）。
+        /// 超时将明确告警并安全停采，不会静默丢帧。
+        /// </summary>
+        public int FrameProcessingEnqueueTimeoutMs { get; set; } = 50;
+
+        /// <summary>
+        /// 自动保存后台队列容量。队列满时仅跳过诊断性质的单帧保存，不影响检测与拼接。
+        /// </summary>
+        public int ImageSaveQueueCapacity { get; set; } = 4;
+
         // ==========================================
         // 2. 图像拼接核心参数 (相对于原图坐标)
         // ==========================================
@@ -176,6 +193,12 @@ namespace CIS_WebInspector.Models
         /// <summary>是否启用零件级 SIFT 二次局部对齐（全局已对齐时可关闭以大幅提速）</summary>
         public bool EnableSiftLocalAlign { get; set; } = true;
 
+        /// <summary>
+        /// 零件裁切、局部配准和缺陷检测的最大并行度。
+        /// 0 表示自动（最多 4 个且不超过逻辑处理器数）；正数表示显式上限。
+        /// </summary>
+        public int DefectMaxParallelism { get; set; } = 8;
+
         /// <summary>缺陷检测时小图缩放比例，影响SIFT 二次局部对齐，以及缺陷检测的时间和图像大小</summary>
         public double DefectDetectScale { get; set; } = 0.3;
 
@@ -205,6 +228,23 @@ namespace CIS_WebInspector.Models
 
         /// <summary>边缘屏蔽轮廓厚度-内包围，与缩放比例相关（align_diff.py L591）</summary>
         public int DefectEdgeExclusionSmall { get; set; } = 6;
+
+        /// <summary>
+        /// 是否在轮廓屏蔽区内额外检测细线断裂。
+        /// 普通差分仍使用原边缘屏蔽；本通道只补回具有连续缺失、局部墨量下降且不呈成对错位残差的内部缺陷。
+        /// </summary>
+        public bool EnableFineLineBreakDetection { get; set; } = true;
+
+        /// <summary>
+        /// 细线断裂的最小连续长度（mm）。使用 TIFF 排版 DPI 换算，避免缩放比例变化时检测语义漂移。
+        /// </summary>
+        public double FineLineMinBreakLengthMm { get; set; } = 0.5;
+
+        /// <summary>
+        /// 进入细线专用通道的模板线宽上限（mm）。默认 2 mm 可覆盖当前图库右侧钩线的实际线宽，
+        /// 作为 JSON 高级参数保留，不在常用设置界面暴露。
+        /// </summary>
+        public double FineLineMaxWidthMm { get; set; } = 2.0;
 
         /// <summary>是否保存缺陷检测可视化结果图</summary>
         public bool SaveDefectResultImages { get; set; } = true;

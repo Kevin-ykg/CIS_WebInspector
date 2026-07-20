@@ -1,0 +1,90 @@
+<Project>
+  <PropertyGroup>
+    <AssemblyName>CIS_WebInspector</AssemblyName>
+    <IntermediateOutputPath>obj\x64\Release\</IntermediateOutputPath>
+    <BaseIntermediateOutputPath>obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\</MSBuildProjectExtensionsPath>
+    <_TargetAssemblyProjectName>CIS_WebInspector</_TargetAssemblyProjectName>
+    <RootNamespace>CIS_WebInspector</RootNamespace>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>CIS_WebInspector</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenCvSharp4" Version="4.10.*" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.*" />
+    <PackageReference Include="OpenCvSharp4.Extensions" Version="4.10.*" />
+    <PackageReference Include="System.Text.Json" Version="10.0.9" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Assets\WeChatQRCode\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+  <!-- Post-build: copy all native DLLs to output directory -->
+  <Target Name="CopyNativeDlls" AfterTargets="Build">
+    <Copy SourceFiles="..\..\lib\x64\VolansGrabberCL.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="TLC_SDK_C++_64位\tlc.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="..\..\lib\x64\CamExpRemote.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+  <ItemGroup>
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\microsoft.bcl.asyncinterfaces\10.0.9\lib\net462\Microsoft.Bcl.AsyncInterfaces.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\opencvsharp4\4.10.0.20241108\lib\net48\OpenCvSharp.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\opencvsharp4.extensions\4.10.0.20241108\lib\net48\OpenCvSharp.Extensions.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\PresentationCore.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\PresentationFramework.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.buffers\4.6.1\lib\net462\System.Buffers.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Core.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Data.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.drawing.common\8.0.0\lib\net462\System.Drawing.Common.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Drawing.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.IO.Compression.FileSystem.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.io.pipelines\10.0.9\lib\net462\System.IO.Pipelines.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.memory\4.6.3\lib\net462\System.Memory.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Numerics.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.numerics.vectors\4.6.1\lib\net462\System.Numerics.Vectors.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.runtime.compilerservices.unsafe\6.1.2\lib\net462\System.Runtime.CompilerServices.Unsafe.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Runtime.Serialization.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Security.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.text.encodings.web\10.0.9\lib\net462\System.Text.Encodings.Web.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.text.json\10.0.9\lib\net462\System.Text.Json.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.threading.tasks.extensions\4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll" />
+    <ReferencePath Include="C:\Users\EDY\.nuget\packages\system.valuetuple\4.6.2\lib\net47\System.ValueTuple.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Web.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Windows.Controls.Ribbon.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Xaml.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Xml.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Xml.Linq.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\UIAutomationClient.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\UIAutomationClientsideProviders.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\UIAutomationProvider.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\UIAutomationTypes.dll" />
+    <ReferencePath Include="E:\南京爱速智\CIS\AresIntel\Volans CL\lib\x64\VolansGrabberCL_net.dll" />
+    <ReferencePath Include="C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\WindowsBase.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\x64\Release\net48\Views\AppSettingsWindow.g.cs" />
+    <Compile Include="E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\x64\Release\net48\Views\CameraSettingsWindow.g.cs" />
+    <Compile Include="E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\x64\Release\net48\Views\MainWindow.g.cs" />
+    <Compile Include="E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\x64\Release\net48\Views\TlcSettingsWindow.g.cs" />
+    <Compile Include="E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\x64\Release\net48\App.g.cs" />
+    <Compile Include="E:\南京爱速智\CIS\AresIntel\Volans CL\samples\CIS_WebInspector\obj\x64\Release\net48\CIS_WebInspector_Content.g.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Analyzer Include="C:\Users\EDY\.nuget\packages\system.text.json\10.0.9\analyzers\dotnet\roslyn4.4\cs\System.Text.Json.SourceGeneration.dll" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

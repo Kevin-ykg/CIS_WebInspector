@@ -1,5 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -10,8 +12,8 @@ using OpenCvSharp;
 namespace CIS_WebInspector.ViewModels
 {
     /// <summary>
-    /// 主界面 ViewModel：协调相机引擎、拼接引擎与 WPF UI 之间的交互。
-    /// 负责 Dispatcher 线程切换，确保 WriteableBitmap 的所有操作在 UI 线程执行。
+    /// 主界面业务协调器：连接相机/离线源、单线程帧处理、图像拼接、后台检测和 WPF 展示。
+    /// 算法不在 UI 线程执行；Dispatcher 只发布轻量状态和预览，确保 WriteableBitmap 线程安全。
     /// </summary>
     public class MainViewModel : ViewModelBase, IDisposable
     {
@@ -19,8 +21,31 @@ namespace CIS_WebInspector.ViewModels
         private static extern void CopyMemory(IntPtr dst, IntPtr src, int size);
 
         // ---- 服务层 ----
+        // 帧处理队列保证采集顺序；保存队列是可丢弃的诊断支路；检测作业一次只允许最新任务发布结果。
         private ICameraSource _cameraSource;
         private readonly ImageStitcher _stitcher = new ImageStitcher();
+        private readonly InspectionJobRunner _inspectionJobRunner = new InspectionJobRunner();
+        private readonly object _inspectionJobSync = new object();
+        private CancellationTokenSource _inspectionCancellation;
+        private readonly object _frameProcessorSync = new object();
+        private OrderedFrameProcessor _frameProcessor;
+        private readonly BoundedImageSaveQueue _imageSaveQueue;
+        private long _receivedFrameCount;
+        private long _brokenFrameCount;
+        private int _latestBufferIndex;
+        private int _processingStopSignaled;
+        private int _stopAfterCurrentFrame;
+        private long _saveSequence;
+        private long _skippedFrameSaveCount;
+        private FrameReadyEventArgs _latestPreviewFrame;
+        private int _previewDispatchPending;
+        private bool _disposed;
+
+        public MainViewModel()
+        {
+            int saveQueueCapacity = Math.Max(1, ConfigManager.Config?.ImageSaveQueueCapacity ?? 4);
+            _imageSaveQueue = new BoundedImageSaveQueue(saveQueueCapacity, AddLog);
+        }
 
         // ---- UI 绑定属性 ----
         private WriteableBitmap _livePreview;
@@ -117,6 +142,7 @@ namespace CIS_WebInspector.ViewModels
 
         private static readonly object _logLock = new object();
 
+        /// <summary>把任意后台线程的日志安全投递到 UI，并限制终端文本长度避免长期运行无限增长。</summary>
         public void AddLog(string msg)
         {
             string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
@@ -267,6 +293,7 @@ namespace CIS_WebInspector.ViewModels
             {
                 _cameraSource.FrameReady += OnFrameReady;
 
+                // 相机源报告原始尺寸，后续二维码/拼接统一在缩小后的处理坐标系中运行。
                 int df = ConfigManager.Config.DownscaleFactor;
                 int outWidth = _cameraSource.ImageWidth / df;
                 int outHeight = _cameraSource.ImageHeight / df;
@@ -288,6 +315,8 @@ namespace CIS_WebInspector.ViewModels
         // ---- 加载离线数据 ----
         private void ExecuteLoadOffline(object param)
         {
+            CancelInspectionJob();
+
             // 使用 OpenFileDialog 选择目录中的任意一张图片，然后取其所在目录
             var ofd = new Microsoft.Win32.OpenFileDialog
             {
@@ -308,6 +337,7 @@ namespace CIS_WebInspector.ViewModels
             {
                 _cameraSource.FrameReady += OnFrameReady;
 
+                // 离线源和在线源使用同一输出几何，保证同一套 ROI/Mark 参数可复现现场流程。
                 int df = ConfigManager.Config.DownscaleFactor;
                 int outWidth = _cameraSource.ImageWidth / df;
                 int outHeight = _cameraSource.ImageHeight / df;
@@ -333,6 +363,7 @@ namespace CIS_WebInspector.ViewModels
                 return;
             }
 
+            // 开始采集前同步完成模型加载和预热，避免首帧在处理队列中承受初始化延迟。
             if (!_stitcher.InitializeQrDetector(out string qrInitError))
             {
                 StatusText = "WeChatQRCode 初始化失败";
@@ -343,6 +374,12 @@ namespace CIS_WebInspector.ViewModels
             FrameCount = 0;
             BrokenCount = 0;
             BufferIndex = 0;
+            Interlocked.Exchange(ref _receivedFrameCount, 0);
+            Interlocked.Exchange(ref _brokenFrameCount, 0);
+            Volatile.Write(ref _latestBufferIndex, 0);
+            Interlocked.Exchange(ref _processingStopSignaled, 0);
+            Interlocked.Exchange(ref _stopAfterCurrentFrame, 0);
+            Interlocked.Exchange(ref _latestPreviewFrame, null);
             _stitcher.Reset();
 
             // 防止重复订阅
@@ -354,15 +391,30 @@ namespace CIS_WebInspector.ViewModels
             _stitcher.QrTimeoutWarning += OnQrTimeoutWarning;
             _stitcher.LogMessageEvent += OnLogMessageEvent;
 
-            _cameraSource.StartGrab();
-            IsRunning = true;
-            StatusText = "采集中...";
-            AddLog("▶ 开始采集");
+            // 必须先启动消费者再启动相机生产者，防止首帧到达时队列尚未创建。
+            StartFrameProcessor();
+            try
+            {
+                _cameraSource.StartGrab();
+                IsRunning = true;
+                StatusText = "采集中...";
+                AddLog($"▶ 开始采集（帧处理队列容量: {ConfigManager.Config.FrameProcessingQueueCapacity}）");
+            }
+            catch (Exception ex)
+            {
+                StopFrameProcessor(false);
+                IsRunning = false;
+                StatusText = $"启动失败: {ex.Message}";
+                AddLog($"[ERROR] 启动采集失败: {ex.Message}");
+            }
         }
 
         private void ExecuteStop(object _)
         {
+            // 主动停止不继续排空旧帧：先停生产者，再让当前帧结束并丢弃尚未处理的队列项。
             _cameraSource?.StopGrab();
+            Interlocked.Exchange(ref _stopAfterCurrentFrame, 1);
+            StopFrameProcessor(false);
             IsRunning = false;
             StatusText = "已停止";
             AddLog("■ 停止采集");
@@ -372,6 +424,9 @@ namespace CIS_WebInspector.ViewModels
         {
             if (_cameraSource is OfflineImageSource offlineSource)
             {
+                Interlocked.Exchange(ref _processingStopSignaled, 0);
+                Interlocked.Exchange(ref _stopAfterCurrentFrame, 0);
+                StartFrameProcessor();
                 if (offlineSource.ResumeGrab())
                 {
                     IsRunning = true;
@@ -379,6 +434,7 @@ namespace CIS_WebInspector.ViewModels
                 }
                 else
                 {
+                    StopFrameProcessor(false);
                     System.Windows.MessageBox.Show("当前文件夹中的所有图像已处理完毕！", "采集完成", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 }
             }
@@ -416,86 +472,200 @@ namespace CIS_WebInspector.ViewModels
         // ---- 帧就绪回调（来自后台线程） ----
         private void OnFrameReady(object sender, FrameReadyEventArgs e)
         {
-            // 更新统计
-            FrameCount++;
-            if (e.IsBroken) BrokenCount++;
-            BufferIndex = e.BufferIndex;
+            OrderedFrameProcessor processor = Volatile.Read(ref _frameProcessor);
+            if (processor == null || Volatile.Read(ref _stopAfterCurrentFrame) != 0)
+                return;
 
-            // 刷新实时预览（切到 UI 线程）
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            FrameReadyEventArgs ownedFrame;
+            try
             {
-                UpdateLivePreview(e);
-            }, System.Windows.Threading.DispatcherPriority.Render);
-
-            // 送入拼接引擎（在当前线程执行）
-            _stitcher.ProcessFrame(e.DataPointer, e.DataArray, e.Width, e.Height, e.Stride, e.BitsPerPixel);
-
-            // ---- 单帧自动保存逻辑 ----
-            if (IsAutoSaveEnabled && !string.IsNullOrEmpty(AutoSaveDirectory))
+                // 相机 SDK 指针的有效期可能只到回调结束；队列只能接收拥有独立托管缓冲区的帧。
+                ownedFrame = OrderedFrameProcessor.CreateOwnedFrame(e);
+            }
+            catch (Exception ex)
             {
-                // 1. 深拷贝图像数据，防止被底层的 DMA 环形缓存覆盖
-                byte[] arrayToSave = null;
-                if (e.DataArray != null)
-                {
-                    arrayToSave = new byte[e.DataArray.Length];
-                    Buffer.BlockCopy(e.DataArray, 0, arrayToSave, 0, e.DataArray.Length);
-                }
-                else if (e.DataPointer != IntPtr.Zero)
-                {
-                    int bytesCount = e.Stride * e.Height;
-                    arrayToSave = new byte[bytesCount];
-                    System.Runtime.InteropServices.Marshal.Copy(e.DataPointer, arrayToSave, 0, bytesCount);
-                }
+                SignalProcessingStop($"帧缓冲无效: {ex.Message}");
+                return;
+            }
 
-                // 2. 扔到后台线程执行缓慢的磁盘 I/O
-                if (arrayToSave != null)
+            Interlocked.Increment(ref _receivedFrameCount);
+            if (ownedFrame.IsBroken) Interlocked.Increment(ref _brokenFrameCount);
+            Volatile.Write(ref _latestBufferIndex, ownedFrame.BufferIndex);
+
+            // 离线源可等待消费者腾出空间以保证逐帧完整；在线源仅短暂等待，超时后安全停采。
+            int timeout = _cameraSource is OfflineImageSource
+                ? Timeout.Infinite
+                : Math.Max(0, ConfigManager.Config.FrameProcessingEnqueueTimeoutMs);
+
+            if (!processor.TryEnqueue(ownedFrame, timeout))
+            {
+                // 正常停止会关闭队列并唤醒正在等待的离线生产者，此时不应误报为过载。
+                if (Volatile.Read(ref _stopAfterCurrentFrame) == 0)
                 {
-                    int w = e.Width;
-                    int h = e.Height;
-                    int s = e.Stride;
-                    int bpp = e.BitsPerPixel;
-                    string dir = AutoSaveDirectory;
-                    string fileName = $"frame_{DateTime.Now:yyyyMMdd_HHmmss_fff}.jpg";
-                    string filePath = System.IO.Path.Combine(dir, fileName);
-
-                    System.Threading.Tasks.Task.Run(() =>
-                    {
-                        try
-                        {
-                            var matType = bpp == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
-
-                            // 必须通过指针来构造带有 Stride (步长) 的 Mat
-                            var handle = System.Runtime.InteropServices.GCHandle.Alloc(arrayToSave, System.Runtime.InteropServices.GCHandleType.Pinned);
-                            try
-                            {
-                                using (var mat = OpenCvSharp.Mat.FromPixelData(h, w, matType, handle.AddrOfPinnedObject(), s))
-                                {
-                                    // 使用 OpenCV 保存为 JPG，指定压缩质量
-                                    var prms = new OpenCvSharp.ImageEncodingParam[] {
-                                        new OpenCvSharp.ImageEncodingParam(OpenCvSharp.ImwriteFlags.JpegQuality, 90)
-                                    };
-                                    OpenCvSharp.Cv2.ImWrite(filePath, mat, prms);
-                                }
-                            }
-                            finally
-                            {
-                                handle.Free();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            AddLog($"[ERROR] 自动保存单帧失败: {ex.Message}");
-                        }
-                    });
+                    SignalProcessingStop(
+                        $"帧处理队列已满（容量 {ConfigManager.Config.FrameProcessingQueueCapacity}），系统已安全停采，未静默丢帧。");
                 }
             }
         }
 
+        private void ProcessQueuedFrame(FrameReadyEventArgs frame)
+        {
+            // 拼接/二维码是不可丢帧的主链；实时预览和单帧保存只是旁路，不得反向阻塞检测语义。
+            QueueLivePreview(frame);
+            _stitcher.ProcessOwnedFrame(frame.DataArray, frame.Width, frame.Height, frame.Stride, frame.BitsPerPixel);
+
+            if (IsAutoSaveEnabled && !string.IsNullOrWhiteSpace(AutoSaveDirectory))
+            {
+                long sequence = Interlocked.Increment(ref _saveSequence);
+                string fileName = $"frame_{DateTime.Now:yyyyMMdd_HHmmss_fff}_{sequence:D6}.jpg";
+                string filePath = System.IO.Path.Combine(AutoSaveDirectory, fileName);
+                bool queued = _imageSaveQueue.TryEnqueue(
+                    frame.DataArray,
+                    frame.Width,
+                    frame.Height,
+                    frame.Stride,
+                    frame.BitsPerPixel,
+                    filePath,
+                    0);
+
+                if (!queued)
+                {
+                    long skipped = Interlocked.Increment(ref _skippedFrameSaveCount);
+                    if (skipped == 1 || skipped % 50 == 0)
+                    {
+                        AddLog($"[WARN] 自动保存队列已满，已跳过 {skipped} 张诊断单帧；检测与拼接不受影响。");
+                    }
+                }
+            }
+
+            if (Volatile.Read(ref _stopAfterCurrentFrame) != 0)
+                Volatile.Read(ref _frameProcessor)?.DiscardPending();
+        }
+
+        private void QueueLivePreview(FrameReadyEventArgs frame)
+        {
+            // “latest wins”：高帧率下覆盖尚未显示的旧预览，不积压 UI 消息，也不影响拼接处理的每一帧。
+            Interlocked.Exchange(ref _latestPreviewFrame, frame);
+            SchedulePreviewUpdate();
+        }
+
+        /// <summary>合并多个预览请求为一个 Render 优先级 UI 任务，并在完成后检查是否出现更新帧。</summary>
+        private void SchedulePreviewUpdate()
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || Interlocked.CompareExchange(ref _previewDispatchPending, 1, 0) != 0)
+                return;
+
+            dispatcher.InvokeAsync(() =>
+            {
+                FrameReadyEventArgs latest = Interlocked.Exchange(ref _latestPreviewFrame, null);
+                if (latest != null) UpdateLivePreview(latest);
+
+                FrameCount = (ulong)Math.Max(0, Interlocked.Read(ref _receivedFrameCount));
+                BrokenCount = (ulong)Math.Max(0, Interlocked.Read(ref _brokenFrameCount));
+                BufferIndex = Volatile.Read(ref _latestBufferIndex);
+
+                Interlocked.Exchange(ref _previewDispatchPending, 0);
+                if (Volatile.Read(ref _latestPreviewFrame) != null)
+                    SchedulePreviewUpdate();
+            }, System.Windows.Threading.DispatcherPriority.Render);
+        }
+
+        private void StartFrameProcessor()
+        {
+            StopFrameProcessor(false);
+
+            // 容量是允许的瞬时生产/消费抖动，不是长期缓存；满队列时在线采集会安全停机而非静默丢帧。
+            int capacity = Math.Max(1, ConfigManager.Config?.FrameProcessingQueueCapacity ?? 3);
+            var processor = new OrderedFrameProcessor(capacity, ProcessQueuedFrame, ex =>
+            {
+                SignalProcessingStop($"帧处理异常: {ex.Message}");
+            });
+
+            lock (_frameProcessorSync)
+            {
+                _frameProcessor = processor;
+            }
+        }
+
+        /// <summary>
+        /// 原子摘除当前处理器后停止消费者；drain=false 丢弃等待帧，但仍等待正在处理的帧安全返回。
+        /// </summary>
+        private void StopFrameProcessor(bool drain)
+        {
+            OrderedFrameProcessor processor;
+            lock (_frameProcessorSync)
+            {
+                processor = _frameProcessor;
+                _frameProcessor = null;
+            }
+
+            if (processor == null) return;
+
+            bool stopped = processor.Stop(drain, 10000);
+            if (!stopped)
+                AddLog("[WARN] 帧处理线程未在 10 秒内退出；已禁止继续入队，请检查算法耗时或非托管调用。");
+            processor.Dispose();
+        }
+
+        /// <summary>确保过载/算法异常只触发一次安全停机，并把最终状态切回 UI 线程。</summary>
+        private void SignalProcessingStop(string reason)
+        {
+            if (Interlocked.Exchange(ref _processingStopSignaled, 1) != 0) return;
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher != null)
+            {
+                dispatcher.InvokeAsync(() =>
+                {
+                    AddLog($"[ERROR] {reason}");
+                    ExecuteStop(null);
+                    StatusText = reason;
+                }, System.Windows.Threading.DispatcherPriority.Send);
+            }
+            else
+            {
+                _cameraSource?.StopGrab();
+                Volatile.Read(ref _frameProcessor)?.DiscardPending();
+            }
+        }
+
         // ---- 拼接完成回调 ----
+        /// <summary>
+        /// 接收拥有独立缓冲区的拼接结果；离线模式立即截断后续帧，并异步启动一次完整检测作业。
+        /// </summary>
         private void OnStitchCompleted(object sender, StitchedImageResult result)
         {
             // 保留在内存中供后续缺陷检测使用
             _lastStitchedResult = result;
+
+            // 离线模式在处理线程内立即停源并清空后续排队帧，避免跨越第二个二维码继续消费。
+            bool isOffline = _cameraSource is OfflineImageSource;
+            if (isOffline)
+            {
+                Interlocked.Exchange(ref _stopAfterCurrentFrame, 1);
+                _cameraSource.StopGrab();
+                Volatile.Read(ref _frameProcessor)?.DiscardPending();
+            }
+
+            // 拼接图保存也进入同一个有界后台队列，不再为每张图创建无界 Task。
+            if (IsAutoSaveEnabled)
+            {
+                string saveDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "拼接后图像");
+                string fileName = $"stitched_{DateTime.Now:yyyyMMdd_HHmmss_fff}.jpg";
+                string filePath = System.IO.Path.Combine(saveDir, fileName);
+                bool queued = _imageSaveQueue.TryEnqueue(
+                    result.Data,
+                    result.Width,
+                    result.Height,
+                    result.Stride,
+                    result.BitsPerPixel,
+                    filePath,
+                    1000,
+                    $"已自动保存拼接图像: {fileName}");
+                if (!queued)
+                    AddLog("[WARN] 拼接图保存队列持续繁忙，本次拼接图未自动保存，请使用手动保存。检测结果不受影响。");
+            }
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
@@ -504,290 +674,112 @@ namespace CIS_WebInspector.ViewModels
                 LastStitchInfo = msg;
                 AddLog(msg);
 
-                // ---- 新增：自动保存拼接后的图像 ----
-                if (IsAutoSaveEnabled)
-                {
-                    string saveDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "拼接后图像");
-                    if (!System.IO.Directory.Exists(saveDir))
-                    {
-                        System.IO.Directory.CreateDirectory(saveDir);
-                    }
-                    string fileName = $"stitched_{DateTime.Now:yyyyMMdd_HHmmss_fff}.jpg";
-                    string filePath = System.IO.Path.Combine(saveDir, fileName);
-
-                    byte[] dataToSave = result.Data;
-                    int w = result.Width;
-                    int h = result.Height;
-                    int s = result.Stride;
-                    int bpp = result.BitsPerPixel;
-
-                    System.Threading.Tasks.Task.Run(() =>
-                    {
-                        try
-                        {
-                            var matType = bpp == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
-                            var handle = System.Runtime.InteropServices.GCHandle.Alloc(dataToSave, System.Runtime.InteropServices.GCHandleType.Pinned);
-                            try
-                            {
-                                using (var mat = OpenCvSharp.Mat.FromPixelData(h, w, matType, handle.AddrOfPinnedObject(), s))
-                                {
-                                    var prms = new OpenCvSharp.ImageEncodingParam[] {
-                                        new OpenCvSharp.ImageEncodingParam(OpenCvSharp.ImwriteFlags.JpegQuality, 90)
-                                    };
-                                    OpenCvSharp.Cv2.ImWrite(filePath, mat, prms);
-                                }
-                            }
-                            finally
-                            {
-                                handle.Free();
-                            }
-                            AddLog($"已自动保存拼接图像: {fileName}");
-                        }
-                        catch (Exception ex)
-                        {
-                            AddLog($"[ERROR] 自动保存拼接图失败: {ex.Message}");
-                        }
-                    });
-                }
-
                 // 如果是离线加载模式，自动暂停并弹窗提示，同时启动离线缺陷检测流水线
-                if (_cameraSource is OfflineImageSource)
+                if (isOffline)
                 {
                     ExecuteStop(null);
                     System.Windows.MessageBox.Show("当前拼接图像已完成，系统将在后台开始执行排版解析和离线缺陷检测...", "拼接完成", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                     
-                    // 启动缺陷检测流水线
-                    System.Threading.Tasks.Task.Run(() => RunDefectPipeline(result));
+                    StartInspectionJob(result);
                 }
             }, System.Windows.Threading.DispatcherPriority.Normal);
         }
 
-        // ---- 离线缺陷检测流水线 ----
-        private void RunDefectPipeline(StitchedImageResult result)
+        // ---- 离线缺陷检测作业协调 ----
+        /// <summary>以 fire-and-forget 方式启动作业，所有异常都由 RunInspectionJobAsync 内部记录。</summary>
+        private void StartInspectionJob(StitchedImageResult result)
         {
-            Mat tiffMat = null;
-            Mat alphaMask = null;
-            Mat cisMat = null;
+            _ = RunInspectionJobAsync(result);
+        }
+
+        /// <summary>协调“最新作业优先”的取消与结果发布，重计算在线程池执行。</summary>
+        private async Task RunInspectionJobAsync(StitchedImageResult result)
+        {
+            var cancellation = new CancellationTokenSource();
+            CancellationTokenSource previous;
+
+            lock (_inspectionJobSync)
+            {
+                previous = _inspectionCancellation;
+                _inspectionCancellation = cancellation;
+            }
+
+            // 新拼接段到来时取消旧作业；旧作业即使稍后结束，也会被下方身份检查阻止覆盖新结果。
+            previous?.Cancel();
+
             try
             {
-                AddLog("开始执行离线缺陷检测流水线...");
-                
-                var config = ConfigManager.Config;
-                if (config == null) return;
+                AppConfig config = ConfigManager.Config;
+                InspectionJobResult jobResult = await Task.Run(
+                    () => _inspectionJobRunner.Run(result, config, AddLog, cancellation.Token),
+                    cancellation.Token);
 
-                // 1. 解析 Debug.log 获取排版信息
-                string qrCode = result.EndQrText;
-                if (string.IsNullOrEmpty(qrCode))
+                lock (_inspectionJobSync)
                 {
-                    AddLog("[缺陷流水线] 未找到有效的结束二维码，终止流水线。");
-                    return;
-                }
-
-                AddLog($"正在解析 Debug.log，目标二维码: {qrCode} ...");
-                var layoutInfo = DebugLogParser.ParseForQrCode(config.DebugLogPath, qrCode, config.TiffImageDir);
-                if (layoutInfo == null)
-                {
-                    AddLog("[缺陷流水线] 解析失败或未找到对应的排版日志。");
-                    return;
-                }
-
-                AddLog($"成功解析排版日志，原图: {layoutInfo.TiffFileName}，共 {layoutInfo.Parts.Count} 个有效零件。");
-
-                // 2. 加载 TIFF 原图
-                AddLog($"正在加载 TIFF 原图...");
-                if (System.IO.File.Exists(layoutInfo.TiffFullPath))
-                {
-                    tiffMat = OpenCvSharp.Cv2.ImRead(layoutInfo.TiffFullPath, OpenCvSharp.ImreadModes.Unchanged);
-                }
-                else
-                {
-                    AddLog($"[缺陷流水线] 无法找到 TIFF 原图文件: {layoutInfo.TiffFullPath}");
-                    return;
-                }
-
-                if (tiffMat.Empty())
-                {
-                    AddLog($"[缺陷流水线] TIFF 图像加载失败。");
-                    return;
-                }
-
-                // 如果 TIFF 是 4 通道，分离 Alpha 通道作为原始设计二值掩膜，然后 alpha 融合到白底
-                // 参照 align_diff.py: alpha_mask = channels[3] 作为完美设计二值图像
-                // 注意：TIFF 原图可能非常大，不能创建多个全尺寸 float32 Mat，改用逐行处理
-                if (tiffMat.Channels() == 4)
-                {
-                    int h = tiffMat.Height;
-                    int w = tiffMat.Width;
-
-                    // 提取 Alpha 通道作为独立掩膜
-                    Mat[] tiffChannels = Cv2.Split(tiffMat);
-                    alphaMask = tiffChannels[3].Clone();
-                    foreach (var ch in tiffChannels) ch.Dispose();
-
-                    AddLog($"  提取Alpha通道: 非零像素={Cv2.CountNonZero(alphaMask)}, " +
-                           $"覆盖率={Cv2.CountNonZero(alphaMask) * 100.0 / (h * w):F1}%");
-
-                    // Alpha 混合到白底 → BGR 3通道
-                    // 使用 unsafe 指针 + Parallel.For 多线程并行，避免逐像素 P/Invoke 开销
-                    Mat result8u = new Mat(h, w, MatType.CV_8UC3);
-                    unsafe
-                    {
-                        System.Threading.Tasks.Parallel.For(0, h, row =>
-                        {
-                            byte* srcRow = (byte*)tiffMat.Ptr(row);
-                            byte* dstRow = (byte*)result8u.Ptr(row);
-
-                            for (int col = 0; col < w; col++)
-                            {
-                                byte sb = srcRow[0];
-                                byte sg = srcRow[1];
-                                byte sr = srcRow[2];
-                                byte sa = srcRow[3];
-
-                                if (sa == 255)
-                                {
-                                    dstRow[0] = sb;
-                                    dstRow[1] = sg;
-                                    dstRow[2] = sr;
-                                }
-                                else if (sa == 0)
-                                {
-                                    dstRow[0] = 255;
-                                    dstRow[1] = 255;
-                                    dstRow[2] = 255;
-                                }
-                                else
-                                {
-                                    float a = sa * (1f / 255f);
-                                    float inv = 1f - a;
-                                    dstRow[0] = (byte)(sb * a + 255f * inv);
-                                    dstRow[1] = (byte)(sg * a + 255f * inv);
-                                    dstRow[2] = (byte)(sr * a + 255f * inv);
-                                }
-
-                                srcRow += 4;
-                                dstRow += 3;
-                            }
-                        });
-                    }
-
-                    tiffMat.Dispose();
-                    tiffMat = result8u;
-                }
-                else
-                {
-                    AddLog("  [WARN] TIFF无Alpha通道，将使用统一阈值检测");
-                }
-
-                // 3. 构建 CIS 图像的 Mat（保持原始通道，不做强制转换）
-                AddLog($"正在计算图像对齐变换矩阵...");
-                var matType = result.BitsPerPixel == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
-                var handle = System.Runtime.InteropServices.GCHandle.Alloc(result.Data, System.Runtime.InteropServices.GCHandleType.Pinned);
-                try
-                {
-                    cisMat = OpenCvSharp.Mat.FromPixelData(result.Height, result.Width, matType, handle.AddrOfPinnedObject(), result.Stride).Clone();
-                }
-                finally
-                {
-                    handle.Free();
-                }
-
-                // 4. 计算变换矩阵，并获取自动计算的最佳二值化阈值
-                int optimalThresh = 127;
-                var qrAnchor = new CisQrAnchor
-                {
-                    CenterX = result.EndQrCenterX,
-                    GlobalCenterY = result.EndQrGlobalY,
-                    SegmentStartGlobalY = result.SegmentStartGlobalY,
-                    PixelWidth = result.EndQrPixelWidth,
-                    PixelHeight = result.EndQrPixelHeight
-                };
-                var alignmentOptions = MarkAlignmentOptions.FromConfig(config);
-                using (AlignmentResult alignment = ImageAligner.ComputeTransform(
-                           cisMat, tiffMat, qrAnchor, alignmentOptions,
-                           out optimalThresh, out string alignmentDiagnostic))
-                {
-                    if (alignment?.GlobalTransform == null || alignment.GlobalTransform.Empty())
-                    {
-                        AddLog($"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}");
+                    // Cancellation 不能保证本机 OpenCV 调用立即退出，引用身份是最终的“过期结果”屏障。
+                    if (!ReferenceEquals(_inspectionCancellation, cancellation))
                         return;
-                    }
-                    AddLog(
-                        $"变换矩阵计算成功！模式={alignment.Mode}, 质量={alignment.QualityStatus}, " +
-                        $"自动最佳二值化阈值={optimalThresh}；{alignmentDiagnostic}");
-
-                    // 5. 图像变换
-                    AddLog("正在将 CIS 图像变换到 TIFF 空间...");
-                    using (Mat cisWarped = ImageAligner.WarpToTiffSpace(cisMat, alignment, tiffMat.Size()))
-                    {
-
-                // 6. 裁切小图 + 缺陷检测
-                int finalCisThresh = optimalThresh + config.DefectCisThreshOffset;
-                finalCisThresh = Math.Max(0, Math.Min(255, finalCisThresh));
-                AddLog($"正在按排版坐标裁切零件小图并执行缺陷检测 (应用 CIS 阈值 {finalCisThresh})...");
-                double scale = config.LayoutDpi / 25.4;
-                string outDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, config.CroppedOutputDir, DateTime.Now.ToString("yyyyMMdd_HHmmss"));
-                var defectTaskResult = PatchCropper.CropAndSave(cisWarped, tiffMat, alphaMask, layoutInfo.Parts, outDir, scale, config.LayoutOriginXmm, config.LayoutOriginYmm, finalCisThresh, config);
-                var defectResults = defectTaskResult.Results;
-
-                // 汇总检测结果
-                int totalParts = defectResults.Count;
-                int passCount = 0;
-                int failCount = 0;
-                foreach (var dr in defectResults)
-                {
-                    if (dr.IsPass)
-                        passCount++;
-                    else
-                        failCount++;
-
-                    string status = dr.IsPass ? "✓ Pass" : "✗ FAIL";
-                    AddLog($"  [{status}] {dr.PartId} — 内部缺陷: {dr.InnerDefectCount}个(最大{dr.MaxAreaInner}px²) | 外部缺陷: {dr.OuterDefectCount}个(最大{dr.MaxAreaOuter}px²)");
                 }
 
-                // 加载全局缺陷大图到 UI (通过内存字节流加载，不依赖本地硬盘文件)
-                if (defectTaskResult.GlobalImageBytes != null && defectTaskResult.GlobalImageBytes.Length > 0)
+                if (jobResult.Succeeded &&
+                    jobResult.GlobalImageBytes != null &&
+                    jobResult.GlobalImageBytes.Length > 0)
                 {
-                    Application.Current?.Dispatcher?.InvokeAsync(() =>
-                    {
-                        try
-                        {
-                            using (var stream = new System.IO.MemoryStream(defectTaskResult.GlobalImageBytes))
-                            {
-                                var bmp = new BitmapImage();
-                                bmp.BeginInit();
-                                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                                bmp.StreamSource = stream;
-                                bmp.EndInit();
-                                bmp.Freeze();
-                                GlobalDefectPreview = bmp;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            AddLog($"[缺陷流水线] 无法加载全局缺陷图到界面: {ex.Message}");
-                        }
-                    });
+                    PublishGlobalDefectPreview(jobResult.GlobalImageBytes);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                AddLog("[缺陷流水线] 作业已取消。");
+            }
+            catch (Exception ex)
+            {
+                AddLog($"[缺陷流水线] 作业协调异常: {ex.Message}\n{ex.StackTrace}");
+            }
+            finally
+            {
+                lock (_inspectionJobSync)
+                {
+                    if (ReferenceEquals(_inspectionCancellation, cancellation))
+                        _inspectionCancellation = null;
                 }
 
-                        AddLog(
-                            $"[缺陷流水线] 全部完成！共 {totalParts} 个零件 | 合格 {passCount} | " +
-                            $"不合格 {failCount} | 全局对准={alignment.Mode}/{alignment.QualityStatus} | " +
-                            $"检测={alignment.DetectionMilliseconds:F1}ms, 建图={alignment.MapGenerationMilliseconds:F1}ms, " +
-                            $"变换={alignment.RemapMilliseconds:F1}ms | 结果保存在: {outDir}");
-                    }
+                cancellation.Dispose();
+            }
+        }
+
+        /// <summary>从内存 JPEG 创建 OnLoad/Freeze 的 BitmapImage，使流关闭后仍可跨线程安全绑定。</summary>
+        private void PublishGlobalDefectPreview(byte[] imageBytes)
+        {
+            try
+            {
+                using (var stream = new System.IO.MemoryStream(imageBytes))
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.StreamSource = stream;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    GlobalDefectPreview = bitmap;
                 }
             }
             catch (Exception ex)
             {
-                AddLog($"[缺陷流水线] 执行发生严重异常: {ex.Message}\n{ex.StackTrace}");
+                AddLog($"[缺陷流水线] 无法加载全局缺陷图到界面: {ex.Message}");
             }
-            finally
+        }
+
+        /// <summary>向当前检测作业发出取消请求；作业 finally 负责摘除并释放自己的 CancellationTokenSource。</summary>
+        private void CancelInspectionJob()
+        {
+            CancellationTokenSource cancellation;
+            lock (_inspectionJobSync)
             {
-                cisMat?.Dispose();
-                alphaMask?.Dispose();
-                tiffMat?.Dispose();
+                cancellation = _inspectionCancellation;
             }
+
+            cancellation?.Cancel();
         }
 
         // ---- 二维码超时警告回调 ----
@@ -836,6 +828,7 @@ namespace CIS_WebInspector.ViewModels
             LivePreview = new WriteableBitmap(width, height, 96, 96, pixelFormat, palette);
         }
 
+        /// <summary>在 UI 线程把最新托管帧复制到预分配 WriteableBitmap，不保留输入缓冲区引用。</summary>
         private void UpdateLivePreview(FrameReadyEventArgs e)
         {
             if (LivePreview == null) return;
@@ -864,6 +857,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>为超大拼接图生成有限宽度预览；原始分辨率数据仍保留在 StitchedImageResult 中供检测。</summary>
         private void UpdateStitchedPreview(StitchedImageResult result)
         {
             var pixelFormat = result.BitsPerPixel == 8 ? PixelFormats.Gray8 : PixelFormats.Bgr24;
@@ -918,6 +912,9 @@ namespace CIS_WebInspector.ViewModels
         // ---- 资源清理 ----
         private void CleanupSource()
         {
+            // 顺序很重要：先取消检测和停止消费者，再退订/释放生产者，避免释放后仍有回调进入。
+            CancelInspectionJob();
+            StopFrameProcessor(false);
             if (_cameraSource != null)
             {
                 _cameraSource.FrameReady -= OnFrameReady;
@@ -927,11 +924,15 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>窗体关闭时停止生产/消费链并确定性释放相机、二维码模型和后台保存线程。</summary>
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             ExecuteStop(null);
             CleanupSource();
             _stitcher?.Dispose();
+            _imageSaveQueue?.Dispose();
         }
     }
 }

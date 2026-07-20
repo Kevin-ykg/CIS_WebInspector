@@ -373,6 +373,18 @@
                         <TextBlock Text="内细节包围屏蔽范围大小，抵抗内部细碎图案的对准误差。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="启用细线断裂保护" Width="180"/>
+                            <CheckBox IsChecked="{Binding Config.EnableFineLineBreakDetection}"/>
+                        </StackPanel>
+                        <TextBlock Text="在轮廓屏蔽区内用连续性判定补回真实断线，不改变普通差分和 SIFT 配准。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="最小断裂长度 (mm)" Width="180"/>
+                            <TextBox Text="{Binding Config.FineLineMinBreakLengthMm}"/>
+                        </StackPanel>
+                        <TextBlock Text="连续缺失达到该长度才进入判定；小于 1 mm 时还需明显深色证据，以抑制锐角圆化误报。" Style="{StaticResource ParamDescription}"/>
+
+                        <StackPanel Orientation="Horizontal">
                             <TextBlock Text="内部缺陷形态学容差" Width="180"/>
                             <TextBox Text="{Binding Config.DefectToleranceInner}"/>
                         </StackPanel>

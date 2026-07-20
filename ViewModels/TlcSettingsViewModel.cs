@@ -7,6 +7,10 @@ using System.Linq;
 
 namespace CIS_WebInspector.ViewModels
 {
+    /// <summary>
+    /// TLC 串口参数页的状态与命令适配层。耗时的 DLL 调用放到线程池，完成后由 WPF
+    /// 同步上下文恢复 UI 属性；Parameters 保存“显示项—回读关键字—下发函数”的映射。
+    /// </summary>
     public class TlcSettingsViewModel : ViewModelBase
     {
         public ObservableCollection<string> AvailablePorts { get; } = new ObservableCollection<string>();
@@ -59,6 +63,7 @@ namespace CIS_WebInspector.ViewModels
             InitializeParameters();
         }
 
+        /// <summary>枚举 TLC 可用端口并默认选择第一项；异常只反馈到设置窗口。</summary>
         private void LoadPorts()
         {
             AvailablePorts.Clear();
@@ -80,6 +85,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>在后台打开端口，等待硬件 DTR 复位完成后再读取参数。</summary>
         private async void ExecuteConnect()
         {
             if (string.IsNullOrEmpty(SelectedPort)) return;
@@ -105,6 +111,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>在后台关闭唯一 TLC 端口，并同步更新界面连接状态。</summary>
         private async void ExecuteDisconnect()
         {
             await System.Threading.Tasks.Task.Run(() => TlcSdkWrapper.close_port());
@@ -112,6 +119,7 @@ namespace CIS_WebInspector.ViewModels
             CameraParametersText = "已断开连接。";
         }
 
+        /// <summary>读取 SDK 的参数文本并解析回填到结构化参数列表。</summary>
         private async void RefreshCameraParametersText()
         {
             if (IsConnected)
@@ -123,11 +131,12 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>根据每个参数的 MatchKeys，从 SDK 人类可读文本中提取数值。</summary>
         private void ParseAndFillValues(string rawText)
         {
             if (string.IsNullOrEmpty(rawText)) return;
             
-            // 修改正则：允许值后面跟随单位（比如 [Hz], %, :OFF 等），只提取第一个数字
+            // SDK 返回面向人的多行文本而非结构化对象：允许单位/状态后缀，只取键后的首个数值。
             var lines = rawText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var line in lines)
             {
@@ -156,6 +165,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>把单项参数值交给绑定的原生下发函数，失败时显示 SDK 最近错误。</summary>
         private async void ExecuteApplyParameter(object parameter)
         {
             if (!(parameter is TlcParameterModel param)) return;
@@ -176,6 +186,7 @@ namespace CIS_WebInspector.ViewModels
             }
 
             CameraParametersText += $"\n\nUSER> 正在下发参数: {param.Name} -> {displayValue}";
+            // ApplyAction 在初始化参数表时绑定到具体 tlc.dll 命令，UI 层无需按参数名写分支。
             bool success = await System.Threading.Tasks.Task.Run(() => param.ApplyAction(param.Value));
             if (success)
             {
@@ -189,8 +200,10 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>建立设置页支持的参数清单；此清单也是 UI 与 tlc.dll 命令之间的唯一映射表。</summary>
         private void InitializeParameters()
         {
+            // 集中声明设备参数元数据，MatchKeys 用于回读匹配，ApplyAction 用于单项下发。
             Parameters.Add(new TlcParameterModel
             {
                 Name = "行频 (Line Rate)",

@@ -7,10 +7,10 @@ namespace CIS_WebInspector.Models
     /// </summary>
     public class FrameReadyEventArgs : EventArgs
     {
-        /// <summary>指向非托管帧数据的指针（在线模式使用）</summary>
+        /// <summary>指向非托管帧数据的指针（兼容旧式输入；进入异步队列前必须深拷贝）</summary>
         public IntPtr DataPointer { get; set; }
 
-        /// <summary>帧数据的托管字节数组（离线模式使用）</summary>
+        /// <summary>帧数据的托管字节数组（当前在线、离线输入均使用独立数组）</summary>
         public byte[] DataArray { get; set; }
 
         /// <summary>环形缓存区索引</summary>
@@ -66,7 +66,7 @@ namespace CIS_WebInspector.Models
     /// </summary>
     public class StitchedImageResult
     {
-        /// <summary>拼接后的图像原始像素数据</summary>
+        /// <summary>拼接后的独立像素缓冲区，由结果对象持有，可安全跨线程用于预览、保存和检测。</summary>
         public byte[] Data { get; set; }
 
         /// <summary>图像宽度（像素）</summary>
