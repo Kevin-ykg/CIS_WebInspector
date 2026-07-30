@@ -71,6 +71,7 @@ namespace CIS_WebInspector.Services
                 DataArray = data,
                 DataPointer = IntPtr.Zero,
                 BufferIndex = source.BufferIndex,
+                SourceFrameIndex = source.SourceFrameIndex,
                 IsBroken = source.IsBroken,
                 Width = source.Width,
                 Height = source.Height,

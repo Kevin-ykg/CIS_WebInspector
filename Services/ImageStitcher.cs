@@ -266,7 +266,13 @@ namespace CIS_WebInspector.Services
                 Buffer.BlockCopy(_prevTail, 0, overlapImg, 0, _stride * _prevTailRows);
                 Buffer.BlockCopy(frameData, 0, overlapImg, _stride * _prevTailRows, _stride * currTopRows);
 
-                var ovResult = _qrDetector.Detect(overlapImg, _width, overlapH, _stride, _bpp);
+                // 跨帧组合与普通单帧进入同一个检测器；形变增强由定位框几何证据统一触发。
+                var ovResult = _qrDetector.Detect(
+                    overlapImg,
+                    _width,
+                    overlapH,
+                    _stride,
+                    _bpp);
                 string overlapQrDiagnostic = ovResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
                 logAction($"  [Overlap] Detect: Found={ovResult.Found}, X={ovResult.CenterX * df}, Y={ovResult.CenterY * df} (Original), Width={ovResult.PixelWidth * df:F1}, Height={ovResult.PixelHeight * df:F1} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
                 if (ovResult.Found)
@@ -324,7 +330,18 @@ namespace CIS_WebInspector.Services
                 _framesSinceLastQr++;
                 if (_framesSinceLastQr >= ConfigManager.Config.MaxFramesWithoutQr)
                 {
-                    string msg = $"连续 {_framesSinceLastQr} 张图像未识别到二维码！";
+                    int missingFrameCount = _framesSinceLastQr;
+                    bool abandonedCollectingSegment = _state == State.Collecting;
+
+                    // 已经找到首个二维码但迟迟找不到结束二维码时，不能只重置告警计数。
+                    // 否则恢复采集后仍会沿用旧首码继续累积，最终可能生成高度异常的大图并耗尽内存。
+                    // 这里立即丢弃当前未闭合段；下一次有效二维码将按 Scanning 状态重新作为首码。
+                    if (abandonedCollectingSegment)
+                        AbandonCurrentSegmentAfterQrTimeout(logAction);
+
+                    string msg = abandonedCollectingSegment
+                        ? $"连续 {missingFrameCount} 张图像未识别到二维码！当前未闭合拼接段已放弃，下一次识别到的二维码将作为新的起始二维码。"
+                        : $"连续 {missingFrameCount} 张图像未识别到二维码！";
                     logAction($"[WARNING] {msg}");
                     QrTimeoutWarning?.Invoke(this, msg);
                     _framesSinceLastQr = 0; // 避免重复弹窗
@@ -415,6 +432,42 @@ namespace CIS_WebInspector.Services
         }
 
         // ---- 辅助方法 ----
+
+        /// <summary>
+        /// 二维码等待超时后放弃当前未闭合段，并恢复为等待首码的状态。
+        /// 保留 <see cref="_prevTail"/>，使告警恢复后的下一帧仍可检测跨帧二维码；
+        /// 其余与旧首码有关的锚点、延迟切割和大块图像缓存均立即清除。
+        /// </summary>
+        private void AbandonCurrentSegmentAfterQrTimeout(Action<string> logAction)
+        {
+            long discardedRows = _segTotalRows;
+            int discardedChunks = _segChunks.Count;
+            double discardedMegabytes = _stride > 0
+                ? discardedRows * _stride / (1024d * 1024d)
+                : 0d;
+            string abandonedQrText = _segStartQrText;
+
+            _state = State.Scanning;
+            _segStartQrText = null;
+            _segStartGlobalY = long.MinValue;
+
+            // 极端配置下，二维码可能已被识别但切点仍在后续帧。
+            // 既然当前段已经放弃，该延迟切割也必须一并作废，避免它在恢复后错误开启旧段。
+            _hasDeferredCut = false;
+            _deferredCutRemaining = 0;
+            _deferredQrResult = null;
+            _deferredQrGlobalY = long.MinValue;
+
+            // 允许恢复后的下一个二维码无条件成为新的首码。
+            _lastQrGlobalY = -999999;
+            ClearChunks();
+
+            logAction?.Invoke(
+                $"[ImageStitcher] QR wait timeout: abandoned unclosed segment. " +
+                $"StartQr={abandonedQrText ?? "<unknown>"}, " +
+                $"DiscardedRows={discardedRows}, Chunks={discardedChunks}, " +
+                $"ApproxMemory={discardedMegabytes:F1} MB. State reset to Scanning.");
+        }
 
         /// <summary>将帧的指定行范围作为 chunk 加入段累积</summary>
         private void AddChunk(byte[] src, int startRow, int rows)

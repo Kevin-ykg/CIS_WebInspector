@@ -25,6 +25,8 @@ namespace CIS_WebInspector.Services
 
         private List<string> _imageFiles;
         private int _currentIndex;
+        // 生产者可能预读到消费者之后；非负值表示下次 Resume 必须采用的权威文件索引。
+        private int _resumeFromIndex = -1;
         private Timer _timer;
         private int _intervalMs = 10; // 模拟帧间隔(ms)，设置得很小以最大化吞吐量，防重入锁会保证安全
 
@@ -67,6 +69,7 @@ namespace CIS_WebInspector.Services
                 }
 
                 _currentIndex = 0;
+                Interlocked.Exchange(ref _resumeFromIndex, -1);
                 return true;
             }
             catch (Exception ex)
@@ -82,6 +85,7 @@ namespace CIS_WebInspector.Services
             if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning) return;
 
             _currentIndex = 0;
+            Interlocked.Exchange(ref _resumeFromIndex, -1);
             IsRunning = true;
 
             // 使用 Timer 模拟相机帧率
@@ -89,14 +93,17 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>
-        /// 恢复采集（断点续传）：不清零当前索引，直接恢复 Timer。
+        /// 恢复采集（断点续传）：优先使用拼接完成时记录的消费进度检查点；
+        /// 没有检查点时才沿用当前生产者索引。
         /// 返回 false 表示已经读取完所有图像。
         /// </summary>
         public bool ResumeGrab()
         {
             if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning) return false;
-            
-            if (_currentIndex >= _imageFiles.Count)
+
+            int resumeIndex = Volatile.Read(ref _resumeFromIndex);
+            int nextIndex = resumeIndex >= 0 ? resumeIndex : _currentIndex;
+            if (nextIndex >= _imageFiles.Count)
             {
                 // 如果已经读完了，返回 false 阻止恢复
                 return false;
@@ -118,6 +125,12 @@ namespace CIS_WebInspector.Services
 
             try
             {
+                // 恢复检查点在真正取得 Timer 处理权后应用。即使停止前的旧 Tick 尚未退出，
+                // 它随后修改了 _currentIndex，下一次有效 Tick 仍会以该检查点为准。
+                int resumeIndex = Interlocked.Exchange(ref _resumeFromIndex, -1);
+                if (resumeIndex >= 0)
+                    _currentIndex = Math.Max(0, Math.Min(resumeIndex, _imageFiles.Count));
+
                 if (!IsRunning || _currentIndex >= _imageFiles.Count)
                 {
                     StopGrab();
@@ -163,6 +176,7 @@ namespace CIS_WebInspector.Services
                         {
                             DataArray = data,
                             BufferIndex = _currentIndex % 5,
+                            SourceFrameIndex = _currentIndex,
                             IsBroken = false,
                             Width = mat.Width,
                             Height = mat.Height,
@@ -184,6 +198,19 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>
+        /// 指定下一次 Resume 应从哪张文件继续。该检查点来自算法消费者，而不是可能已超前的
+        /// Timer 生产者，因此不会把已入队但随后丢弃的帧误认为已经完成处理。
+        /// </summary>
+        internal void SetResumeFromFrame(int nextFrameIndex)
+        {
+            if (_imageFiles == null)
+                return;
+
+            int safeIndex = Math.Max(0, Math.Min(nextFrameIndex, _imageFiles.Count));
+            Interlocked.Exchange(ref _resumeFromIndex, safeIndex);
+        }
+
         /// <summary>停止并释放 Timer，但保留当前索引，供 ResumeGrab 断点继续。</summary>
         public void StopGrab()
         {
@@ -192,7 +219,6 @@ namespace CIS_WebInspector.Services
             _timer = null;
         }
 
-        /// <summary>设置模拟帧间隔（毫秒）</summary>
         /// <summary>设置模拟帧间隔；仅影响之后创建的 Timer。</summary>
         public void SetInterval(int intervalMs)
         {

@@ -39,6 +39,8 @@ namespace CIS_WebInspector.ViewModels
         private long _skippedFrameSaveCount;
         private FrameReadyEventArgs _latestPreviewFrame;
         private int _previewDispatchPending;
+        // 单消费者当前正在执行的离线文件序号；OnStitchCompleted 同步回调据此建立恢复检查点。
+        private int _activeOfflineFrameIndex = -1;
         private bool _disposed;
 
         public MainViewModel()
@@ -380,6 +382,7 @@ namespace CIS_WebInspector.ViewModels
             Interlocked.Exchange(ref _processingStopSignaled, 0);
             Interlocked.Exchange(ref _stopAfterCurrentFrame, 0);
             Interlocked.Exchange(ref _latestPreviewFrame, null);
+            Volatile.Write(ref _activeOfflineFrameIndex, -1);
             _stitcher.Reset();
 
             // 防止重复订阅
@@ -512,7 +515,16 @@ namespace CIS_WebInspector.ViewModels
         {
             // 拼接/二维码是不可丢帧的主链；实时预览和单帧保存只是旁路，不得反向阻塞检测语义。
             QueueLivePreview(frame);
-            _stitcher.ProcessOwnedFrame(frame.DataArray, frame.Width, frame.Height, frame.Stride, frame.BitsPerPixel);
+            Volatile.Write(ref _activeOfflineFrameIndex, frame.SourceFrameIndex);
+            try
+            {
+                // StitchCompleted 在本调用栈内同步触发，因此回调读取到的就是当前真实消费帧序号。
+                _stitcher.ProcessOwnedFrame(frame.DataArray, frame.Width, frame.Height, frame.Stride, frame.BitsPerPixel);
+            }
+            finally
+            {
+                Volatile.Write(ref _activeOfflineFrameIndex, -1);
+            }
 
             if (IsAutoSaveEnabled && !string.IsNullOrWhiteSpace(AutoSaveDirectory))
             {
@@ -630,6 +642,36 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        /// <summary>
+        /// 在算法消费者线程仍持有当前帧序号时暂停离线源，并把恢复位置固定到当前帧之后。
+        /// Timer 生产者可能已经预读到文件末尾，因此恢复检查点必须来自真实消费进度。
+        /// </summary>
+        private void PauseOfflineAfterCurrentFrame(
+            OfflineImageSource offlineSource,
+            string reason)
+        {
+            if (offlineSource == null)
+                return;
+
+            Interlocked.Exchange(ref _stopAfterCurrentFrame, 1);
+            offlineSource.StopGrab();
+            int discarded = Volatile.Read(ref _frameProcessor)?.DiscardPending() ?? 0;
+
+            int completedFrameIndex = Volatile.Read(ref _activeOfflineFrameIndex);
+            if (completedFrameIndex < 0)
+            {
+                AddLog(
+                    $"[Offline] {reason}：未取得当前消费帧序号；" +
+                    $"已丢弃 {discarded} 张预读帧。");
+                return;
+            }
+
+            offlineSource.SetResumeFromFrame(completedFrameIndex + 1);
+            AddLog(
+                $"[Offline] {reason}发生于第 {completedFrameIndex + 1} 张；" +
+                $"已丢弃 {discarded} 张预读帧，恢复时将从第 {completedFrameIndex + 2} 张继续。");
+        }
+
         // ---- 拼接完成回调 ----
         /// <summary>
         /// 接收拥有独立缓冲区的拼接结果；离线模式立即截断后续帧，并异步启动一次完整检测作业。
@@ -640,12 +682,11 @@ namespace CIS_WebInspector.ViewModels
             _lastStitchedResult = result;
 
             // 离线模式在处理线程内立即停源并清空后续排队帧，避免跨越第二个二维码继续消费。
-            bool isOffline = _cameraSource is OfflineImageSource;
+            OfflineImageSource offlineSource = _cameraSource as OfflineImageSource;
+            bool isOffline = offlineSource != null;
             if (isOffline)
             {
-                Interlocked.Exchange(ref _stopAfterCurrentFrame, 1);
-                _cameraSource.StopGrab();
-                Volatile.Read(ref _frameProcessor)?.DiscardPending();
+                PauseOfflineAfterCurrentFrame(offlineSource, "拼接完成");
             }
 
             // 拼接图保存也进入同一个有界后台队列，不再为每张图创建无界 Task。
@@ -785,12 +826,19 @@ namespace CIS_WebInspector.ViewModels
         // ---- 二维码超时警告回调 ----
         private void OnQrTimeoutWarning(object sender, string message)
         {
+            // 该事件由 ImageStitcher 在当前帧的算法调用栈内同步触发。必须在切回 UI 前
+            // 立即记录消费帧检查点，否则 Timer 可能已经把剩余文件全部预读完毕。
+            OfflineImageSource offlineSource = _cameraSource as OfflineImageSource;
+            bool isOffline = offlineSource != null;
+            if (isOffline)
+                PauseOfflineAfterCurrentFrame(offlineSource, "连续无二维码告警");
+
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 LastStitchInfo = message;
 
                 // 如果是在离线模式下，建议暂停以便排查
-                if (_cameraSource is OfflineImageSource)
+                if (isOffline)
                 {
                     ExecuteStop(null);
                     System.Windows.MessageBox.Show(message + "\n请检查打印质量！", "识别异常", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);

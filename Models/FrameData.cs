@@ -16,6 +16,12 @@ namespace CIS_WebInspector.Models
         /// <summary>环形缓存区索引</summary>
         public int BufferIndex { get; set; }
 
+        /// <summary>
+        /// 数据源中的精确帧序号（从 0 开始）。仅离线数据源赋值，用于在队列预读后恢复到
+        /// 最后一张真正参与算法处理的图像之后；在线相机没有文件序号，保持 -1。
+        /// </summary>
+        public int SourceFrameIndex { get; set; } = -1;
+
         /// <summary>是否为残帧（数据不完整）</summary>
         public bool IsBroken { get; set; }
 

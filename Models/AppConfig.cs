@@ -96,10 +96,10 @@ namespace CIS_WebInspector.Models
         // ==========================================
 
         /// <summary>Debug.log 文件路径</summary>
-        public string DebugLogPath { get; set; } = @"E:\Software\feishudocs\test\log\Debug.log";
+        public string DebugLogPath { get; set; } = @"E:\南京爱速智\CIS\moreMarks\log\2026-07-10\Debug.log";
 
         /// <summary>TIFF 原图存放目录</summary>
-        public string TiffImageDir { get; set; } = @"E:\Software\feishudocs\test\tiff";
+        public string TiffImageDir { get; set; } = @"E:\南京爱速智\CIS\moreMarks\tiff";
 
         /// <summary>裁切小图输出目录</summary>
         public string CroppedOutputDir { get; set; } = "裁切结果";
@@ -212,10 +212,10 @@ namespace CIS_WebInspector.Models
         public int DefectCisThreshOffset { get; set; } = 10;
 
         /// <summary>内部缺陷面积判定阈值（断墨、漏印），与缩放比例相关</summary>
-        public int DefectAreaThreshInner { get; set; } = 100;
+        public int DefectAreaThreshInner { get; set; } = 200;
 
         /// <summary>外部缺陷面积判定阈值（飞墨、脏污），与缩放比例相关</summary>
-        public int DefectAreaThreshOuter { get; set; } = 144;
+        public int DefectAreaThreshOuter { get; set; } = 200;
 
         /// <summary>内部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L565: TOLERANCE_inner=5）</summary>
         public int DefectToleranceInner { get; set; } = 6;
