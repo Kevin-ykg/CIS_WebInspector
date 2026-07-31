@@ -150,6 +150,24 @@ namespace CIS_WebInspector.Models
         public double MinCircularityCis { get; set; } = 0.85;
 
         /// <summary>
+        /// 是否复用 CIS 底排 20 mm Mark 检查白墨出墨量和拉丝。
+        /// 默认关闭，避免尚未完成现场基准确认时直接产生生产告警。
+        /// </summary>
+        public bool EnableWhiteInkInspection { get; set; } = false;
+
+        /// <summary>
+        /// 正常白墨 Mark 的灰度基准。多组正常样本实测约为 165；
+        /// 算法会结合当前局部背景进行归一化，降低批次曝光变化的影响。
+        /// </summary>
+        public double WhiteInkNormalGray { get; set; } = 165.0;
+
+        /// <summary>
+        /// 底排 Mark 内部灰度标准差达到该值时提示可能存在拉丝或出墨不均。
+        /// 当前正常样本约 1~2，出现明显横向拉丝的样本约 7~10。
+        /// </summary>
+        public double WhiteInkStreakStdDevThreshold { get; set; } = 3.0;
+
+        /// <summary>
         /// 是否使用左右侧边 4 mm Mark 构建非线性残差网格。
         /// 默认关闭；关闭或网格质量不合格时仅使用上下两排 20 mm Mark 的 H0。
         /// </summary>
@@ -215,7 +233,7 @@ namespace CIS_WebInspector.Models
         public int DefectAreaThreshInner { get; set; } = 200;
 
         /// <summary>外部缺陷面积判定阈值（飞墨、脏污），与缩放比例相关</summary>
-        public int DefectAreaThreshOuter { get; set; } = 200;
+        public int DefectAreaThreshOuter { get; set; } = 300;
 
         /// <summary>内部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L565: TOLERANCE_inner=5）</summary>
         public int DefectToleranceInner { get; set; } = 6;
@@ -238,13 +256,13 @@ namespace CIS_WebInspector.Models
         /// <summary>
         /// 细线断裂的最小连续长度（mm）。使用 TIFF 排版 DPI 换算，避免缩放比例变化时检测语义漂移。
         /// </summary>
-        public double FineLineMinBreakLengthMm { get; set; } = 0.5;
+        public double FineLineMinBreakLengthMm { get; set; } = 3;
 
         /// <summary>
-        /// 进入细线专用通道的模板线宽上限（mm）。默认 2 mm 可覆盖当前图库右侧钩线的实际线宽，
-        /// 作为 JSON 高级参数保留，不在常用设置界面暴露。
+        /// 进入细线专用通道的模板线宽上限（mm）。默认 2 mm 可覆盖当前图库右侧钩线的实际线宽。
+        /// 可在“参数设置 → 缺陷检测 → 细线断裂检测参数”中调整。
         /// </summary>
-        public double FineLineMaxWidthMm { get; set; } = 2.0;
+        public double FineLineMaxWidthMm { get; set; } = 5;
 
         /// <summary>是否保存缺陷检测可视化结果图</summary>
         public bool SaveDefectResultImages { get; set; } = true;

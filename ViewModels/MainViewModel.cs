@@ -768,6 +768,16 @@ namespace CIS_WebInspector.ViewModels
                 {
                     PublishGlobalDefectPreview(jobResult.GlobalImageBytes);
                 }
+
+                if (jobResult.WhiteInkPreviewBytes != null &&
+                    jobResult.WhiteInkPreviewBytes.Length > 0)
+                {
+                    // 用带 Bottom Mark 轮廓的副本替换拼接预览；_lastStitchedResult 原始像素保持不变。
+                    PublishWhiteInkPreview(jobResult.WhiteInkPreviewBytes);
+                }
+
+                if (jobResult.WhiteInkInspection?.RequiresWarning == true)
+                    ShowWhiteInkWarning(jobResult.WhiteInkInspection);
             }
             catch (OperationCanceledException)
             {
@@ -809,6 +819,44 @@ namespace CIS_WebInspector.ViewModels
             {
                 AddLog($"[缺陷流水线] 无法加载全局缺陷图到界面: {ex.Message}");
             }
+        }
+
+        /// <summary>把算法服务生成的有限尺寸标注 JPEG 发布到“拼接结果”，不触碰原始拼接缓存。</summary>
+        private void PublishWhiteInkPreview(byte[] imageBytes)
+        {
+            try
+            {
+                using (var stream = new System.IO.MemoryStream(imageBytes))
+                {
+                    var decoder = BitmapDecoder.Create(
+                        stream,
+                        BitmapCreateOptions.PreservePixelFormat,
+                        BitmapCacheOption.OnLoad);
+                    StitchedPreview = new WriteableBitmap(decoder.Frames[0]);
+                }
+            }
+            catch (Exception ex)
+            {
+                AddLog($"[白墨检测] 无法加载 Bottom Mark 标注预览：{ex.Message}");
+            }
+        }
+
+        /// <summary>白墨告警只在 UI 层显示，后台 OpenCV 线程不直接操作 WPF。</summary>
+        private void ShowWhiteInkWarning(WhiteInkInspectionResult result)
+        {
+            string details = result.CanEvaluate
+                ? $"检测状态：{result.StatusDisplayName}\n" +
+                  $"相对白墨：{result.InkLevelPercent:F1}%（估算缺少 {result.EstimatedMissingPercent:F1}%）\n" +
+                  $"Mark 灰度均值：{result.MarkMean:F1}，标准差：{result.MarkStandardDeviation:F1}\n" +
+                  $"拉丝提示：{(result.HasStreaking ? "是" : "否")}"
+                : "底部 Mark 有效样本不足，当前批次无法完成白墨质量判定。";
+
+            System.Windows.MessageBox.Show(
+                details +
+                "\n\n请检查白墨输送管路和打印喷头。百分比为现场灰度分级，不是墨层厚度实测值。",
+                "白墨出墨异常",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
         }
 
         /// <summary>向当前检测作业发出取消请求；作业 finally 负责摘除并释放自己的 CancellationTokenSource。</summary>

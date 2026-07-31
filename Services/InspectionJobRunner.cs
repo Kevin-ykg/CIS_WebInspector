@@ -39,6 +39,9 @@ namespace CIS_WebInspector.Services
             Mat tiffMat = null;
             Mat alphaMask = null;
             Mat cisMat = null;
+            WhiteInkInspectionResult whiteInkInspection = WhiteInkInspectionResult.Disabled();
+            byte[] whiteInkPreviewBytes = null;
+            string outputDirectory = null;
 
             try
             {
@@ -53,21 +56,106 @@ namespace CIS_WebInspector.Services
                 if (string.IsNullOrEmpty(qrCode))
                     return Failure(log, "[缺陷流水线] 未找到有效的结束二维码，终止流水线。");
 
+                // 白墨检查只依赖拼接图和结束二维码锚点，必须先于 Debug.log/TIFF 流水线执行。
+                // 这样即使当前图库没有排版日志或 TIFF，供墨异常仍会产生日志、预览和 UI 告警。
+                MatType cisType = stitchedResult.BitsPerPixel == 8 ? MatType.CV_8UC1 : MatType.CV_8UC3;
+                GCHandle handle = GCHandle.Alloc(stitchedResult.Data, GCHandleType.Pinned);
+                try
+                {
+                    cisMat = Mat.FromPixelData(
+                        stitchedResult.Height,
+                        stitchedResult.Width,
+                        cisType,
+                        handle.AddrOfPinnedObject(),
+                        stitchedResult.Stride).Clone();
+                }
+                finally
+                {
+                    handle.Free();
+                }
+
+                var qrAnchor = new CisQrAnchor
+                {
+                    CenterX = stitchedResult.EndQrCenterX,
+                    GlobalCenterY = stitchedResult.EndQrGlobalY,
+                    SegmentStartGlobalY = stitchedResult.SegmentStartGlobalY,
+                    PixelWidth = stitchedResult.EndQrPixelWidth,
+                    PixelHeight = stitchedResult.EndQrPixelHeight
+                };
+                MarkAlignmentOptions alignmentOptions = MarkAlignmentOptions.FromConfig(config);
+                Log(
+                    log,
+                    $"[白墨检测] 开关={(alignmentOptions.EnableWhiteInkInspection ? "开启" : "关闭")}，" +
+                    $"正常灰度基准={alignmentOptions.WhiteInkNormalGray:F1}，" +
+                    $"拉丝标准差阈值={alignmentOptions.WhiteInkStreakStdDevThreshold:F1}。");
+
+                if (alignmentOptions.EnableWhiteInkInspection)
+                {
+                    whiteInkInspection = ImageAligner.InspectBottomWhiteInk(
+                        cisMat, qrAnchor, alignmentOptions, out string whiteInkDiagnostic);
+                    LogWhiteInk(log, whiteInkInspection);
+                    try
+                    {
+                        whiteInkPreviewBytes = ImageAligner.CreateWhiteInkInspectionPreview(
+                            cisMat, whiteInkInspection);
+                        if (whiteInkPreviewBytes != null && whiteInkPreviewBytes.Length > 0)
+                        {
+                            outputDirectory = Path.Combine(
+                                _baseDirectory,
+                                config.CroppedOutputDir,
+                                DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                            Directory.CreateDirectory(outputDirectory);
+                            string previewPath = Path.Combine(
+                                outputDirectory, "WhiteInk_BottomMarks_Preview.jpg");
+                            File.WriteAllBytes(previewPath, whiteInkPreviewBytes);
+                            Log(log, $"[白墨检测] Bottom Mark 标注预览已保存：{previewPath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log(log, $"[白墨检测][WARN] 生成 Bottom Mark 标注预览失败：{ex.Message}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(whiteInkDiagnostic))
+                        Log(log, $"[白墨检测] 诊断：{whiteInkDiagnostic}");
+                }
+
                 Log(log, $"正在解析 Debug.log，目标二维码: {qrCode} ...");
                 var layoutInfo = DebugLogParser.ParseForQrCode(config.DebugLogPath, qrCode, config.TiffImageDir);
                 if (layoutInfo == null)
-                    return Failure(log, "[缺陷流水线] 解析失败或未找到对应的排版日志。");
+                {
+                    return Failure(
+                        log,
+                        "[缺陷流水线] 解析失败或未找到对应的排版日志；白墨检查结果不受影响。",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
 
                 Log(log, $"成功解析排版日志，原图: {layoutInfo.TiffFileName}，共 {layoutInfo.Parts.Count} 个有效零件。");
                 cancellationToken.ThrowIfCancellationRequested();
 
                 Log(log, "正在加载 TIFF 原图...");
                 if (!File.Exists(layoutInfo.TiffFullPath))
-                    return Failure(log, $"[缺陷流水线] 无法找到 TIFF 原图文件: {layoutInfo.TiffFullPath}");
+                {
+                    return Failure(
+                        log,
+                        $"[缺陷流水线] 无法找到 TIFF 原图文件: {layoutInfo.TiffFullPath}",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
 
                 tiffMat = Cv2.ImRead(layoutInfo.TiffFullPath, ImreadModes.Unchanged);
                 if (tiffMat.Empty())
-                    return Failure(log, "[缺陷流水线] TIFF 图像加载失败。");
+                {
+                    return Failure(
+                        log,
+                        "[缺陷流水线] TIFF 图像加载失败。",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
 
                 if (tiffMat.Channels() == 4)
                 {
@@ -159,33 +247,9 @@ namespace CIS_WebInspector.Services
                 cancellationToken.ThrowIfCancellationRequested();
                 Log(log, "正在计算图像对齐变换矩阵...");
 
-                MatType cisType = stitchedResult.BitsPerPixel == 8 ? MatType.CV_8UC1 : MatType.CV_8UC3;
-                GCHandle handle = GCHandle.Alloc(stitchedResult.Data, GCHandleType.Pinned);
-                try
-                {
-                    // FromPixelData 只是托管数组上的非拥有视图；立即 Clone，才能在解除固定后继续安全使用。
-                    cisMat = Mat.FromPixelData(
-                        stitchedResult.Height,
-                        stitchedResult.Width,
-                        cisType,
-                        handle.AddrOfPinnedObject(),
-                        stitchedResult.Stride).Clone();
-                }
-                finally
-                {
-                    handle.Free();
-                }
-
                 int optimalThreshold = 127;
-                var qrAnchor = new CisQrAnchor
-                {
-                    CenterX = stitchedResult.EndQrCenterX,
-                    GlobalCenterY = stitchedResult.EndQrGlobalY,
-                    SegmentStartGlobalY = stitchedResult.SegmentStartGlobalY,
-                    PixelWidth = stitchedResult.EndQrPixelWidth,
-                    PixelHeight = stitchedResult.EndQrPixelHeight
-                };
-                MarkAlignmentOptions alignmentOptions = MarkAlignmentOptions.FromConfig(config);
+                // 独立 Bottom 检查已完成；全局对准阶段不再重复做同一组灰度统计。
+                alignmentOptions.EnableWhiteInkInspection = false;
 
                 using (AlignmentResult alignment = ImageAligner.ComputeTransform(
                            cisMat,
@@ -197,7 +261,14 @@ namespace CIS_WebInspector.Services
                 {
                     // AlignmentResult 持有 H0 及逆矩阵，using 保证 OpenCV 非托管矩阵在本作业结束时释放。
                     if (alignment?.GlobalTransform == null || alignment.GlobalTransform.Empty())
-                        return Failure(log, $"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}");
+                    {
+                        return Failure(
+                            log,
+                            $"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}",
+                            whiteInkInspection,
+                            whiteInkPreviewBytes,
+                            outputDirectory);
+                    }
 
                     Log(log,
                         $"变换矩阵计算成功！模式={alignment.Mode}, 质量={alignment.QualityStatus}, " +
@@ -217,10 +288,13 @@ namespace CIS_WebInspector.Services
 
                         // Debug.log 中的零件位置是毫米；这里统一换算成 TIFF 目标空间像素。
                         double scale = config.LayoutDpi / 25.4;
-                        string outputDirectory = Path.Combine(
-                            _baseDirectory,
-                            config.CroppedOutputDir,
-                            DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                        if (string.IsNullOrWhiteSpace(outputDirectory))
+                        {
+                            outputDirectory = Path.Combine(
+                                _baseDirectory,
+                                config.CroppedOutputDir,
+                                DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                        }
                         var defectTaskResult = PatchCropper.CropAndSave(
                             cisWarped,
                             tiffMat,
@@ -268,6 +342,8 @@ namespace CIS_WebInspector.Services
                             Succeeded = true,
                             Message = completedMessage,
                             GlobalImageBytes = defectTaskResult.GlobalImageBytes,
+                            WhiteInkPreviewBytes = whiteInkPreviewBytes,
+                            WhiteInkInspection = whiteInkInspection,
                             OutputDirectory = outputDirectory,
                             TotalParts = totalParts,
                             PassCount = passCount,
@@ -291,7 +367,13 @@ namespace CIS_WebInspector.Services
             {
                 string message = $"[缺陷流水线] 执行发生严重异常: {ex.Message}\n{ex.StackTrace}";
                 Log(log, message);
-                return new InspectionJobResult { Message = message };
+                return new InspectionJobResult
+                {
+                    Message = message,
+                    WhiteInkInspection = whiteInkInspection,
+                    WhiteInkPreviewBytes = whiteInkPreviewBytes,
+                    OutputDirectory = outputDirectory
+                };
             }
             finally
             {
@@ -303,10 +385,36 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>统一记录可预期失败并返回未成功结果，避免各阶段抛出无业务语义的异常。</summary>
-        private static InspectionJobResult Failure(Action<string> log, string message)
+        private static InspectionJobResult Failure(
+            Action<string> log,
+            string message,
+            WhiteInkInspectionResult whiteInkInspection = null,
+            byte[] whiteInkPreviewBytes = null,
+            string outputDirectory = null)
         {
             Log(log, message);
-            return new InspectionJobResult { Message = message };
+            return new InspectionJobResult
+            {
+                Message = message,
+                WhiteInkInspection = whiteInkInspection ?? WhiteInkInspectionResult.Disabled(),
+                WhiteInkPreviewBytes = whiteInkPreviewBytes,
+                OutputDirectory = outputDirectory
+            };
+        }
+
+        /// <summary>记录白墨原始量化数据，便于现场按批次追溯和重新标定。</summary>
+        private static void LogWhiteInk(Action<string> log, WhiteInkInspectionResult result)
+        {
+            string prefix = result.RequiresWarning ? "[白墨检测][WARN]" : "[白墨检测]";
+            Log(
+                log,
+                $"{prefix} 状态={result.StatusDisplayName}，相对白墨={result.InkLevelPercent:F1}% " +
+                $"(估算缺少={result.EstimatedMissingPercent:F1}%)，Mark均值={result.MarkMean:F1}，" +
+                $"背景均值={result.BackgroundMean:F1}，对比度={result.Contrast:F1}，" +
+                $"标准差={result.MarkStandardDeviation:F1}，方差={result.MarkVariance:F1}，" +
+                $"拉丝={(result.HasStreaking ? "是" : "否")}，样本={result.Samples.Count}，" +
+                $"ROI=({result.SearchRegion.X},{result.SearchRegion.Y}," +
+                $"{result.SearchRegion.Width},{result.SearchRegion.Height})。");
         }
 
         /// <summary>日志回调异常不得反向中断检测流水线。</summary>

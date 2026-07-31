@@ -14,6 +14,7 @@ namespace CIS_WebInspector.Services
     /// <summary>
     /// 单个零件的缺陷检测结果。矩形坐标均相对零件原始分辨率 ROI；
     /// GlobalRoi 则位于翻转后的 TIFF/CIS 全局目标空间，供批次结果图定位。
+    /// 内部缺陷、外部缺陷和细线断裂保持独立分类，计数与矩形集合不得相互合并。
     /// </summary>
     public class PatchDefectResult
     {
@@ -425,7 +426,6 @@ namespace CIS_WebInspector.Services
                                 List<Rect> fineLineRects = new List<Rect>();
                                 List<Rect> fineLineRectsOriginal = new List<Rect>();
                                 int fineLineCount = 0;
-                                int maxFineLineArea = 0;
                                 double maxFineLineLengthMm = 0;
                                 // 细线连续性通道在边缘屏蔽清零前独立复核候选缺口，专门补回普通面积通道
                                 // 容易漏掉的细轮廓断裂；其结果最终与普通通道做“任一命中即 NG”的合并。
@@ -469,7 +469,7 @@ namespace CIS_WebInspector.Services
                                                 fineAnalysisScale,
                                                 config,
                                                 fineLineMaskAnalysis,
-                                                out int maxFineLineAreaAnalysis,
+                                                out _,
                                                 out fineLineCount,
                                                 out maxFineLineLengthMm);
 
@@ -496,11 +496,6 @@ namespace CIS_WebInspector.Services
                                                     analysisToDetectY,
                                                     alphaBinary.Size()))
                                                 .ToList();
-                                            maxFineLineArea = Math.Max(
-                                                0,
-                                                (int)Math.Round(
-                                                    maxFineLineAreaAnalysis *
-                                                    analysisToDetectX * analysisToDetectY));
 
                                             if (fineLineCount > 0)
                                             {
@@ -533,9 +528,9 @@ namespace CIS_WebInspector.Services
                                     Cv2.BitwiseOr(difInner, fineLineMask, difInner);
 
                                 // 普通通道以连通域面积判定，细线通道以结构连续性判定；任一命中都使零件 NG。
-                                result.MaxAreaInner = Math.Max(maxAreaInner, maxFineLineArea);
+                                result.MaxAreaInner = maxAreaInner;
                                 result.MaxAreaOuter = maxAreaOuter;
-                                result.InnerDefectCount = innerCount + fineLineCount;
+                                result.InnerDefectCount = innerCount;
                                 result.OuterDefectCount = outerCount;
                                 result.FineLineBreakCount = fineLineCount;
                                 result.MaxFineLineBreakLengthMm = maxFineLineLengthMm;
@@ -548,9 +543,7 @@ namespace CIS_WebInspector.Services
                                 result.InnerRects = innerRects.Select(r => new Rect(
                                     (int)(r.X / scale), (int)(r.Y / scale),
                                     Math.Max(1, (int)(r.Width / scale)),
-                                    Math.Max(1, (int)(r.Height / scale))))
-                                    .Concat(fineLineRectsOriginal)
-                                    .ToList();
+                                    Math.Max(1, (int)(r.Height / scale)))).ToList();
                                 result.OuterRects = outerRects.Select(r => new Rect(
                                     (int)(r.X / scale), (int)(r.Y / scale),
                                     Math.Max(1, (int)(r.Width / scale)),

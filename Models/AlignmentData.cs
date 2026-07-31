@@ -26,6 +26,98 @@ namespace CIS_WebInspector.Models
         Right
     }
 
+    /// <summary>
+    /// 底排 20 mm Mark 的白墨质量状态。百分比分档表示相对于现场正常
+    /// 灰度基准的估算结果，不等同于实验室墨层厚度测量。
+    /// </summary>
+    public enum WhiteInkInspectionStatus
+    {
+        Disabled,
+        Normal,
+        Streaking,
+        MildShortage,
+        ModerateShortage,
+        SevereShortage,
+        NoInk,
+        UnableToEvaluate
+    }
+
+    /// <summary>一个底排 Mark 的灰度统计及可视化几何信息。</summary>
+    public sealed class WhiteInkMarkSample
+    {
+        public int Index { get; internal set; }
+        public Point2d Center { get; internal set; }
+        public double DisplayRadius { get; internal set; }
+        /// <summary>True 表示中心来自底排实测；False 表示由上排同列位置预测。</summary>
+        public bool UsedDetectedCenter { get; internal set; }
+        public double MarkMean { get; internal set; }
+        public double MarkVariance { get; internal set; }
+        public double BackgroundMean { get; internal set; }
+        public double Contrast { get; internal set; }
+    }
+
+    /// <summary>
+    /// 白墨出墨检查结果。告警状态与零件缺陷 Pass/Fail 相互独立，
+    /// 算法层只返回数据，由 UI 线程决定是否弹窗。
+    /// </summary>
+    public sealed class WhiteInkInspectionResult
+    {
+        public WhiteInkInspectionStatus Status { get; internal set; }
+        public bool IsEnabled => Status != WhiteInkInspectionStatus.Disabled;
+        public bool CanEvaluate =>
+            Status != WhiteInkInspectionStatus.Disabled &&
+            Status != WhiteInkInspectionStatus.UnableToEvaluate;
+        public bool RequiresWarning =>
+            IsEnabled && Status != WhiteInkInspectionStatus.Normal;
+        public double InkLevelPercent { get; internal set; }
+        public double EstimatedMissingPercent => Math.Max(0, 100.0 - InkLevelPercent);
+        public double MarkMean { get; internal set; }
+        public double MarkVariance { get; internal set; }
+        public double MarkStandardDeviation => Math.Sqrt(Math.Max(0, MarkVariance));
+        public double BackgroundMean { get; internal set; }
+        public double Contrast { get; internal set; }
+        public bool HasStreaking { get; internal set; }
+        public Rect SearchRegion { get; internal set; }
+        public IReadOnlyList<WhiteInkMarkSample> Samples { get; internal set; } =
+            new ReadOnlyCollection<WhiteInkMarkSample>(new List<WhiteInkMarkSample>());
+        public string Diagnostic { get; internal set; }
+
+        public string StatusDisplayName
+        {
+            get
+            {
+                switch (Status)
+                {
+                    case WhiteInkInspectionStatus.Normal:
+                        return "正常";
+                    case WhiteInkInspectionStatus.Streaking:
+                        return "白墨拉丝";
+                    case WhiteInkInspectionStatus.MildShortage:
+                        return HasStreaking ? "缺墨并伴拉丝" : "轻度缺墨";
+                    case WhiteInkInspectionStatus.ModerateShortage:
+                        return HasStreaking ? "中度缺墨并伴拉丝" : "中度缺墨";
+                    case WhiteInkInspectionStatus.SevereShortage:
+                        return HasStreaking ? "严重缺墨并伴拉丝" : "严重缺墨";
+                    case WhiteInkInspectionStatus.NoInk:
+                        return "基本无白墨";
+                    case WhiteInkInspectionStatus.UnableToEvaluate:
+                        return "无法判定";
+                    default:
+                        return "未启用";
+                }
+            }
+        }
+
+        internal static WhiteInkInspectionResult Disabled()
+        {
+            return new WhiteInkInspectionResult
+            {
+                Status = WhiteInkInspectionStatus.Disabled,
+                Diagnostic = "白墨出墨检测已关闭。"
+            };
+        }
+    }
+
     /// <summary>用于诊断和绘制侧边非线性控制网格的单个控制点。</summary>
     public sealed class AlignmentControlPoint
     {
@@ -98,6 +190,9 @@ namespace CIS_WebInspector.Models
         public bool IsNonlinear => Mode == AlignmentMode.Nonlinear;
         public IReadOnlyList<AlignmentControlPoint> ControlPoints { get; }
         public IReadOnlyList<AlignmentGlobalMarkPoint> GlobalMarkPoints { get; }
+        /// <summary>底排大圆的白墨质量检查；关闭开关时状态为 Disabled。</summary>
+        public WhiteInkInspectionResult WhiteInkInspection { get; internal set; } =
+            WhiteInkInspectionResult.Disabled();
         public int StripeRows { get; }
         /// <summary>包含 Mark 数量、ROI、残差和明确降级原因的完整诊断文本。</summary>
         public string Diagnostic { get; internal set; }
@@ -159,6 +254,11 @@ namespace CIS_WebInspector.Models
         public double MinCircularityTiff { get; set; }
         public double MinCircularityCis { get; set; }
 
+        // 白墨检查复用底排 20 mm Mark，不额外搜索整幅图像。
+        public bool EnableWhiteInkInspection { get; set; }
+        public double WhiteInkNormalGray { get; set; }
+        public double WhiteInkStreakStdDevThreshold { get; set; }
+
         // 左右 4 mm Mark 非线性增强；开关关闭时这些参数不会参与对准。
         public bool EnableSideMarkNonlinearAlignment { get; set; }
         public int SideMarkPairCount { get; set; }
@@ -192,6 +292,9 @@ namespace CIS_WebInspector.Models
                 ExpandedSearchMarginMm = config.MarkExpandedSearchMarginMm,
                 MinCircularityTiff = config.MinCircularityTiff,
                 MinCircularityCis = config.MinCircularityCis,
+                EnableWhiteInkInspection = config.EnableWhiteInkInspection,
+                WhiteInkNormalGray = config.WhiteInkNormalGray,
+                WhiteInkStreakStdDevThreshold = config.WhiteInkStreakStdDevThreshold,
                 EnableSideMarkNonlinearAlignment = config.EnableSideMarkNonlinearAlignment,
                 SideMarkPairCount = config.SideMarkPairCount,
                 SideMarkDiameterMm = config.SideMarkDiameterMm,

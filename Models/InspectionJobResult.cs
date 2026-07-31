@@ -11,6 +11,10 @@ namespace CIS_WebInspector.Models
         public string Message { get; internal set; }
         /// <summary>供 UI 展示的全局结果 JPEG；不是原始检测图。</summary>
         public byte[] GlobalImageBytes { get; internal set; }
+        /// <summary>带 Bottom 条带和 Mark 轮廓的 CIS 预览；不会写回算法原图。</summary>
+        public byte[] WhiteInkPreviewBytes { get; internal set; }
+        public WhiteInkInspectionResult WhiteInkInspection { get; internal set; } =
+            WhiteInkInspectionResult.Disabled();
         public string OutputDirectory { get; internal set; }
         public int TotalParts { get; internal set; }
         public int PassCount { get; internal set; }

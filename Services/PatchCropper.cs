@@ -283,6 +283,18 @@ namespace CIS_WebInspector.Services
                                 (int)(rect.Height * displayScale));
                             Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 0, 255), defectThick);
                         }
+
+                        // 与零件级缺陷图保持同一颜色约定：细线断裂使用洋红色，
+                        // 不再借用内部缺陷的橙色矩形，便于从全局图直接判断缺陷类型。
+                        foreach (Rect rect in res.FineLineBreakRects)
+                        {
+                            Rect scaledDefectRect = new Rect(
+                                (int)((res.GlobalRoi.X + rect.X) * displayScale),
+                                (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
+                                (int)(rect.Width * displayScale),
+                                (int)(rect.Height * displayScale));
+                            Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(255, 0, 255), defectThick);
+                        }
                     }
 
                     if (displayScale < 1.0)

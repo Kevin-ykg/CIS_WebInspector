@@ -236,6 +236,36 @@
                         <Separator Margin="0,4,0,14" Background="#FF4A4A5E"/>
 
                         <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="启用白墨出墨检测" Width="220"/>
+                            <CheckBox IsChecked="{Binding Config.EnableWhiteInkInspection}"/>
+                        </StackPanel>
+                        <TextBlock Text="复用底排 20 mm Mark 评估白墨亮度和均匀性；异常时记录日志并弹窗，不改变图像对准和零件缺陷判定。"
+                                   Style="{StaticResource ParamDescription}"/>
+
+                        <Expander Foreground="White" Margin="0,0,0,12">
+                            <Expander.Header>
+                                <TextBlock Text="白墨检测标定参数" Foreground="#FF7EC8E3" FontWeight="SemiBold"/>
+                            </Expander.Header>
+                            <StackPanel Margin="18,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="正常白墨灰度基准" Width="202"/>
+                                    <TextBox Text="{Binding Config.WhiteInkNormalGray}"/>
+                                </StackPanel>
+                                <TextBlock Text="正常 Mark 圆内灰度；当前多组样本实测约 165，建议用正常生产图复核后再调整。"
+                                           Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="拉丝标准差阈值" Width="202"/>
+                                    <TextBox Text="{Binding Config.WhiteInkStreakStdDevThreshold}"/>
+                                </StackPanel>
+                                <TextBlock Text="数值越小越敏感；当前正常样本约 1~2，明显横向拉丝样本约 7~10。"
+                                           Style="{StaticResource ParamDescription}"/>
+                            </StackPanel>
+                        </Expander>
+
+                        <Separator Margin="0,4,0,14" Background="#FF4A4A5E"/>
+
+                        <StackPanel Orientation="Horizontal">
                             <TextBlock Text="启用侧边 Mark 非线性矫正" Width="220"/>
                             <CheckBox IsChecked="{Binding Config.EnableSideMarkNonlinearAlignment}"/>
                         </StackPanel>
@@ -378,11 +408,26 @@
                         </StackPanel>
                         <TextBlock Text="在轮廓屏蔽区内用连续性判定补回真实断线，不改变普通差分和 SIFT 配准。" Style="{StaticResource ParamDescription}"/>
 
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="最小断裂长度 (mm)" Width="180"/>
-                            <TextBox Text="{Binding Config.FineLineMinBreakLengthMm}"/>
-                        </StackPanel>
-                        <TextBlock Text="连续缺失达到该长度才进入判定；小于 1 mm 时还需明显深色证据，以抑制锐角圆化误报。" Style="{StaticResource ParamDescription}"/>
+                        <Expander Foreground="White" Margin="0,0,0,12">
+                            <Expander.Header>
+                                <TextBlock Text="细线断裂检测参数" Foreground="#FF7EC8E3" FontWeight="SemiBold"/>
+                            </Expander.Header>
+                            <StackPanel Margin="18,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="最小断裂长度 (mm)" Width="162"/>
+                                    <TextBox Text="{Binding Config.FineLineMinBreakLengthMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="连续缺失达到该长度才进入判定；小于 1 mm 时还需明显深色证据，以抑制锐角圆化误报。"
+                                           Style="{StaticResource ParamDescription}"/>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="最大细线宽度 (mm)" Width="162"/>
+                                    <TextBox Text="{Binding Config.FineLineMaxWidthMm}"/>
+                                </StackPanel>
+                                <TextBlock Text="只有模板线宽不超过该值的细线才进入断裂复核；调大可覆盖更宽图案，但也可能增加边缘误检。"
+                                           Style="{StaticResource ParamDescription}"/>
+                            </StackPanel>
+                        </Expander>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="内部缺陷形态学容差" Width="180"/>
