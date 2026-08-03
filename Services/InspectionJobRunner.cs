@@ -9,7 +9,7 @@ using OpenCvSharp;
 namespace CIS_WebInspector.Services
 {
     /// <summary>
-    /// 执行一次完整的离线检测作业：排版日志解析 → TIFF/Alpha 加载 → 全局对准 →
+    /// 执行一次完整的拼接段检测作业：排版日志解析 → TIFF/Alpha 加载 → 全局对准 →
     /// 零件裁切与缺陷检测 → 汇总输出。该类不依赖 WPF，UI 只负责启动、取消和展示结果。
     /// </summary>
     public sealed class InspectionJobRunner
@@ -45,7 +45,7 @@ namespace CIS_WebInspector.Services
 
             try
             {
-                Log(log, "开始执行离线缺陷检测流水线...");
+                Log(log, "开始执行拼接段缺陷检测流水线...");
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (config == null)
@@ -120,13 +120,55 @@ namespace CIS_WebInspector.Services
                         Log(log, $"[白墨检测] 诊断：{whiteInkDiagnostic}");
                 }
 
+                // 在线生产可能尚未配置排版资料。缺少 Debug.log 或 TIFF 目录属于可预期状态：
+                // 白墨检查仍保留结果，零件级检测跳过，调用方继续采集而不是抛异常或弹窗阻塞。
+                if (string.IsNullOrWhiteSpace(config.DebugLogPath))
+                {
+                    return Failure(
+                        log,
+                        "[缺陷流水线][WARN] 未配置 Debug.log，已跳过本拼接段的排版解析、图像对准和零件缺陷检测；本次作业正常结束，不阻塞程序运行。",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
+
+                if (!File.Exists(config.DebugLogPath))
+                {
+                    return Failure(
+                        log,
+                        $"[缺陷流水线][WARN] Debug.log 不存在：{config.DebugLogPath}；已跳过本拼接段的零件缺陷检测，本次作业正常结束。",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
+
+                if (string.IsNullOrWhiteSpace(config.TiffImageDir))
+                {
+                    return Failure(
+                        log,
+                        "[缺陷流水线][WARN] 未配置 TIFF 原图目录，已跳过本拼接段的图像对准和零件缺陷检测；本次作业正常结束，不阻塞程序运行。",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
+
+                if (!Directory.Exists(config.TiffImageDir))
+                {
+                    return Failure(
+                        log,
+                        $"[缺陷流水线][WARN] TIFF 原图目录不存在：{config.TiffImageDir}；已跳过本拼接段的零件缺陷检测，本次作业正常结束。",
+                        whiteInkInspection,
+                        whiteInkPreviewBytes,
+                        outputDirectory);
+                }
+
                 Log(log, $"正在解析 Debug.log，目标二维码: {qrCode} ...");
                 var layoutInfo = DebugLogParser.ParseForQrCode(config.DebugLogPath, qrCode, config.TiffImageDir);
                 if (layoutInfo == null)
                 {
                     return Failure(
                         log,
-                        "[缺陷流水线] 解析失败或未找到对应的排版日志；白墨检查结果不受影响。",
+                        "[缺陷流水线][WARN] Debug.log 中未找到当前二维码对应的排版记录；已跳过本拼接段的零件缺陷检测，本次作业正常结束，白墨检查结果不受影响。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
                         outputDirectory);
@@ -140,7 +182,7 @@ namespace CIS_WebInspector.Services
                 {
                     return Failure(
                         log,
-                        $"[缺陷流水线] 无法找到 TIFF 原图文件: {layoutInfo.TiffFullPath}",
+                        $"[缺陷流水线][WARN] 无法找到 TIFF 原图文件：{layoutInfo.TiffFullPath}；已跳过本拼接段的零件缺陷检测，本次作业正常结束。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
                         outputDirectory);

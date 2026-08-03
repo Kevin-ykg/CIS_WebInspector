@@ -674,7 +674,8 @@ namespace CIS_WebInspector.ViewModels
 
         // ---- 拼接完成回调 ----
         /// <summary>
-        /// 接收拥有独立缓冲区的拼接结果；离线模式立即截断后续帧，并异步启动一次完整检测作业。
+        /// 接收拥有独立缓冲区的拼接结果；在线、离线模式都异步启动检测作业，
+        /// 只有离线模式需要立即截断后续帧并等待用户恢复。
         /// </summary>
         private void OnStitchCompleted(object sender, StitchedImageResult result)
         {
@@ -708,6 +709,11 @@ namespace CIS_WebInspector.ViewModels
                     AddLog("[WARN] 拼接图保存队列持续繁忙，本次拼接图未自动保存，请使用手动保存。检测结果不受影响。");
             }
 
+            // 不等待 UI 预览和弹窗，直接把独立的拼接缓冲区交给后台作业。
+            // 在线模式因此可以继续接收后续帧；离线模式仍由上方检查点逻辑负责暂停。
+            AddLog($"[缺陷流水线] 已提交{(isOffline ? "离线" : "在线")}拼接段，后台开始处理。");
+            StartInspectionJob(result);
+
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 UpdateStitchedPreview(result);
@@ -715,18 +721,16 @@ namespace CIS_WebInspector.ViewModels
                 LastStitchInfo = msg;
                 AddLog(msg);
 
-                // 如果是离线加载模式，自动暂停并弹窗提示，同时启动离线缺陷检测流水线
+                // 离线加载模式仍保持原来的暂停和人工确认行为；在线模式持续采集。
                 if (isOffline)
                 {
                     ExecuteStop(null);
-                    System.Windows.MessageBox.Show("当前拼接图像已完成，系统将在后台开始执行排版解析和离线缺陷检测...", "拼接完成", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
-                    
-                    StartInspectionJob(result);
+                    System.Windows.MessageBox.Show("当前拼接图像已完成，系统将在后台开始执行排版解析和缺陷检测...", "拼接完成", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
                 }
             }, System.Windows.Threading.DispatcherPriority.Normal);
         }
 
-        // ---- 离线缺陷检测作业协调 ----
+        // ---- 在线/离线缺陷检测作业协调 ----
         /// <summary>以 fire-and-forget 方式启动作业，所有异常都由 RunInspectionJobAsync 内部记录。</summary>
         private void StartInspectionJob(StitchedImageResult result)
         {
@@ -753,7 +757,7 @@ namespace CIS_WebInspector.ViewModels
                 AppConfig config = ConfigManager.Config;
                 InspectionJobResult jobResult = await Task.Run(
                     () => _inspectionJobRunner.Run(result, config, AddLog, cancellation.Token),
-                    cancellation.Token);
+                    cancellation.Token).ConfigureAwait(false);
 
                 lock (_inspectionJobSync)
                 {
@@ -762,22 +766,9 @@ namespace CIS_WebInspector.ViewModels
                         return;
                 }
 
-                if (jobResult.Succeeded &&
-                    jobResult.GlobalImageBytes != null &&
-                    jobResult.GlobalImageBytes.Length > 0)
-                {
-                    PublishGlobalDefectPreview(jobResult.GlobalImageBytes);
-                }
-
-                if (jobResult.WhiteInkPreviewBytes != null &&
-                    jobResult.WhiteInkPreviewBytes.Length > 0)
-                {
-                    // 用带 Bottom Mark 轮廓的副本替换拼接预览；_lastStitchedResult 原始像素保持不变。
-                    PublishWhiteInkPreview(jobResult.WhiteInkPreviewBytes);
-                }
-
-                if (jobResult.WhiteInkInspection?.RequiresWarning == true)
-                    ShowWhiteInkWarning(jobResult.WhiteInkInspection);
+                // 检测可以从相机消费者线程、离线处理线程或 UI 线程发起，因此不能依赖 await
+                // 自动捕获到某个 SynchronizationContext。所有 WPF 对象和绑定属性统一回到 UI Dispatcher。
+                await PublishInspectionJobResultAsync(jobResult, cancellation).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -797,6 +788,52 @@ namespace CIS_WebInspector.ViewModels
 
                 cancellation.Dispose();
             }
+        }
+
+        /// <summary>
+        /// 在 UI Dispatcher 上发布检测结果。进入 Dispatcher 后再次检查作业身份，防止等待排队期间
+        /// 新拼接段已经替换当前作业，而旧结果仍覆盖最新预览或弹出过期告警。
+        /// </summary>
+        private async Task PublishInspectionJobResultAsync(
+            InspectionJobResult jobResult,
+            CancellationTokenSource jobCancellation)
+        {
+            Action publish = () =>
+            {
+                lock (_inspectionJobSync)
+                {
+                    if (!ReferenceEquals(_inspectionCancellation, jobCancellation))
+                        return;
+                }
+
+                if (jobResult.Succeeded &&
+                    jobResult.GlobalImageBytes != null &&
+                    jobResult.GlobalImageBytes.Length > 0)
+                {
+                    PublishGlobalDefectPreview(jobResult.GlobalImageBytes);
+                }
+
+                if (jobResult.WhiteInkPreviewBytes != null &&
+                    jobResult.WhiteInkPreviewBytes.Length > 0)
+                {
+                    // 用带 Bottom Mark 轮廓的副本替换拼接预览；_lastStitchedResult 原始像素保持不变。
+                    PublishWhiteInkPreview(jobResult.WhiteInkPreviewBytes);
+                }
+
+                if (jobResult.WhiteInkInspection?.RequiresWarning == true)
+                    ShowWhiteInkWarning(jobResult.WhiteInkInspection);
+            };
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null || dispatcher.CheckAccess())
+            {
+                publish();
+                return;
+            }
+
+            await dispatcher.InvokeAsync(
+                publish,
+                System.Windows.Threading.DispatcherPriority.Normal);
         }
 
         /// <summary>从内存 JPEG 创建 OnLoad/Freeze 的 BitmapImage，使流关闭后仍可跨线程安全绑定。</summary>

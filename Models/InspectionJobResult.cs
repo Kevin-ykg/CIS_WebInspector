@@ -1,7 +1,7 @@
 namespace CIS_WebInspector.Models
 {
     /// <summary>
-    /// 一次离线检测作业的 UI 无关结果。算法服务只返回数据，界面层决定如何展示。
+    /// 一次在线或离线拼接段检测作业的 UI 无关结果。算法服务只返回数据，界面层决定如何展示。
     /// </summary>
     public sealed class InspectionJobResult
     {
