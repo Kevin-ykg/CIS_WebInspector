@@ -39,6 +39,19 @@ namespace CIS_WebInspector.Services
         private const int FinderPerspectivePixelsPerModule = 12;
         private const int FinderPerspectiveMaxEvidence = 12;
         private const int FinderPerspectiveMaxCandidates = 3;
+        // 严重失焦时，定位框的黑白环会互相融合，基于二值轮廓层级的常规证据可能完全消失。
+        // 最终兜底仅在前述路径全部失败后，于缩小图上用定位框固定结构寻找三点几何；
+        // 找不到满足直角、尺度和间距约束的三点组时，不会调用额外的 DNN 解码。
+        private const int BlurredFinderSearchLongEdge = 640;
+        private const double BlurredFinderMinimumScore = 0.60;
+        private const int BlurredFinderPeaksPerScale = 5;
+        private const int BlurredFinderMaxEvidence = 16;
+        private const int BlurredFinderMaxTriples = 2;
+        private const int BlurredRecoveryPixelsPerModule = 24;
+        private static readonly int[] BlurredFinderTemplateModuleSizes =
+            { 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18 };
+        private static readonly double[] BlurredRecoveryExpansionScales =
+            { 1.0, 0.98, 1.035, 0.97 };
         private readonly object _decodeLock = new object();
         private readonly string _modelDirectory;
         private WeChatQRCode _detector;
@@ -543,6 +556,21 @@ namespace CIS_WebInspector.Services
                         LastDecodeStrategy = lowContrastStrategy;
                         return lowContrastResult;
                     }
+
+                    // 严重失焦会抹掉嵌套轮廓，但三个定位框的整体明暗结构仍可能存在。
+                    // 该路径不枚举大量锐化/阈值参数，而是在缩小后的高对比颜色（或灰度）通道上
+                    // 寻找三个满足二维码几何约束的模板峰，再恢复标准平面交给同一 WeChatQRCode。
+                    // 模板相关的正负号同时覆盖黑码与白码，因此无需把完整流程无条件跑两遍。
+                    if (TryDecodeBlurredFinderRecovery(
+                        source,
+                        new Rect(safeX, 0, safeWidth, source.Height),
+                        safeX,
+                        out QrDetectionResult blurredResult,
+                        out string blurredStrategy))
+                    {
+                        LastDecodeStrategy = blurredStrategy;
+                        return blurredResult;
+                    }
                 }
 
                 return QrDetectionResult.NotFound;
@@ -556,6 +584,661 @@ namespace CIS_WebInspector.Services
             {
                 if (ownsGray)
                     gray?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// 对“模块边缘已经失焦，但三个定位框仍保留整体结构”的图像做受限恢复。
+        /// 模板只负责定位和估算模块尺度；识别成功仍以 WeChatQRCode 解出非空文本为准。
+        /// </summary>
+        private bool TryDecodeBlurredFinderRecovery(
+            Mat source,
+            Rect roiRect,
+            int sourceOffsetX,
+            out QrDetectionResult result,
+            out string strategy)
+        {
+            result = QrDetectionResult.NotFound;
+            strategy = null;
+            if (source == null || source.Empty() ||
+                roiRect.Width < 96 || roiRect.Height < 96)
+                return false;
+
+            using (var sourceView = new Mat(source, roiRect))
+            using (var searchChannel = new Mat())
+            using (var secondaryChannel = new Mat())
+            {
+                // 绿色通道用于稳定定位三个模板峰；当前困难样本存在明显青色散焦边，
+                // 所以找到几何后优先在红色通道解码。灰度输入保持原数据。
+                if (sourceView.Channels() == 1)
+                    sourceView.CopyTo(searchChannel);
+                else
+                {
+                    Cv2.ExtractChannel(sourceView, searchChannel, 1);
+                    Cv2.ExtractChannel(sourceView, secondaryChannel, 2);
+                }
+
+                Cv2.MeanStdDev(
+                    searchChannel,
+                    out Scalar _,
+                    out Scalar channelStdDev);
+                if (channelStdDev.Val0 < 8.0)
+                    return false;
+
+                List<BlurredFinderEvidence> evidence =
+                    FindBlurredFinderTemplateEvidence(searchChannel);
+                List<BlurredFinderTriple> triples =
+                    BuildBlurredFinderTriples(evidence);
+                for (int tripleIndex = 0;
+                    tripleIndex < triples.Count;
+                    tripleIndex++)
+                {
+                    BlurredFinderTriple triple = triples[tripleIndex];
+                    List<int> moduleCounts = BuildBlurredModuleCountCandidates(
+                        triple.EstimatedDimension);
+                    for (int moduleIndex = 0;
+                        moduleIndex < moduleCounts.Count;
+                        moduleIndex++)
+                    {
+                        int moduleCount = moduleCounts[moduleIndex];
+                            Point2f[] codeCorners = BuildBlurredCodeCorners(
+                            triple,
+                            moduleCount);
+                            if (!IsPlausibleBlurredQuadrilateral(
+                                codeCorners,
+                                searchChannel.Width,
+                                searchChannel.Height))
+                                continue;
+
+                        int decodeChannelCount = secondaryChannel.Empty() ? 1 : 2;
+                        for (int decodeChannelIndex = 0;
+                            decodeChannelIndex < decodeChannelCount;
+                            decodeChannelIndex++)
+                        {
+                            Mat decodeChannel = secondaryChannel.Empty()
+                                ? searchChannel
+                                : decodeChannelIndex == 0
+                                    ? secondaryChannel
+                                    : searchChannel;
+                            string channelName = sourceView.Channels() == 1
+                                ? "gray"
+                                : decodeChannelIndex == 0 ? "red" : "green";
+                            for (int expansionIndex = 0;
+                                expansionIndex < BlurredRecoveryExpansionScales.Length;
+                                expansionIndex++)
+                            {
+                                double expansion =
+                                    BlurredRecoveryExpansionScales[expansionIndex];
+                                Point2f[] expandedCorners = ExpandCorners(
+                                    codeCorners,
+                                    expansion);
+                                if (!TryDecodeBlurredRectified(
+                                    decodeChannel,
+                                    expandedCorners,
+                                    moduleCount,
+                                    triple.Inverted,
+                                    out DecodeHit hit,
+                                    out string rectifiedPreprocessing))
+                                    continue;
+
+                                double centerX = 0;
+                                double centerY = 0;
+                                for (int cornerIndex = 0;
+                                    cornerIndex < codeCorners.Length;
+                                    cornerIndex++)
+                                {
+                                    centerX += codeCorners[cornerIndex].X;
+                                    centerY += codeCorners[cornerIndex].Y;
+                                }
+                                centerX /= codeCorners.Length;
+                                centerY /= codeCorners.Length;
+
+                                double pixelWidth =
+                                    (PointDistance(codeCorners[0], codeCorners[1]) +
+                                     PointDistance(codeCorners[3], codeCorners[2])) * 0.5;
+                                double pixelHeight =
+                                    (PointDistance(codeCorners[0], codeCorners[3]) +
+                                     PointDistance(codeCorners[1], codeCorners[2])) * 0.5;
+                                result = new QrDetectionResult
+                                {
+                                    Found = true,
+                                    CenterX = Math.Max(
+                                        0,
+                                        (int)Math.Round(centerX + sourceOffsetX)),
+                                    CenterY = Math.Max(0, (int)Math.Round(centerY)),
+                                    PixelWidth = pixelWidth,
+                                    PixelHeight = pixelHeight,
+                                    DecodedText = hit.Text
+                                };
+                                strategy =
+                                    $"WeChatQRCode, blurred-finder-template, channel=" +
+                                    $"{channelName}, " +
+                                    $"polarity={(triple.Inverted ? "inverted" : "original")}, " +
+                                    $"templateScore={triple.AverageTemplateScore:F3}, " +
+                                    $"rightAngleCosine={triple.RightAngleCosine:F3}, " +
+                                    $"estimatedDimension={triple.EstimatedDimension:F1}, " +
+                                    $"moduleCount={moduleCount}, expansion={expansion:F3}, " +
+                                    $"rectified={rectifiedPreprocessing}";
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 在最长边 640 px 的工作图上匹配 7×7 定位框模板。
+        /// 正相关代表黑码白底，负相关代表白码黑底；两种极性共用一次模板计算。
+        /// </summary>
+        private static List<BlurredFinderEvidence>
+            FindBlurredFinderTemplateEvidence(Mat source)
+        {
+            var raw = new List<BlurredFinderEvidence>();
+            double searchScale = Math.Min(
+                1.0,
+                BlurredFinderSearchLongEdge /
+                (double)Math.Max(source.Width, source.Height));
+            using (var searchImage = new Mat())
+            {
+                if (searchScale < 1.0 - ScaleEpsilon)
+                {
+                    Cv2.Resize(
+                        source,
+                        searchImage,
+                        new OpenCvSharp.Size(
+                            Math.Max(64, (int)Math.Round(source.Width * searchScale)),
+                            Math.Max(64, (int)Math.Round(source.Height * searchScale))),
+                        0,
+                        0,
+                        InterpolationFlags.Area);
+                }
+                else
+                {
+                    source.CopyTo(searchImage);
+                }
+
+                for (int scaleIndex = 0;
+                    scaleIndex < BlurredFinderTemplateModuleSizes.Length;
+                    scaleIndex++)
+                {
+                    int moduleSize =
+                        BlurredFinderTemplateModuleSizes[scaleIndex];
+                    int templateSide = moduleSize * 7;
+                    if (templateSide >= searchImage.Width ||
+                        templateSide >= searchImage.Height)
+                        continue;
+
+                    using (var idealTemplate = CreateBlurredFinderTemplate(
+                        moduleSize))
+                    using (var response = new Mat())
+                    {
+                        Cv2.MatchTemplate(
+                            searchImage,
+                            idealTemplate,
+                            response,
+                            TemplateMatchModes.CCoeffNormed);
+                        CollectBlurredFinderPeaks(
+                            response,
+                            moduleSize,
+                            templateSide,
+                            searchScale,
+                            false,
+                            raw);
+                        CollectBlurredFinderPeaks(
+                            response,
+                            moduleSize,
+                            templateSide,
+                            searchScale,
+                            true,
+                            raw);
+                    }
+                }
+            }
+
+            raw.Sort((left, right) => right.Score.CompareTo(left.Score));
+            var distinct = new List<BlurredFinderEvidence>();
+            for (int i = 0;
+                i < raw.Count && distinct.Count < BlurredFinderMaxEvidence;
+                i++)
+            {
+                BlurredFinderEvidence candidate = raw[i];
+                bool duplicate = false;
+                for (int j = 0; j < distinct.Count; j++)
+                {
+                    BlurredFinderEvidence accepted = distinct[j];
+                    if (candidate.Inverted != accepted.Inverted)
+                        continue;
+
+                    double dx = candidate.Center.X - accepted.Center.X;
+                    double dy = candidate.Center.Y - accepted.Center.Y;
+                    double mergeDistance = Math.Max(
+                        candidate.ModuleSize,
+                        accepted.ModuleSize) * 7.0 * 0.45;
+                    if (dx * dx + dy * dy <= mergeDistance * mergeDistance)
+                    {
+                        duplicate = true;
+                        break;
+                    }
+                }
+
+                if (!duplicate)
+                    distinct.Add(candidate);
+            }
+            return distinct;
+        }
+
+        private static Mat CreateBlurredFinderTemplate(int moduleSize)
+        {
+            int side = moduleSize * 7;
+            var blurred = new Mat();
+            using (var ideal = new Mat(
+                side,
+                side,
+                MatType.CV_8UC1,
+                Scalar.All(255)))
+            {
+                for (int row = 0; row < 7; row++)
+                {
+                    for (int column = 0; column < 7; column++)
+                    {
+                        bool dark =
+                            row == 0 || row == 6 ||
+                            column == 0 || column == 6 ||
+                            (row >= 2 && row <= 4 &&
+                             column >= 2 && column <= 4);
+                        if (!dark)
+                            continue;
+
+                        Cv2.Rectangle(
+                            ideal,
+                            new Rect(
+                                column * moduleSize,
+                                row * moduleSize,
+                                moduleSize,
+                                moduleSize),
+                            Scalar.All(0),
+                            -1);
+                    }
+                }
+
+                Cv2.GaussianBlur(
+                    ideal,
+                    blurred,
+                    new OpenCvSharp.Size(0, 0),
+                    Math.Max(0.8, moduleSize * 0.22));
+            }
+            return blurred;
+        }
+
+        private static void CollectBlurredFinderPeaks(
+            Mat response,
+            int moduleSize,
+            int templateSide,
+            double searchScale,
+            bool inverted,
+            List<BlurredFinderEvidence> output)
+        {
+            using (var work = response.Clone())
+            {
+                for (int peakIndex = 0;
+                    peakIndex < BlurredFinderPeaksPerScale;
+                    peakIndex++)
+                {
+                    Cv2.MinMaxLoc(
+                        work,
+                        out double minimum,
+                        out double maximum,
+                        out Point minimumLocation,
+                        out Point maximumLocation);
+                    double score = inverted ? -minimum : maximum;
+                    Point location = inverted
+                        ? minimumLocation
+                        : maximumLocation;
+                    if (score < BlurredFinderMinimumScore)
+                        break;
+
+                    output.Add(new BlurredFinderEvidence
+                    {
+                        Center = new Point2f(
+                            (float)((location.X + templateSide * 0.5) /
+                                searchScale),
+                            (float)((location.Y + templateSide * 0.5) /
+                                searchScale)),
+                        ModuleSize = moduleSize / searchScale,
+                        Score = score,
+                        Inverted = inverted
+                    });
+
+                    int suppressionRadius = templateSide / 2;
+                    int left = Math.Max(0, location.X - suppressionRadius);
+                    int top = Math.Max(0, location.Y - suppressionRadius);
+                    int right = Math.Min(
+                        work.Width,
+                        location.X + templateSide + suppressionRadius);
+                    int bottom = Math.Min(
+                        work.Height,
+                        location.Y + templateSide + suppressionRadius);
+                    if (right <= left || bottom <= top)
+                        break;
+                    Cv2.Rectangle(
+                        work,
+                        new Rect(left, top, right - left, bottom - top),
+                        inverted ? Scalar.All(1.0) : Scalar.All(-1.0),
+                        -1);
+                }
+            }
+        }
+
+        private static List<BlurredFinderTriple> BuildBlurredFinderTriples(
+            List<BlurredFinderEvidence> evidence)
+        {
+            var triples = new List<BlurredFinderTriple>();
+            if (evidence == null || evidence.Count < 3)
+                return triples;
+
+            for (int firstIndex = 0;
+                firstIndex < evidence.Count - 2;
+                firstIndex++)
+            {
+                for (int secondIndex = firstIndex + 1;
+                    secondIndex < evidence.Count - 1;
+                    secondIndex++)
+                {
+                    for (int thirdIndex = secondIndex + 1;
+                        thirdIndex < evidence.Count;
+                        thirdIndex++)
+                    {
+                        BlurredFinderEvidence[] current =
+                        {
+                            evidence[firstIndex],
+                            evidence[secondIndex],
+                            evidence[thirdIndex]
+                        };
+                        if (current[0].Inverted != current[1].Inverted ||
+                            current[0].Inverted != current[2].Inverted)
+                            continue;
+
+                        double minimumModule = Math.Min(
+                            current[0].ModuleSize,
+                            Math.Min(
+                                current[1].ModuleSize,
+                                current[2].ModuleSize));
+                        double maximumModule = Math.Max(
+                            current[0].ModuleSize,
+                            Math.Max(
+                                current[1].ModuleSize,
+                                current[2].ModuleSize));
+                        if (minimumModule <= 0 ||
+                            maximumModule / minimumModule > 1.60)
+                            continue;
+
+                        for (int cornerIndex = 0;
+                            cornerIndex < 3;
+                            cornerIndex++)
+                        {
+                            BlurredFinderEvidence corner = current[cornerIndex];
+                            BlurredFinderEvidence first =
+                                current[(cornerIndex + 1) % 3];
+                            BlurredFinderEvidence second =
+                                current[(cornerIndex + 2) % 3];
+                            Point2f firstVector = first.Center - corner.Center;
+                            Point2f secondVector = second.Center - corner.Center;
+                            double firstLength = Math.Sqrt(
+                                firstVector.X * firstVector.X +
+                                firstVector.Y * firstVector.Y);
+                            double secondLength = Math.Sqrt(
+                                secondVector.X * secondVector.X +
+                                secondVector.Y * secondVector.Y);
+                            if (firstLength <= maximumModule * 8.0 ||
+                                secondLength <= maximumModule * 8.0)
+                                continue;
+
+                            double cosine = Math.Abs(
+                                (firstVector.X * secondVector.X +
+                                 firstVector.Y * secondVector.Y) /
+                                (firstLength * secondLength));
+                            double legRatio =
+                                Math.Max(firstLength, secondLength) /
+                                Math.Min(firstLength, secondLength);
+                            if (cosine > 0.28 || legRatio > 1.35)
+                                continue;
+
+                            double[] moduleSizes =
+                            {
+                                current[0].ModuleSize,
+                                current[1].ModuleSize,
+                                current[2].ModuleSize
+                            };
+                            Array.Sort(moduleSizes);
+                            double medianModule = moduleSizes[1];
+                            double estimatedDimension =
+                                (firstLength + secondLength) * 0.5 /
+                                medianModule + 7.0;
+                            if (estimatedDimension < 17.0 ||
+                                estimatedDimension > 65.0)
+                                continue;
+
+                            double averageTemplateScore =
+                                (current[0].Score +
+                                 current[1].Score +
+                                 current[2].Score) / 3.0;
+                            triples.Add(new BlurredFinderTriple
+                            {
+                                Corner = corner,
+                                FirstNeighbor = first,
+                                SecondNeighbor = second,
+                                Inverted = corner.Inverted,
+                                RightAngleCosine = cosine,
+                                EstimatedDimension = estimatedDimension,
+                                AverageTemplateScore = averageTemplateScore,
+                                Score =
+                                    cosine +
+                                    Math.Abs(Math.Log(legRatio)) +
+                                    Math.Abs(Math.Log(
+                                        maximumModule / minimumModule)) +
+                                    (1.0 - averageTemplateScore)
+                            });
+                        }
+                    }
+                }
+            }
+
+            triples.Sort((left, right) => left.Score.CompareTo(right.Score));
+            if (triples.Count > BlurredFinderMaxTriples)
+                triples.RemoveRange(
+                    BlurredFinderMaxTriples,
+                    triples.Count - BlurredFinderMaxTriples);
+            return triples;
+        }
+
+        private static List<int> BuildBlurredModuleCountCandidates(
+            double estimatedDimension)
+        {
+            int estimatedVersion = Math.Max(
+                0,
+                Math.Min(
+                    9,
+                    (int)Math.Round((estimatedDimension - 21.0) / 4.0)));
+            var result = new List<int>();
+            // 失焦会把定位框黑白环融合，使模板最佳模块尺寸偏小、推算版本偏大。
+            // 因此先试低一级版本，再试四舍五入版本和高一级版本。
+            int[] versionOffsets = { -1, 0, 1 };
+            for (int i = 0; i < versionOffsets.Length; i++)
+            {
+                int version = estimatedVersion + versionOffsets[i];
+                if (version < 0 || version > 9)
+                    continue;
+                int moduleCount = 21 + version * 4;
+                if (!result.Contains(moduleCount))
+                    result.Add(moduleCount);
+            }
+            return result;
+        }
+
+        private static Point2f[] BuildBlurredCodeCorners(
+            BlurredFinderTriple triple,
+            int moduleCount)
+        {
+            double centerSpan = moduleCount - 7.0;
+            Point2f firstAxis = ScaleVector(
+                triple.FirstNeighbor.Center - triple.Corner.Center,
+                1.0 / centerSpan);
+            Point2f secondAxis = ScaleVector(
+                triple.SecondNeighbor.Center - triple.Corner.Center,
+                1.0 / centerSpan);
+            const double near = -3.5;
+            double far = moduleCount - 3.5;
+            return OrderQuadrilateralCorners(new[]
+            {
+                AddVectors(
+                    triple.Corner.Center,
+                    ScaleVector(firstAxis, near),
+                    ScaleVector(secondAxis, near)),
+                AddVectors(
+                    triple.Corner.Center,
+                    ScaleVector(firstAxis, far),
+                    ScaleVector(secondAxis, near)),
+                AddVectors(
+                    triple.Corner.Center,
+                    ScaleVector(firstAxis, far),
+                    ScaleVector(secondAxis, far)),
+                AddVectors(
+                    triple.Corner.Center,
+                    ScaleVector(firstAxis, near),
+                    ScaleVector(secondAxis, far))
+            });
+        }
+
+        private static Point2f[] ExpandCorners(
+            Point2f[] corners,
+            double scale)
+        {
+            float centerX = 0;
+            float centerY = 0;
+            for (int i = 0; i < corners.Length; i++)
+            {
+                centerX += corners[i].X;
+                centerY += corners[i].Y;
+            }
+            centerX /= corners.Length;
+            centerY /= corners.Length;
+
+            var expanded = new Point2f[corners.Length];
+            for (int i = 0; i < corners.Length; i++)
+            {
+                expanded[i] = new Point2f(
+                    centerX + (float)((corners[i].X - centerX) * scale),
+                    centerY + (float)((corners[i].Y - centerY) * scale));
+            }
+            return expanded;
+        }
+
+        private static bool IsPlausibleBlurredQuadrilateral(
+            Point2f[] corners,
+            int sourceWidth,
+            int sourceHeight)
+        {
+            if (corners == null || corners.Length != 4)
+                return false;
+
+            double width =
+                (PointDistance(corners[0], corners[1]) +
+                 PointDistance(corners[3], corners[2])) * 0.5;
+            double height =
+                (PointDistance(corners[0], corners[3]) +
+                 PointDistance(corners[1], corners[2])) * 0.5;
+            if (width < 96 || height < 96 ||
+                Math.Max(width, height) / Math.Min(width, height) > 1.50)
+                return false;
+
+            double allowedOutside =
+                Math.Max(sourceWidth, sourceHeight) * 0.15;
+            for (int i = 0; i < corners.Length; i++)
+            {
+                if (corners[i].X < -allowedOutside ||
+                    corners[i].Y < -allowedOutside ||
+                    corners[i].X > sourceWidth + allowedOutside ||
+                    corners[i].Y > sourceHeight + allowedOutside)
+                    return false;
+            }
+            return true;
+        }
+
+        private bool TryDecodeBlurredRectified(
+            Mat source,
+            Point2f[] corners,
+            int moduleCount,
+            bool invertPolarity,
+            out DecodeHit hit,
+            out string preprocessing)
+        {
+            hit = null;
+            preprocessing = null;
+            int codeSide = moduleCount * BlurredRecoveryPixelsPerModule;
+            int quietZone = 4 * BlurredRecoveryPixelsPerModule;
+            Point2f[] destination =
+            {
+                new Point2f(0, 0),
+                // 以模块边界而不是最后一个像素中心建立变换；这样每个模块正好占据
+                // BlurredRecoveryPixelsPerModule 个像素，避免大失焦样本在边缘累积半像素相位误差。
+                new Point2f(codeSide, 0),
+                new Point2f(codeSide, codeSide),
+                new Point2f(0, codeSide)
+            };
+
+            using (Mat transform = Cv2.GetPerspectiveTransform(
+                corners,
+                destination))
+            using (var straight = new Mat())
+            using (var normalizedPolarity = new Mat())
+            using (var padded = new Mat())
+            using (var normalized = new Mat())
+            {
+                Cv2.WarpPerspective(
+                    source,
+                    straight,
+                    transform,
+                    new OpenCvSharp.Size(codeSide, codeSide),
+                    InterpolationFlags.Cubic,
+                    BorderTypes.Replicate);
+                if (invertPolarity)
+                    Cv2.BitwiseNot(straight, normalizedPolarity);
+                else
+                    straight.CopyTo(normalizedPolarity);
+
+                Cv2.CopyMakeBorder(
+                    normalizedPolarity,
+                    padded,
+                    quietZone,
+                    quietZone,
+                    quietZone,
+                    quietZone,
+                    BorderTypes.Constant,
+                    Scalar.All(255));
+                Cv2.Normalize(padded, normalized, 0, 255, NormTypes.MinMax);
+                if (TryDecode(normalized, 1.0, out hit))
+                {
+                    preprocessing = "normalized-gray";
+                    return true;
+                }
+
+                using (var background = new Mat())
+                using (var flattened = new Mat())
+                {
+                    Cv2.GaussianBlur(
+                        normalized,
+                        background,
+                        new OpenCvSharp.Size(0, 0),
+                        BlurredRecoveryPixelsPerModule * 1.8);
+                    Cv2.Divide(normalized, background, flattened, 255.0);
+                    if (!TryDecode(flattened, 1.0, out hit))
+                        return false;
+                    preprocessing = "illumination-flattened";
+                    return true;
+                }
             }
         }
 
@@ -1991,6 +2674,28 @@ namespace CIS_WebInspector.Services
             public double CenterX { get; set; }
             public double CenterY { get; set; }
             public double EquivalentSide { get; set; }
+        }
+
+        /// <summary>失焦定位框模板在原始 ROI 坐标系中的峰值证据。</summary>
+        private sealed class BlurredFinderEvidence
+        {
+            public Point2f Center { get; set; }
+            public double ModuleSize { get; set; }
+            public double Score { get; set; }
+            public bool Inverted { get; set; }
+        }
+
+        /// <summary>通过直角、边长和尺度一致性验证的三个失焦定位框。</summary>
+        private sealed class BlurredFinderTriple
+        {
+            public BlurredFinderEvidence Corner { get; set; }
+            public BlurredFinderEvidence FirstNeighbor { get; set; }
+            public BlurredFinderEvidence SecondNeighbor { get; set; }
+            public bool Inverted { get; set; }
+            public double RightAngleCosine { get; set; }
+            public double EstimatedDimension { get; set; }
+            public double AverageTemplateScore { get; set; }
+            public double Score { get; set; }
         }
 
         private sealed class AdaptiveScaleCandidate
