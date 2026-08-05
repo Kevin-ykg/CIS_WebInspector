@@ -35,16 +35,12 @@ namespace CIS_WebInspector.Services
         private bool _useUserBuffer;
 
         // ---- 非托管内存池 ----
-        private int BufferCount => ConfigManager.Config.BufferCount;
+        private int BufferCount => Math.Max(1, ConfigManager.Config.BufferCount);
         private readonly List<IntPtr> _imgBuffers = new List<IntPtr>();
         private int _imgIndex;
 
         // ---- 回调句柄（防止GC回收委托） ----
         private VolansEventHandler _callbackImageReady;
-
-        // ---- 统计 ----
-        public ulong FrameCount { get; private set; }
-        public ulong BrokenCount { get; private set; }
 
         /// <summary>
         /// 打开首个 Volans 设备、加载 .arcf、读取图像几何并注册帧回调；失败通过 ErrorOccurred 返回原因。
@@ -199,8 +195,11 @@ namespace CIS_WebInspector.Services
                     using (var originalMat = OpenCvSharp.Mat.FromPixelData((int)ImageHeight, (int)ImageWidth, matType, originalData, (int)LineStride))
                     using (var resizedMat = new OpenCvSharp.Mat())
                     {
-                        int df = ConfigManager.Config.DownscaleFactor;
-                        OpenCvSharp.Cv2.Resize(originalMat, resizedMat, new OpenCvSharp.Size(ImageWidth / df, ImageHeight / df), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                        // 配置文件可被人工编辑，运行边界再次限幅，避免除零使 SDK 回调线程退出。
+                        int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
+                        int resizedWidth = Math.Max(1, ImageWidth / df);
+                        int resizedHeight = Math.Max(1, ImageHeight / df);
+                        OpenCvSharp.Cv2.Resize(originalMat, resizedMat, new OpenCvSharp.Size(resizedWidth, resizedHeight), 0, 0, OpenCvSharp.InterpolationFlags.Area);
                         
                         int newWidth = resizedMat.Width;
                         int newHeight = resizedMat.Height;
@@ -223,9 +222,7 @@ namespace CIS_WebInspector.Services
                         }
 
                         // data 已经是独立托管副本，事件回调返回后仍可由有界帧队列安全持有。
-                        FrameCount++;
                         bool isBroken = arg1 != 0;
-                        if (isBroken) BrokenCount++;
 
                         FrameReady?.Invoke(this, new FrameReadyEventArgs
                         {
@@ -249,8 +246,6 @@ namespace CIS_WebInspector.Services
         public void StartGrab()
         {
             if (_device == null || IsRunning) return;
-            FrameCount = 0;
-            BrokenCount = 0;
             _imgIndex = 0;
             IsRunning = true;
             _device.startGrab(0);

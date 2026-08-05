@@ -14,6 +14,12 @@ namespace CIS_WebInspector.Services
     /// </summary>
     internal sealed class BoundedImageSaveQueue : IDisposable
     {
+        // 队列只有一个消费者，编码参数可安全复用，避免每保存一张图都创建短命数组。
+        private static readonly ImageEncodingParam[] JpegEncodingParameters =
+        {
+            new ImageEncodingParam(ImwriteFlags.JpegQuality, 90)
+        };
+
         private sealed class SaveRequest
         {
             public byte[] Data { get; set; }
@@ -41,8 +47,6 @@ namespace CIS_WebInspector.Services
                 TaskCreationOptions.LongRunning,
                 TaskScheduler.Default);
         }
-
-        public int PendingCount => _queue.Count;
 
         /// <summary>
         /// 提交一个不复制像素的保存请求。队列满时返回 false，由调用方决定跳过诊断图或提示手动保存。
@@ -116,11 +120,7 @@ namespace CIS_WebInspector.Services
                             handle.AddrOfPinnedObject(),
                             request.Stride))
                         {
-                            var parameters = new[]
-                            {
-                                new ImageEncodingParam(ImwriteFlags.JpegQuality, 90)
-                            };
-                            Cv2.ImWrite(request.FilePath, mat, parameters);
+                            Cv2.ImWrite(request.FilePath, mat, JpegEncodingParameters);
                         }
                     }
                     finally

@@ -253,36 +253,16 @@ namespace CIS_WebInspector.Services
     /// </summary>
     public static class PatchDefectDetector
     {
-        /// <summary>
-        /// 对单个零件执行缺陷检测。
-        /// 流程参照 align_diff.py L544-600:
-        ///   1) Alpha → threshold(60) → binary_tiff (设计图案)
-        ///   2) CIS → [可选SIFT对齐] → threshold(cisBaseThresh) → binary_jpg (实拍图案)
-        ///   3) 形态学容差差分 (内部/外部分离)
-        ///   4) 边缘屏蔽 (消除轮廓错位噪声)
-        ///   5) 连通域判定
-        /// </summary>
-        public static PatchDefectResult Detect(Mat alphaImg, Mat cisImg, int cisBaseThresh, AppConfig config, string outputPath = null, string cisOutputPath = null)
+        private static readonly ImageEncodingParam[] AlignedPatchJpegParameters =
         {
-            PatchSiftTemplateCache cache = null;
-            PatchSiftWorker worker = null;
-            try
-            {
-                if (config.EnableSiftLocalAlign)
-                {
-                    cache = new PatchSiftTemplateCache();
-                    worker = new PatchSiftWorker(cache);
-                }
-                return DetectCore(alphaImg, cisImg, cisBaseThresh, config, outputPath, cisOutputPath, worker, null);
-            }
-            finally
-            {
-                worker?.Dispose();
-                cache?.Dispose();
-            }
-        }
+            new ImageEncodingParam(ImwriteFlags.JpegQuality, 95)
+        };
 
-        /// <summary>批处理入口：复用调用方提供的 worker 和模板缓存，避免每个零件重建 SIFT/Matcher。</summary>
+        /// <summary>
+        /// 批处理入口：复用调用方提供的 worker 和模板缓存，避免每个零件重建 SIFT/Matcher。
+        /// 单件流程为 Alpha/CIS 二值化 → 可选 SIFT 局部对齐 → 容差差分 → 边缘屏蔽 →
+        /// 普通连通域与细线连续性两类判定。
+        /// </summary>
         internal static PatchDefectResult Detect(
             Mat alphaImg,
             Mat cisImg,
@@ -376,8 +356,7 @@ namespace CIS_WebInspector.Services
                         {
                             try
                             {
-                                var prms = new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, 95) };
-                                Cv2.ImWrite(cisOutputPath, cisToSave, prms);
+                                Cv2.ImWrite(cisOutputPath, cisToSave, AlignedPatchJpegParameters);
                             }
                             catch (Exception ex)
                             {

@@ -148,37 +148,6 @@ namespace CIS_WebInspector.Services
             }
         }
 
-        /// <summary>兼容原生缓冲区入口；调用方必须保证指针在整个同步检测期间有效。</summary>
-        public QrDetectionResult Detect(IntPtr dataPtr, int width, int height, int stride, int bitsPerPixel)
-        {
-            ResetDiagnostics();
-            if (_disposed)
-            {
-                LastError = "二维码检测器已经释放。";
-                return QrDetectionResult.NotFound;
-            }
-
-            if (dataPtr == IntPtr.Zero)
-            {
-                LastError = "图像缓冲区指针为空。";
-                return QrDetectionResult.NotFound;
-            }
-
-            if (!TryGetMatType(width, height, stride, bitsPerPixel, out MatType matType))
-                return QrDetectionResult.NotFound;
-
-            try
-            {
-                using (var mat = Mat.FromPixelData(height, width, matType, dataPtr, stride))
-                    return DetectCore(mat);
-            }
-            catch (Exception ex)
-            {
-                LastError = $"二维码检测失败：{ex.Message}";
-                return QrDetectionResult.NotFound;
-            }
-        }
-
         /// <summary>每次公开调用前清空上次诊断，区分“本次未命中”与历史异常。</summary>
         private void ResetDiagnostics()
         {

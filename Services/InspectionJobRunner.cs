@@ -39,6 +39,8 @@ namespace CIS_WebInspector.Services
             Mat tiffMat = null;
             Mat alphaMask = null;
             Mat cisMat = null;
+            GCHandle cisDataHandle = default(GCHandle);
+            bool cisDataPinned = false;
             WhiteInkInspectionResult whiteInkInspection = WhiteInkInspectionResult.Disabled();
             byte[] whiteInkPreviewBytes = null;
             string outputDirectory = null;
@@ -59,20 +61,16 @@ namespace CIS_WebInspector.Services
                 // 白墨检查只依赖拼接图和结束二维码锚点，必须先于 Debug.log/TIFF 流水线执行。
                 // 这样即使当前图库没有排版日志或 TIFF，供墨异常仍会产生日志、预览和 UI 告警。
                 MatType cisType = stitchedResult.BitsPerPixel == 8 ? MatType.CV_8UC1 : MatType.CV_8UC3;
-                GCHandle handle = GCHandle.Alloc(stitchedResult.Data, GCHandleType.Pinned);
-                try
-                {
-                    cisMat = Mat.FromPixelData(
-                        stitchedResult.Height,
-                        stitchedResult.Width,
-                        cisType,
-                        handle.AddrOfPinnedObject(),
-                        stitchedResult.Stride).Clone();
-                }
-                finally
-                {
-                    handle.Free();
-                }
+                // StitchedImageResult 在整个 Run 调用期间强引用且只读。让 Mat 借用固定数组可避免
+                // 对超大拼接图再做一次完整 Clone；finally 必须先 Dispose Mat，再解除固定。
+                cisDataHandle = GCHandle.Alloc(stitchedResult.Data, GCHandleType.Pinned);
+                cisDataPinned = true;
+                cisMat = Mat.FromPixelData(
+                    stitchedResult.Height,
+                    stitchedResult.Width,
+                    cisType,
+                    cisDataHandle.AddrOfPinnedObject(),
+                    stitchedResult.Stride);
 
                 var qrAnchor = new CisQrAnchor
                 {
@@ -103,7 +101,7 @@ namespace CIS_WebInspector.Services
                             outputDirectory = Path.Combine(
                                 _baseDirectory,
                                 config.CroppedOutputDir,
-                                DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                                DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));
                             Directory.CreateDirectory(outputDirectory);
                             string previewPath = Path.Combine(
                                 outputDirectory, "WhiteInk_BottomMarks_Preview.jpg");
@@ -203,20 +201,10 @@ namespace CIS_WebInspector.Services
                 {
                     int h = tiffMat.Height;
                     int w = tiffMat.Width;
-                    Mat[] channels = null;
-                    try
-                    {
-                        channels = Cv2.Split(tiffMat);
-                        alphaMask = channels[3].Clone();
-                    }
-                    finally
-                    {
-                        if (channels != null)
-                        {
-                            foreach (Mat channel in channels)
-                                channel?.Dispose();
-                        }
-                    }
+                    // 只提取后续真正需要的 Alpha 通道。Cv2.Split 会额外创建 B/G/R/A 四张
+                    // 全尺寸 Mat，对约 300 MB TIFF 会显著抬高峰值内存。
+                    alphaMask = new Mat();
+                    Cv2.ExtractChannel(tiffMat, alphaMask, 3);
 
                     // Alpha 是后续零件设计轮廓的判定依据，必须在 TIFF 合成白底前独立保留。
                     int nonZero = Cv2.CountNonZero(alphaMask);
@@ -335,7 +323,7 @@ namespace CIS_WebInspector.Services
                             outputDirectory = Path.Combine(
                                 _baseDirectory,
                                 config.CroppedOutputDir,
-                                DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                                DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));
                         }
                         var defectTaskResult = PatchCropper.CropAndSave(
                             cisWarped,
@@ -419,8 +407,11 @@ namespace CIS_WebInspector.Services
             }
             finally
             {
-                // 本方法拥有所有在作业内创建/读取的 Mat；零件检测完成后按依赖反向释放。
+                // cisMat 仅拥有 Mat 头，像素由固定的 stitchedResult.Data 持有；必须先释放 Mat 再解除固定。
+                // TIFF、Alpha 等本作业创建的 Mat 则由本方法完整拥有。
                 cisMat?.Dispose();
+                if (cisDataPinned)
+                    cisDataHandle.Free();
                 alphaMask?.Dispose();
                 tiffMat?.Dispose();
             }

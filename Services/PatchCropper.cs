@@ -14,9 +14,17 @@ namespace CIS_WebInspector.Services
     /// 把排版日志中的毫米坐标映射为 TIFF 目标空间 ROI，并行执行零件级检测。
     /// 裁切 Mat 均为父图的零拷贝视图，必须在父图释放前完成使用；本类同时负责批次诊断图和性能基线输出。
     /// </summary>
-    public class PatchCropper
+    public static class PatchCropper
     {
         private static readonly object PerformanceFileSync = new object();
+        private static readonly ImageEncodingParam[] PatchJpegParameters =
+        {
+            new ImageEncodingParam(ImwriteFlags.JpegQuality, 95)
+        };
+        private static readonly ImageEncodingParam[] GlobalPreviewJpegParameters =
+        {
+            new ImageEncodingParam(ImwriteFlags.JpegQuality, 85)
+        };
 
         /// <summary>
         /// 根据排版坐标，从对齐后的 CIS 图、TIFF 图和 Alpha 掩膜上裁切零件小图，
@@ -125,10 +133,9 @@ namespace CIS_WebInspector.Services
                                 string cisName = null;
                                 if (config.SaveCroppedImages)
                                 {
-                                    var prms = new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, 95) };
                                     cisName = Path.Combine(outputDir, $"{part.HotInkTaskID}_cis.jpg");
                                     string tiffName = Path.Combine(outputDir, $"{part.HotInkTaskID}_tiff.jpg");
-                                    Cv2.ImWrite(tiffName, tiffPatch, prms);
+                                    Cv2.ImWrite(tiffName, tiffPatch, PatchJpegParameters);
                                 }
 
                                 // 缺陷模板以 TIFF Alpha 为准；没有 Alpha 时仅能保存裁图，不能产生可靠差分结果。
@@ -314,13 +321,12 @@ namespace CIS_WebInspector.Services
                         using (var combined = new Mat())
                         {
                             Cv2.HConcat(new[] { tiffCanvas, cisCanvas }, combined);
-                            var prms = new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, 85) };
-                            Cv2.ImEncode(".jpg", combined, out globalImageBytes, prms);
+                            Cv2.ImEncode(".jpg", combined, out globalImageBytes, GlobalPreviewJpegParameters);
 
                             if (config.SaveDefectResultImages)
                             {
                                 combinedPath = Path.Combine(outputDir, "GlobalDefectResult.jpg");
-                                Cv2.ImWrite(combinedPath, combined, prms);
+                                Cv2.ImWrite(combinedPath, combined, GlobalPreviewJpegParameters);
                             }
                         }
                     }

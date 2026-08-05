@@ -9,7 +9,8 @@ namespace CIS_WebInspector.Services
     public interface ICameraSource : IDisposable
     {
         /// <summary>
-        /// 每帧数据就绪时触发。推荐提供独立 DataArray；若仅提供 DataPointer，订阅者必须在回调内深拷贝。
+        /// 每帧数据就绪时触发。数据源必须提供独立 DataArray，并在事件返回后保持内容只读；
+        /// 消费队列据此避免对大尺寸帧做第二次整图复制。
         /// </summary>
         event EventHandler<FrameReadyEventArgs> FrameReady;
 

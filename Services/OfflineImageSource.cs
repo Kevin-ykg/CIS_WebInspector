@@ -28,7 +28,7 @@ namespace CIS_WebInspector.Services
         // 生产者可能预读到消费者之后；非负值表示下次 Resume 必须采用的权威文件索引。
         private int _resumeFromIndex = -1;
         private Timer _timer;
-        private int _intervalMs = 10; // 模拟帧间隔(ms)，设置得很小以最大化吞吐量，防重入锁会保证安全
+        private const int OfflineFrameIntervalMilliseconds = 10;
 
         /// <summary>
         /// 初始化离线数据源。
@@ -45,7 +45,7 @@ namespace CIS_WebInspector.Services
                 }
 
                 // 获取所有支持的图像文件并按文件名排序
-                var extensions = new[] { "*.bmp", "*.png", "*.tif", "*.tiff", "*.jpg" };
+                var extensions = new[] { "*.bmp", "*.png", "*.tif", "*.tiff", "*.jpg", "*.jpeg" };
                 _imageFiles = extensions
                     .SelectMany(ext => Directory.GetFiles(directoryPath, ext))
                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
@@ -60,6 +60,12 @@ namespace CIS_WebInspector.Services
                 // 读取第一张图像以获取尺寸参数
                 using (var firstMat = OpenCvSharp.Cv2.ImRead(_imageFiles[0], OpenCvSharp.ImreadModes.Unchanged))
                 {
+                    if (firstMat.Empty())
+                    {
+                        ErrorOccurred?.Invoke(this, $"Unable to read the first offline image: {_imageFiles[0]}");
+                        return false;
+                    }
+
                     ImageWidth = firstMat.Width;
                     ImageHeight = firstMat.Height;
                     BitsPerPixel = firstMat.Channels() == 1 ? 8 : 24;
@@ -89,7 +95,7 @@ namespace CIS_WebInspector.Services
             IsRunning = true;
 
             // 使用 Timer 模拟相机帧率
-            _timer = new Timer(OnTimerTick, null, 0, _intervalMs);
+            _timer = new Timer(OnTimerTick, null, 0, OfflineFrameIntervalMilliseconds);
         }
 
         /// <summary>
@@ -110,7 +116,7 @@ namespace CIS_WebInspector.Services
             }
 
             IsRunning = true;
-            _timer = new Timer(OnTimerTick, null, 0, _intervalMs);
+            _timer = new Timer(OnTimerTick, null, 0, OfflineFrameIntervalMilliseconds);
             return true;
         }
 
@@ -146,12 +152,20 @@ namespace CIS_WebInspector.Services
 
                 using (var originalMat = OpenCvSharp.Cv2.ImRead(filePath, readMode))
                 {
-                    if (originalMat.Empty()) return;
+                    if (originalMat.Empty())
+                    {
+                        // 损坏文件不能让离线回放永久卡在同一索引；记录后跳过，下一 Tick 继续验证后续图像。
+                        ErrorOccurred?.Invoke(this, $"Unable to read offline frame {_currentIndex}: {filePath}");
+                        _currentIndex++;
+                        return;
+                    }
 
                     using (var mat = new OpenCvSharp.Mat())
                     {
-                        int df = ConfigManager.Config.DownscaleFactor;
-                        OpenCvSharp.Cv2.Resize(originalMat, mat, new OpenCvSharp.Size(originalMat.Width / df, originalMat.Height / df), 0, 0, OpenCvSharp.InterpolationFlags.Area);
+                        int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
+                        int resizedWidth = Math.Max(1, originalMat.Width / df);
+                        int resizedHeight = Math.Max(1, originalMat.Height / df);
+                        OpenCvSharp.Cv2.Resize(originalMat, mat, new OpenCvSharp.Size(resizedWidth, resizedHeight), 0, 0, OpenCvSharp.InterpolationFlags.Area);
 
                         int lineBytes = BitsPerPixel == 8 ? mat.Width : 3 * mat.Width;
                         int stride = (lineBytes + 3) / 4 * 4;
@@ -217,12 +231,6 @@ namespace CIS_WebInspector.Services
             IsRunning = false;
             _timer?.Dispose();
             _timer = null;
-        }
-
-        /// <summary>设置模拟帧间隔；仅影响之后创建的 Timer。</summary>
-        public void SetInterval(int intervalMs)
-        {
-            _intervalMs = Math.Max(10, intervalMs);
         }
 
         /// <summary>停止模拟播放并释放 Timer；磁盘图像均在单个 Tick 内打开和释放。</summary>

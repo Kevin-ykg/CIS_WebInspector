@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -17,15 +20,15 @@ namespace CIS_WebInspector.ViewModels
     /// </summary>
     public class MainViewModel : ViewModelBase, IDisposable
     {
-        [DllImport("kernel32.dll", EntryPoint = "CopyMemory", SetLastError = false)]
-        private static extern void CopyMemory(IntPtr dst, IntPtr src, int size);
-
         // ---- 服务层 ----
         // 帧处理队列保证采集顺序；保存队列是可丢弃的诊断支路；检测作业一次只允许最新任务发布结果。
         private ICameraSource _cameraSource;
         private readonly ImageStitcher _stitcher = new ImageStitcher();
         private readonly InspectionJobRunner _inspectionJobRunner = new InspectionJobRunner();
         private readonly object _inspectionJobSync = new object();
+        // OpenCV 原生调用无法被 CancellationToken 强制中断。该门保证旧、新完整检测作业不会
+        // 同时加载数百 MB TIFF 并争抢 CPU；等待期间被新段替换的作业会直接取消。
+        private readonly SemaphoreSlim _inspectionExecutionGate = new SemaphoreSlim(1, 1);
         private CancellationTokenSource _inspectionCancellation;
         private readonly object _frameProcessorSync = new object();
         private OrderedFrameProcessor _frameProcessor;
@@ -142,38 +145,116 @@ namespace CIS_WebInspector.ViewModels
         // ---- 动态日志集合 ----
         public System.Collections.ObjectModel.ObservableCollection<string> LogMessages { get; } = new System.Collections.ObjectModel.ObservableCollection<string>();
 
-        private static readonly object _logLock = new object();
+        private readonly object _logFileSync = new object();
+        private readonly ConcurrentQueue<string> _pendingUiLogs = new ConcurrentQueue<string>();
+        private StreamWriter _logWriter;
+        private string _logWriterDate;
+        private int _logDispatchPending;
 
         /// <summary>把任意后台线程的日志安全投递到 UI，并限制终端文本长度避免长期运行无限增长。</summary>
         public void AddLog(string msg)
         {
-            string timeStamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-            string formattedMsg = $"[{timeStamp}] {msg}";
+            DateTime now = DateTime.Now;
+            string formattedMsg = $"[{now:yyyy-MM-dd HH:mm:ss.fff}] {msg}";
 
             try
             {
-                string logDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "日志");
-                if (!System.IO.Directory.Exists(logDir))
-                    System.IO.Directory.CreateDirectory(logDir);
-                
-                string dateStr = DateTime.Now.ToString("yyyyMMdd");
-                string dbgLog = System.IO.Path.Combine(logDir, $"SysRunLog_{dateStr}.txt");
-                
-                lock (_logLock)
-                {
-                    System.IO.File.AppendAllText(dbgLog, formattedMsg + "\n");
-                }
+                WriteLogLine(now, formattedMsg);
             }
-            catch { }
-
-            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            catch
             {
-                LogMessages.Insert(0, formattedMsg);
-                if (LogMessages.Count > 500)
+                // 日志介质故障不能中断采集；关闭当前 writer，让下一条日志重新尝试打开文件。
+                CloseLogWriter();
+            }
+
+            QueueUiLog(formattedMsg);
+        }
+
+        /// <summary>
+        /// 合并同一时间片内的后台日志，只向 Dispatcher 投递一个任务。二维码逐帧诊断较密集时，
+        /// 这能避免 UI 消息队列被大量微小 InvokeAsync 操作占满，同时保留每一条日志及原顺序。
+        /// </summary>
+        private void QueueUiLog(string message)
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null)
+                return;
+
+            _pendingUiLogs.Enqueue(message);
+            ScheduleUiLogDispatch();
+        }
+
+        /// <summary>处理“清空队列后到复位标志前”到达的新日志，避免竞争窗口遗留消息。</summary>
+        private void ScheduleUiLogDispatch()
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null ||
+                Interlocked.CompareExchange(ref _logDispatchPending, 1, 0) != 0)
+                return;
+
+            dispatcher.InvokeAsync(() =>
+            {
+                try
                 {
-                    LogMessages.RemoveAt(LogMessages.Count - 1);
+                    while (_pendingUiLogs.TryDequeue(out string pending))
+                    {
+                        LogMessages.Insert(0, pending);
+                        // 在批量排空过程中就维持上限，避免 UI 长时间阻塞后先增长到数千项再统一裁剪。
+                        if (LogMessages.Count > 500)
+                            LogMessages.RemoveAt(LogMessages.Count - 1);
+                    }
                 }
-            });
+                finally
+                {
+                    Interlocked.Exchange(ref _logDispatchPending, 0);
+                    if (!_pendingUiLogs.IsEmpty)
+                        ScheduleUiLogDispatch();
+                }
+            }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>
+        /// 复用当天的日志文件句柄。相较于每条日志调用 File.AppendAllText，避免高频开关文件；
+        /// AutoFlush 保证现场异常退出时最多只丢失正在写入的一行，同时允许外部工具并发读取日志。
+        /// </summary>
+        private void WriteLogLine(DateTime timestamp, string message)
+        {
+            string date = timestamp.ToString("yyyyMMdd");
+            lock (_logFileSync)
+            {
+                if (_logWriter == null || !string.Equals(_logWriterDate, date, StringComparison.Ordinal))
+                {
+                    _logWriter?.Dispose();
+                    string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "日志");
+                    Directory.CreateDirectory(logDirectory);
+                    string logPath = Path.Combine(logDirectory, $"SysRunLog_{date}.txt");
+                    var stream = new FileStream(
+                        logPath,
+                        FileMode.Append,
+                        FileAccess.Write,
+                        FileShare.ReadWrite,
+                        4096,
+                        FileOptions.SequentialScan);
+                    _logWriter = new StreamWriter(stream, new UTF8Encoding(false), 4096)
+                    {
+                        AutoFlush = true
+                    };
+                    _logWriterDate = date;
+                }
+
+                _logWriter.WriteLine(message);
+            }
+        }
+
+        /// <summary>关闭持久日志句柄；可重复调用，供写入异常和窗口退出共用。</summary>
+        private void CloseLogWriter()
+        {
+            lock (_logFileSync)
+            {
+                try { _logWriter?.Dispose(); } catch { }
+                _logWriter = null;
+                _logWriterDate = null;
+            }
         }
 
         // ---- Commands ----
@@ -296,9 +377,9 @@ namespace CIS_WebInspector.ViewModels
                 _cameraSource.FrameReady += OnFrameReady;
 
                 // 相机源报告原始尺寸，后续二维码/拼接统一在缩小后的处理坐标系中运行。
-                int df = ConfigManager.Config.DownscaleFactor;
-                int outWidth = _cameraSource.ImageWidth / df;
-                int outHeight = _cameraSource.ImageHeight / df;
+                int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
+                int outWidth = Math.Max(1, _cameraSource.ImageWidth / df);
+                int outHeight = Math.Max(1, _cameraSource.ImageHeight / df);
                 int outLineBytes = _cameraSource.BitsPerPixel == 8 ? outWidth : 3 * outWidth;
                 int outStride = (outLineBytes + 3) / 4 * 4;
 
@@ -311,11 +392,15 @@ namespace CIS_WebInspector.ViewModels
             else
             {
                 StatusText = "相机加载失败";
+                // Initialize 可能已经打开设备并分配部分原生缓冲区；失败对象不留到下次加载才释放。
+                _cameraSource.ErrorOccurred -= OnError;
+                _cameraSource.Dispose();
+                _cameraSource = null;
             }
         }
 
         // ---- 加载离线数据 ----
-        private void ExecuteLoadOffline(object param)
+        private void ExecuteLoadOffline(object _)
         {
             CancelInspectionJob();
 
@@ -340,9 +425,9 @@ namespace CIS_WebInspector.ViewModels
                 _cameraSource.FrameReady += OnFrameReady;
 
                 // 离线源和在线源使用同一输出几何，保证同一套 ROI/Mark 参数可复现现场流程。
-                int df = ConfigManager.Config.DownscaleFactor;
-                int outWidth = _cameraSource.ImageWidth / df;
-                int outHeight = _cameraSource.ImageHeight / df;
+                int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
+                int outWidth = Math.Max(1, _cameraSource.ImageWidth / df);
+                int outHeight = Math.Max(1, _cameraSource.ImageHeight / df);
                 int outLineBytes = _cameraSource.BitsPerPixel == 8 ? outWidth : 3 * outWidth;
                 int outStride = (outLineBytes + 3) / 4 * 4;
 
@@ -353,6 +438,9 @@ namespace CIS_WebInspector.ViewModels
             else
             {
                 StatusText = "离线数据加载失败";
+                _cameraSource.ErrorOccurred -= OnError;
+                _cameraSource.Dispose();
+                _cameraSource = null;
             }
         }
 
@@ -742,6 +830,7 @@ namespace CIS_WebInspector.ViewModels
         {
             var cancellation = new CancellationTokenSource();
             CancellationTokenSource previous;
+            bool gateEntered = false;
 
             lock (_inspectionJobSync)
             {
@@ -754,6 +843,16 @@ namespace CIS_WebInspector.ViewModels
 
             try
             {
+                await _inspectionExecutionGate.WaitAsync(cancellation.Token).ConfigureAwait(false);
+                gateEntered = true;
+                cancellation.Token.ThrowIfCancellationRequested();
+
+                lock (_inspectionJobSync)
+                {
+                    if (!ReferenceEquals(_inspectionCancellation, cancellation))
+                        return;
+                }
+
                 AppConfig config = ConfigManager.Config;
                 InspectionJobResult jobResult = await Task.Run(
                     () => _inspectionJobRunner.Run(result, config, AddLog, cancellation.Token),
@@ -780,6 +879,9 @@ namespace CIS_WebInspector.ViewModels
             }
             finally
             {
+                if (gateEntered)
+                    _inspectionExecutionGate.Release();
+
                 lock (_inspectionJobSync)
                 {
                     if (ReferenceEquals(_inspectionCancellation, cancellation))
@@ -964,35 +1066,38 @@ namespace CIS_WebInspector.ViewModels
         /// <summary>在 UI 线程把最新托管帧复制到预分配 WriteableBitmap，不保留输入缓冲区引用。</summary>
         private void UpdateLivePreview(FrameReadyEventArgs e)
         {
-            if (LivePreview == null) return;
+            if (LivePreview == null || e?.DataArray == null) return;
 
+            bool isLocked = false;
             try
             {
                 LivePreview.Lock();
+                isLocked = true;
 
-                int copyBytes = e.Stride * e.Height;
-
-                if (e.DataArray != null)
-                {
-                    Marshal.Copy(e.DataArray, 0, LivePreview.BackBuffer, copyBytes);
-                }
-                else if (e.DataPointer != IntPtr.Zero)
-                {
-                    CopyMemory(LivePreview.BackBuffer, e.DataPointer, copyBytes);
-                }
+                int copyBytes = checked(e.Stride * e.Height);
+                Marshal.Copy(e.DataArray, 0, LivePreview.BackBuffer, copyBytes);
 
                 LivePreview.AddDirtyRect(new Int32Rect(0, 0, e.Width, e.Height));
-                LivePreview.Unlock();
             }
-            catch
+            catch (Exception ex)
             {
-                try { LivePreview.Unlock(); } catch { }
+                System.Diagnostics.Debug.WriteLine($"实时预览更新失败: {ex.Message}");
+            }
+            finally
+            {
+                if (isLocked)
+                {
+                    try { LivePreview.Unlock(); } catch { }
+                }
             }
         }
 
         /// <summary>为超大拼接图生成有限宽度预览；原始分辨率数据仍保留在 StitchedImageResult 中供检测。</summary>
         private void UpdateStitchedPreview(StitchedImageResult result)
         {
+            if (result?.Data == null || result.Data.Length == 0 || result.Width <= 0 || result.Height <= 0)
+                return;
+
             var pixelFormat = result.BitsPerPixel == 8 ? PixelFormats.Gray8 : PixelFormats.Bgr24;
             var palette = result.BitsPerPixel == 8 ? BitmapPalettes.Gray256 : null;
 
@@ -1004,13 +1109,12 @@ namespace CIS_WebInspector.ViewModels
                 float scale = (float)maxWidth / result.Width;
                 if (scale >= 1.0f) scale = 1.0f;
 
-                int previewWidth = (int)(result.Width * scale);
-                int previewHeight = (int)(result.Height * scale);
+                int previewWidth = Math.Max(1, (int)(result.Width * scale));
+                int previewHeight = Math.Max(1, (int)(result.Height * scale));
 
                 var matType = result.BitsPerPixel == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
                 GCHandle handle = GCHandle.Alloc(result.Data, GCHandleType.Pinned);
-                byte[] previewData = null;
-                int previewStride = 0;
+                WriteableBitmap preview = null;
 
                 try
                 {
@@ -1018,9 +1122,16 @@ namespace CIS_WebInspector.ViewModels
                     using (var dstMat = new OpenCvSharp.Mat())
                     {
                         OpenCvSharp.Cv2.Resize(srcMat, dstMat, new OpenCvSharp.Size(previewWidth, previewHeight), 0, 0, OpenCvSharp.InterpolationFlags.Area);
-                        previewStride = (int)dstMat.Step();
-                        previewData = new byte[previewStride * previewHeight];
-                        System.Runtime.InteropServices.Marshal.Copy(dstMat.Data, previewData, 0, previewData.Length);
+                        int previewStride = checked((int)dstMat.Step());
+                        int previewBytes = checked(previewStride * previewHeight);
+                        preview = new WriteableBitmap(previewWidth, previewHeight, 96, 96, pixelFormat, palette);
+
+                        // WritePixels 直接从缩放后的 Mat 拷入 WPF 缓冲区，省去一份中间 byte[] 和一次托管复制。
+                        preview.WritePixels(
+                            new Int32Rect(0, 0, previewWidth, previewHeight),
+                            dstMat.Data,
+                            previewBytes,
+                            previewStride);
                     }
                 }
                 finally
@@ -1028,13 +1139,7 @@ namespace CIS_WebInspector.ViewModels
                     handle.Free();
                 }
 
-                var wb = new WriteableBitmap(previewWidth, previewHeight, 96, 96, pixelFormat, palette);
-                wb.Lock();
-                System.Runtime.InteropServices.Marshal.Copy(previewData, 0, wb.BackBuffer, previewData.Length);
-                wb.AddDirtyRect(new Int32Rect(0, 0, previewWidth, previewHeight));
-                wb.Unlock();
-
-                StitchedPreview = wb;
+                StitchedPreview = preview;
             }
             catch (Exception ex)
             {
@@ -1066,6 +1171,7 @@ namespace CIS_WebInspector.ViewModels
             CleanupSource();
             _stitcher?.Dispose();
             _imageSaveQueue?.Dispose();
+            CloseLogWriter();
         }
     }
 }

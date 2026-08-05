@@ -12,6 +12,16 @@ namespace CIS_WebInspector.Services
     /// </summary>
     public static class ConfigManager
     {
+        private static readonly object ConfigSync = new object();
+        // JsonSerializerOptions 首次使用后即按只读方式并发复用，避免每次保存重新构建元数据选项。
+        private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            ReadCommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         private static AppConfig _instance;
         // 跟随可执行文件部署，现场复制整套目录即可携带相同参数。
         private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_config.json");
@@ -23,7 +33,11 @@ namespace CIS_WebInspector.Services
             {
                 if (_instance == null)
                 {
-                    LoadOrCreateConfig();
+                    lock (ConfigSync)
+                    {
+                        if (_instance == null)
+                            LoadOrCreateConfig();
+                    }
                 }
                 return _instance;
             }
@@ -31,21 +45,14 @@ namespace CIS_WebInspector.Services
 
         private static void LoadOrCreateConfig()
         {
-            // 允许人工维护的 JSON 含注释和尾随逗号，同时保留中文路径/文本，便于现场调参。
-            var options = new JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                ReadCommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-
             if (File.Exists(ConfigPath))
             {
                 try
                 {
                     string json = File.ReadAllText(ConfigPath);
-                    _instance = JsonSerializer.Deserialize<AppConfig>(json, options);
+                    _instance = JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions);
+                    if (_instance == null)
+                        _instance = new AppConfig();
                 }
                 catch (Exception ex)
                 {
@@ -59,7 +66,7 @@ namespace CIS_WebInspector.Services
                 try
                 {
                     // 首次运行把代码默认值落盘，后续设置界面与人工检查共享同一份基线。
-                    string json = JsonSerializer.Serialize(_instance, options);
+                    string json = JsonSerializer.Serialize(_instance, SerializerOptions);
                     File.WriteAllText(ConfigPath, json);
                 }
                 catch (Exception ex)
@@ -74,17 +81,14 @@ namespace CIS_WebInspector.Services
         {
             if (_instance == null) return;
             
-            var options = new JsonSerializerOptions 
-            { 
-                WriteIndented = true,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
-
             try
             {
                 // 保存失败只记录诊断信息，不替换当前内存配置，避免运行中的服务突然失去参数。
-                string json = JsonSerializer.Serialize(_instance, options);
-                File.WriteAllText(ConfigPath, json);
+                lock (ConfigSync)
+                {
+                    string json = JsonSerializer.Serialize(_instance, SerializerOptions);
+                    File.WriteAllText(ConfigPath, json);
+                }
                 System.Diagnostics.Debug.WriteLine("配置已成功保存到本地。");
             }
             catch (Exception ex)

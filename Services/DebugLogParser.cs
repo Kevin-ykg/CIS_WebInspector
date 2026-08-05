@@ -10,7 +10,7 @@ namespace CIS_WebInspector.Services
     /// 从上游排版系统的 Debug.log 中还原“二维码 → TIFF 文件 → 零件物理坐标”关系。
     /// 本类只负责解析，不做像素换算；毫米坐标由后续 <see cref="PatchCropper"/> 按 LayoutDpi 转换。
     /// </summary>
-    public class DebugLogParser
+    public static class DebugLogParser
     {
         /// <summary>
         /// 根据二维码文本在 Debug.log 中检索排版信息。
@@ -29,7 +29,7 @@ namespace CIS_WebInspector.Services
             string keyword1 = qrCodeText;
             string keyword2 = "formattingFilename";
             
-            string lastMatchLine = null;
+            string matchedLine = null;
             
             // 当前协议按日志顺序采用第一条匹配记录；二维码应能唯一标识一次排版任务。
             using (var reader = new StreamReader(logFilePath))
@@ -39,25 +39,25 @@ namespace CIS_WebInspector.Services
                 {
                     if (line.Contains(keyword1) && line.Contains(keyword2))
                     {
-                        lastMatchLine = line;
+                        matchedLine = line;
                         break;
                     }
                 }
             }
 
-            if (string.IsNullOrEmpty(lastMatchLine))
+            if (string.IsNullOrEmpty(matchedLine))
             {
                 return null;
             }
 
             // 日志前缀不是 JSON；第一个 '[' 之后才是 cuttingInput 数组。
-            int pos = lastMatchLine.IndexOf('[');
+            int pos = matchedLine.IndexOf('[');
             if (pos < 0)
             {
                 return null;
             }
 
-            string jsonStr = lastMatchLine.Substring(pos);
+            string jsonStr = matchedLine.Substring(pos);
 
             try
             {

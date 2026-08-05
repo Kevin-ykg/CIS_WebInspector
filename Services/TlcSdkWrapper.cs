@@ -25,9 +25,6 @@ namespace CIS_WebInspector.Services
         private static extern int get_camera_parameters(ref IntPtr pbuffer, ref int size);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int help(ref IntPtr pbuffer, ref int size);
-
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr get_error_msg();
 
         // ---- 参数设置接口 ----
@@ -60,12 +57,6 @@ namespace CIS_WebInspector.Services
         
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_light_blue(int value);
-        
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int set_light_white(int r, int g, int b);
-        
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern int set_pixel_format(int value);
         
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_line_rate(int value);

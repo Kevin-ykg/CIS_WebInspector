@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace CIS_WebInspector.Models
 {
@@ -7,10 +8,10 @@ namespace CIS_WebInspector.Models
     /// </summary>
     public class FrameReadyEventArgs : EventArgs
     {
-        /// <summary>指向非托管帧数据的指针（兼容旧式输入；进入异步队列前必须深拷贝）</summary>
-        public IntPtr DataPointer { get; set; }
-
-        /// <summary>帧数据的托管字节数组（当前在线、离线输入均使用独立数组）</summary>
+        /// <summary>
+        /// 帧数据的独立托管字节数组。数据源触发 FrameReady 后不得再修改该数组，
+        /// 以便有界处理队列在不重复复制整帧的前提下安全持有它。
+        /// </summary>
         public byte[] DataArray { get; set; }
 
         /// <summary>环形缓存区索引</summary>
@@ -119,23 +120,28 @@ namespace CIS_WebInspector.Models
         {
             if (Data == null || Data.Length == 0) return;
 
-            using (var mat = BitsPerPixel == 8
-                ? new OpenCvSharp.Mat(Height, Width, OpenCvSharp.MatType.CV_8UC1)
-                : new OpenCvSharp.Mat(Height, Width, OpenCvSharp.MatType.CV_8UC3))
+            int requiredBytes = checked(Stride * Height);
+            if (Width <= 0 || Height <= 0 || Stride <= 0 ||
+                (BitsPerPixel != 8 && BitsPerPixel != 24) || Data.Length < requiredBytes)
+                throw new InvalidOperationException("拼接图像缓冲区尺寸无效，无法保存。");
+
+            GCHandle handle = GCHandle.Alloc(Data, GCHandleType.Pinned);
+            try
             {
-                int lineBytes = BitsPerPixel == 8 ? Width : 3 * Width;
-                if (lineBytes == Stride)
+                var matType = BitsPerPixel == 8
+                    ? OpenCvSharp.MatType.CV_8UC1
+                    : OpenCvSharp.MatType.CV_8UC3;
+
+                // ImWrite 是同步调用；Mat 在固定数组有效期内借用像素，避免手动保存时复制一份超大图。
+                using (var mat = OpenCvSharp.Mat.FromPixelData(
+                    Height, Width, matType, handle.AddrOfPinnedObject(), Stride))
                 {
-                    System.Runtime.InteropServices.Marshal.Copy(Data, 0, mat.Data, Data.Length);
+                    OpenCvSharp.Cv2.ImWrite(filePath, mat);
                 }
-                else
-                {
-                    for (int i = 0; i < Height; i++)
-                    {
-                        System.Runtime.InteropServices.Marshal.Copy(Data, i * Stride, mat.Data + i * (int)mat.Step(), lineBytes);
-                    }
-                }
-                OpenCvSharp.Cv2.ImWrite(filePath, mat);
+            }
+            finally
+            {
+                handle.Free();
             }
         }
     }

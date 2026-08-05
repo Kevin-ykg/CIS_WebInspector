@@ -81,7 +81,7 @@ namespace CIS_WebInspector.ViewModels
             SelectCroppedDirCommand = new RelayCommand(ExecuteSelectCroppedDir);
         }
 
-        private void ExecuteSelectDebugLog(object parameter)
+        private void ExecuteSelectDebugLog(object _)
         {
             var dialog = new Microsoft.Win32.SaveFileDialog
             {
@@ -96,7 +96,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
-        private void ExecuteSelectTiffDir(object parameter)
+        private void ExecuteSelectTiffDir(object _)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -112,7 +112,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
-        private void ExecuteSelectCroppedDir(object parameter)
+        private void ExecuteSelectCroppedDir(object _)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -128,7 +128,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
-        private void ExecuteSave(object parameter)
+        private void ExecuteSave(object _)
         {
             try
             {
@@ -157,7 +157,7 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
-        private void ExecuteCancel(object parameter)
+        private void ExecuteCancel(object _)
         {
             _window.DialogResult = false;
             _window.Close();

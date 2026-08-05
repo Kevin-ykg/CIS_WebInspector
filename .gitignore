@@ -49,6 +49,7 @@ _ReSharper*/
 
 # Auto-generated files
 *.g.cs
+*_wpftmp.csproj
 
 # Large media files
 *.tiff

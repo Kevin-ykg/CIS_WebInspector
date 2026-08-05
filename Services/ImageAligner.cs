@@ -13,8 +13,13 @@ namespace CIS_WebInspector.Services
     /// 上下两排 20 mm Mark 始终负责全局 H0；启用开关后，左右 4 mm Mark 只描述
     /// H0 无法解释的边缘残差，不参与 H0 拟合，也不会改变中心列的全局基准。
     /// </summary>
-    public class ImageAligner
+    public static class ImageAligner
     {
+        private static readonly ImageEncodingParam[] PreviewJpegParameters =
+        {
+            new ImageEncodingParam(ImwriteFlags.JpegQuality, 90)
+        };
+
         private const int MinimumPointsPerRow = 2;
         private const double MaximumRowScaleDifference = 0.15;
         private const double MaximumAdjacentJacobianScaleRatio = 2.0;
@@ -2367,8 +2372,7 @@ namespace CIS_WebInspector.Services
                     canvas, statusText, new Point(12, Math.Min(28, labelHeight - 4)),
                     HersheyFonts.HersheySimplex, 0.72, statusColor, 2, LineTypes.AntiAlias);
 
-                var parameters = new[] { new ImageEncodingParam(ImwriteFlags.JpegQuality, 90) };
-                Cv2.ImEncode(".jpg", canvas, out byte[] encoded, parameters);
+                Cv2.ImEncode(".jpg", canvas, out byte[] encoded, PreviewJpegParameters);
                 return encoded;
             }
         }

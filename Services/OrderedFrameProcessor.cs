@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using CIS_WebInspector.Models;
@@ -36,11 +35,9 @@ namespace CIS_WebInspector.Services
                 TaskScheduler.Default);
         }
 
-        public int PendingCount => _queue.Count;
-
         /// <summary>
-        /// 将事件参数转换为队列可安全持有的帧。
-        /// 当前在线/离线源均传入独立 DataArray，因此不会重复复制大图；兼容旧式指针输入时会立即深拷贝。
+        /// 将事件参数规范化为队列可安全持有的帧。在线、离线数据源都必须在触发事件前
+        /// 创建独立 DataArray；这里复用该数组，不再对整帧做第二次深拷贝。
         /// </summary>
         public static FrameReadyEventArgs CreateOwnedFrame(FrameReadyEventArgs source)
         {
@@ -49,27 +46,14 @@ namespace CIS_WebInspector.Services
                 throw new ArgumentException("帧尺寸或步长无效。", nameof(source));
 
             int byteCount = checked(source.Stride * source.Height);
-            byte[] data;
-            if (source.DataArray != null)
-            {
-                if (source.DataArray.Length < byteCount)
-                    throw new ArgumentException("托管帧缓冲区长度不足。", nameof(source));
-                data = source.DataArray;
-            }
-            else if (source.DataPointer != IntPtr.Zero)
-            {
-                data = new byte[byteCount];
-                Marshal.Copy(source.DataPointer, data, 0, byteCount);
-            }
-            else
-            {
+            if (source.DataArray == null)
                 throw new ArgumentException("帧不包含有效图像数据。", nameof(source));
-            }
+            if (source.DataArray.Length < byteCount)
+                throw new ArgumentException("托管帧缓冲区长度不足。", nameof(source));
 
             return new FrameReadyEventArgs
             {
-                DataArray = data,
-                DataPointer = IntPtr.Zero,
+                DataArray = source.DataArray,
                 BufferIndex = source.BufferIndex,
                 SourceFrameIndex = source.SourceFrameIndex,
                 IsBroken = source.IsBroken,
