@@ -233,13 +233,13 @@ namespace CIS_WebInspector.Models
         /// 内部缺陷面积判定阈值（断墨、漏印），单位 mm²。
         /// 默认 1.434 mm² 等价于 300 DPI 下原有的 200 px²。
         /// </summary>
-        public double DefectAreaThreshInner { get; set; } = 1.434;
+        public double DefectAreaThreshInner { get; set; } = 2;
 
         /// <summary>
         /// 外部缺陷面积判定阈值（飞墨、脏污），单位 mm²。
         /// 默认 2.151 mm² 等价于 300 DPI 下原有的 300 px²。
         /// </summary>
-        public double DefectAreaThreshOuter { get; set; } = 2.151;
+        public double DefectAreaThreshOuter { get; set; } = 2;
 
         /// <summary>
         /// 面积阈值的持久化单位标识。ConfigManager 用它识别并迁移旧版 px² 配置。

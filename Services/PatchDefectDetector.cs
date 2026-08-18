@@ -260,6 +260,36 @@ namespace CIS_WebInspector.Services
         // 10 mm 与此前 FineLineMaxWidthMm=5 mm 时约 61 px 的默认窗口基本一致，降低算法改动风险。
         private const double FineLineLocalContrastWindowMm = 10.0;
 
+        // 细线通道的几何容差使用独立物理尺寸，不能复用普通面积缺陷的 DefectToleranceInner。
+        // 以下默认值等价于 LayoutDpi=300、analysisScale=0.5、DefectToleranceInner=6 时
+        // 已通过真实断线样本验证的 1/2/6/12 px，保证解耦前后基准结果保持一致。
+        private const double FineLineTangentialAlignmentToleranceMm = 0.17;
+        private const double FineLineNormalAlignmentToleranceMm = 0.40;
+        private const double FineLineEndpointSearchRadiusMm = 1.00;
+        private const double FineLineEndpointAnchorLengthMm = 2.00;
+
+        // 局部配准使用独立工作分辨率，避免 DefectDetectScale 同时改变缺陷检测精度、
+        // SIFT 特征分布、RANSAC 物理容差和最大平移范围。当前常见零件宽约 2220 px，
+        // 目标宽 700 px 与原 0.3 倍路径接近，可在基本不增加耗时的前提下稳定参数语义。
+        private const int LocalAlignmentTargetWidthPx = 700;
+        private const double LocalAlignmentRansacThresholdOriginalPx = 3.0;
+        private const double LocalAlignmentMaxTranslationOriginalPx = 40.0;
+        private const double LocalAlignmentMaxMatchDisplacementOriginalPx = 60.0;
+        private const double LocalAlignmentMaxResidualRmsOriginalPx = 3.0;
+        private const double LocalAlignmentTranslationRefineRadiusOriginalPx = 10.0;
+        private const double LocalAlignmentMinEdgeImprovementRatio = 0.02;
+        private const double LocalAlignmentTranslationConsensusP80OriginalPx = 5.0;
+        private const ulong LocalAlignmentRansacSeed = 0x5EED2026UL;
+        private const int LocalAlignmentValidationGridSize = 3;
+        private const int LocalAlignmentMinReferenceEdgesPerCell = 30;
+        private const double LocalAlignmentMaxLocalRegressionPixels = 0.20;
+        private const double LocalAlignmentMaxLocalRegressionRatio = 0.10;
+
+        // OpenCV 的随机数发生器会被 EstimateAffinePartial2D/RANSAC 使用。并行零件检测时如果任由
+        // 各 worker 竞争随机状态，同一批图可能得到不同的内点集合和仿射矩阵。
+        // 这里只串行化很短的 RANSAC 求解阶段；SIFT、匹配、Warp 和缺陷检测仍保持并行。
+        private static readonly object LocalAlignmentRansacSync = new object();
+
         private static readonly ImageEncodingParam[] AlignedPatchJpegParameters =
         {
             new ImageEncodingParam(ImwriteFlags.JpegQuality, 95)
@@ -328,12 +358,35 @@ namespace CIS_WebInspector.Services
                             if (alignmentWorker == null)
                                 throw new InvalidOperationException("启用局部配准时必须提供 SIFT worker。");
 
-                            // 特征图严格沿用原始路径：Nearest 缩放后的图像 + 3x3 均值滤波。
+                            // SIFT 使用独立、固定目标宽度的工作图；DefectDetectScale 只负责后续缺陷差分。
+                            // Area 缩小先抑制混叠，再沿用 3x3 均值滤波降低 CIS 纹理噪声。
                             using (var alphaBlurred = new Mat())
                             using (var cisBlurred = new Mat())
+                            using (var alphaAlignmentInput = new Mat())
+                            using (var cisAlignmentInput = new Mat())
                             {
-                                Cv2.Blur(alphaScaled, alphaBlurred, new Size(3, 3));
-                                Cv2.Blur(cisScaled, cisBlurred, new Size(3, 3));
+                                double alignmentScale = Math.Min(
+                                    1.0,
+                                    LocalAlignmentTargetWidthPx / (double)Math.Max(1, alphaGray.Width));
+                                var alignmentSize = new Size(
+                                    Math.Max(1, (int)Math.Round(alphaGray.Width * alignmentScale)),
+                                    Math.Max(1, (int)Math.Round(alphaGray.Height * alignmentScale)));
+                                Cv2.Resize(
+                                    alphaGray,
+                                    alphaAlignmentInput,
+                                    alignmentSize,
+                                    0,
+                                    0,
+                                    InterpolationFlags.Area);
+                                Cv2.Resize(
+                                    cisGray,
+                                    cisAlignmentInput,
+                                    alignmentSize,
+                                    0,
+                                    0,
+                                    InterpolationFlags.Area);
+                                Cv2.Blur(alphaAlignmentInput, alphaBlurred, new Size(3, 3));
+                                Cv2.Blur(cisAlignmentInput, cisBlurred, new Size(3, 3));
 
                                 // 细线断裂需要在原始分辨率上复核。这里仅复用已经求得的仿射矩阵
                                 // 多生成一张原始分辨率对齐图，不改变现有 SIFT 匹配与矩阵估计路径。
@@ -346,7 +399,10 @@ namespace CIS_WebInspector.Services
                                     cisScaled,
                                     cisImg,
                                     scale,
+                                    alignmentScale,
                                     needOriginalWarp,
+                                    config.DefectAlphaBinaryThresh,
+                                    cisBaseThresh,
                                     alignmentWorker,
                                     partId,
                                     out cisAlignedOwned,
@@ -713,26 +769,24 @@ namespace CIS_WebInspector.Services
                 Math.Max(1.5, 0.30 * pixelsPerMm);
 
             // 局部 SIFT 已完成零件级精对准，但弯曲细线仍可能存在少量法向漂移。
-            // 法向可以使用内轮廓容差吸收局部错位；沿线方向必须严格限制，
-            // 否则搜索窗口会把断口后方的正常线段平移过来，掩盖约 0.5 mm 的真实缺口。
-            int scaledInnerTolerance = Math.Max(
-                1,
-                (int)Math.Round(config.DefectToleranceInner * analysisScale));
+            // 这里按细线自身的毫米语义计算搜索范围：法向允许吸收少量错位，沿线方向严格
+            // 限制，避免把断口后方的正常线段平移过来。DefectToleranceInner 只服务于
+            // 普通内部面积缺陷，不再改变细线候选、端点验证或错位排除结果。
             int maximumTangentialShift = Math.Max(
                 1,
-                Math.Min(
-                    Math.Max(1, scaledInnerTolerance / 2),
-                    (int)Math.Round(0.17 * pixelsPerMm)));
+                (int)Math.Round(FineLineTangentialAlignmentToleranceMm * pixelsPerMm));
             int normalAlignmentSearchRadius = Math.Max(
                 maximumTangentialShift,
-                Math.Min(
-                    scaledInnerTolerance,
-                    (int)Math.Round(0.40 * pixelsPerMm)));
+                (int)Math.Round(FineLineNormalAlignmentToleranceMm * pixelsPerMm));
             int endpointSearchRadius = Math.Max(
                 normalAlignmentSearchRadius + 1,
-                Math.Max(2, scaledInnerTolerance * 2));
+                Math.Max(
+                    2,
+                    (int)Math.Round(FineLineEndpointSearchRadiusMm * pixelsPerMm)));
             // 端点只用于确认断口两侧仍有真实线段，可使用比缺口本体更宽松的搜索半径。
-            int endpointAnchorLength = Math.Max(minimumGapPixels * 2, endpointSearchRadius * 2);
+            int endpointAnchorLength = Math.Max(
+                minimumGapPixels * 2,
+                (int)Math.Round(FineLineEndpointAnchorLengthMm * pixelsPerMm));
             // 正常前景由绝对亮度与局部对比度共同建立，避免把偏灰但连续的线条切断。
             int relaxedForegroundThreshold = Math.Max(
                 8,
@@ -1617,8 +1671,11 @@ namespace CIS_WebInspector.Services
             Mat alphaScaled,
             Mat cisScaled,
             Mat cisImgOrig,
-            double scale,
+            double defectScale,
+            double alignmentScale,
             bool needOriginalWarp,
+            int alphaBinaryThreshold,
+            int cisBinaryThreshold,
             PatchSiftWorker worker,
             string partId,
             out Mat cisAligned,
@@ -1646,17 +1703,41 @@ namespace CIS_WebInspector.Services
                         return false;
                     }
 
-                    // 匹配方向为 TIFF 模板→CIS；后续估计的矩阵方向则为 CIS→TIFF。
-                    DMatch[][] knnMatches = worker.Matcher.KnnMatch(template.Descriptors, cisDescriptors, 2);
-                    var goodMatches = new List<DMatch>(knnMatches.Length);
-                    const float ratioThreshold = 0.6f;
-                    foreach (DMatch[] matches in knnMatches)
+                    // 双向 KNN + ratio + 互相一致：周期纹理中常见的一对多匹配必须在两个方向
+                    // 都把对方选为最佳候选，才允许进入几何估计。
+                    const float ratioThreshold = 0.70f;
+                    List<DMatch> forwardMatches = SelectRatioMatches(
+                        worker.Matcher.KnnMatch(template.Descriptors, cisDescriptors, 2),
+                        ratioThreshold);
+                    List<DMatch> reverseMatches = SelectRatioMatches(
+                        worker.Matcher.KnnMatch(cisDescriptors, template.Descriptors, 2),
+                        ratioThreshold);
+                    var reverseByCisIndex = reverseMatches.ToDictionary(
+                        match => match.QueryIdx,
+                        match => match);
+                    var goodMatches = new List<DMatch>(forwardMatches.Count);
+                    foreach (DMatch match in forwardMatches)
                     {
-                        if (matches.Length >= 2 && matches[0].Distance < ratioThreshold * matches[1].Distance)
-                            goodMatches.Add(matches[0]);
+                        if (!reverseByCisIndex.TryGetValue(match.TrainIdx, out DMatch reverse) ||
+                            reverse.TrainIdx != match.QueryIdx)
+                        {
+                            continue;
+                        }
+
+                        Point2f templatePoint = template.KeyPoints[match.QueryIdx].Pt;
+                        Point2f cisPoint = cisKeyPoints[match.TrainIdx].Pt;
+                        double displacementXOriginal =
+                            (templatePoint.X - cisPoint.X) / alignmentScale;
+                        double displacementYOriginal =
+                            (templatePoint.Y - cisPoint.Y) / alignmentScale;
+                        if (Math.Abs(displacementXOriginal) <= LocalAlignmentMaxMatchDisplacementOriginalPx &&
+                            Math.Abs(displacementYOriginal) <= LocalAlignmentMaxMatchDisplacementOriginalPx)
+                        {
+                            goodMatches.Add(match);
+                        }
                     }
 
-                    const int minimumMatches = 4;
+                    const int minimumMatches = 6;
                     if (goodMatches.Count < minimumMatches)
                     {
                         LogAlignmentFailure(partId, $"有效匹配不足({goodMatches.Count}/{minimumMatches})", stopwatch.ElapsedMilliseconds);
@@ -1670,124 +1751,262 @@ namespace CIS_WebInspector.Services
                         .Select(match => cisKeyPoints[match.TrainIdx].Pt)
                         .ToArray();
 
-                    // 保留原始两阶段技术路径：先用基础矩阵 RANSAC 过滤误匹配，
-                    // 再使用过滤后的点估计完整仿射矩阵。
-                    using (InputArray templateInput = InputArray.Create(
-                        templatePoints.Select(point => new Point2d(point.X, point.Y)).ToArray()))
-                    using (InputArray cisInput = InputArray.Create(
-                        cisPoints.Select(point => new Point2d(point.X, point.Y)).ToArray()))
-                    using (var fundamentalMask = new Mat())
-                    using (Mat fundamental = Cv2.FindFundamentalMat(
-                        templateInput,
-                        cisInput,
-                        FundamentalMatMethods.Ransac,
-                        3.0,
-                        0.99,
-                        fundamentalMask))
+                    // 零件在全局对齐后主要剩余平移、少量旋转和统一缩放。使用相似变换而不是
+                    // 6 自由度完整仿射，可从模型层面禁止匹配噪声被拟合成非等比拉伸或剪切，
+                    // 避免主体平均分数改善、局部细线却被拉开。CIS→TIFF 方向保持不变。
+                    double ransacThreshold = Math.Max(
+                        0.5,
+                        LocalAlignmentRansacThresholdOriginalPx * alignmentScale);
+                    using (InputArray affineSource = InputArray.Create(cisPoints))
+                    using (InputArray affineTarget = InputArray.Create(templatePoints))
+                    using (var affineInlierMask = new Mat())
                     {
-                        if (fundamentalMask.Empty())
+                        Mat estimatedTransform;
+                        // 固定随机种子并保护 RANSAC 求解，保证并行度和线程调度变化时，
+                        // 相同匹配点仍产生相同内点集合。锁内不做特征提取或图像 Warp。
+                        lock (LocalAlignmentRansacSync)
                         {
-                            LogAlignmentFailure(partId, "Fundamental Matrix RANSAC 未得到内点", stopwatch.ElapsedMilliseconds);
-                            return false;
+                            Cv2.SetTheRNG(LocalAlignmentRansacSeed);
+                            estimatedTransform = Cv2.EstimateAffinePartial2D(
+                                affineSource,
+                                affineTarget,
+                                affineInlierMask,
+                                RobustEstimationAlgorithms.RANSAC,
+                                ransacThreshold,
+                                2000,
+                                0.99,
+                                10);
                         }
 
-                        fundamentalMask.GetArray(out byte[] maskValues);
-                        var templateInliers = new List<Point2f>(goodMatches.Count);
-                        var cisInliers = new List<Point2f>(goodMatches.Count);
-                        int maskLength = Math.Min(maskValues.Length, goodMatches.Count);
-                        for (int i = 0; i < maskLength; i++)
+                        using (Mat transform = estimatedTransform)
                         {
-                            if (maskValues[i] != 0)
+                            if (transform == null || transform.Empty() || affineInlierMask.Empty())
                             {
-                                templateInliers.Add(templatePoints[i]);
-                                cisInliers.Add(cisPoints[i]);
-                            }
-                        }
-
-                        if (templateInliers.Count < minimumMatches || cisInliers.Count < minimumMatches)
-                        {
-                            LogAlignmentFailure(
-                                partId,
-                                $"Fundamental Matrix 内点不足({templateInliers.Count}/{minimumMatches})",
-                                stopwatch.ElapsedMilliseconds);
-                            return false;
-                        }
-
-                        using (InputArray affineSource = InputArray.Create(cisInliers.ToArray()))
-                        using (InputArray affineTarget = InputArray.Create(templateInliers.ToArray()))
-                        using (Mat transform = Cv2.EstimateAffine2D(affineSource, affineTarget))
-                        {
-                            if (transform == null || transform.Empty())
-                            {
-                                LogAlignmentFailure(partId, "EstimateAffine2D 未得到矩阵", stopwatch.ElapsedMilliseconds);
+                                LogAlignmentFailure(partId, "Similarity RANSAC 未得到矩阵或内点", stopwatch.ElapsedMilliseconds);
                                 return false;
                             }
 
-                            // 与原始版本相同：只检查两个对角元素及 X/Y 平移。
-                            double sx = transform.At<double>(0, 0);
-                            double sy = transform.At<double>(1, 1);
-                            double dx = transform.At<double>(0, 2);
-                            double dy = transform.At<double>(1, 2);
-                            bool transformAccepted =
-                                sx > 0.9 && sx < 1.1 &&
-                                sy > 0.9 && sy < 1.1 &&
-                                dx > -10 && dx < 10 &&
-                                dy > -10 && dy < 10;
-                            if (!transformAccepted)
+                            affineInlierMask.GetArray(out byte[] maskValues);
+                            var templateInliers = new List<Point2f>(goodMatches.Count);
+                            var cisInliers = new List<Point2f>(goodMatches.Count);
+                            int maskLength = Math.Min(maskValues.Length, goodMatches.Count);
+                            for (int i = 0; i < maskLength; i++)
+                            {
+                                if (maskValues[i] != 0)
+                                {
+                                    templateInliers.Add(templatePoints[i]);
+                                    cisInliers.Add(cisPoints[i]);
+                                }
+                            }
+
+                            double inlierRatio = templateInliers.Count / (double)goodMatches.Count;
+                            if (templateInliers.Count < minimumMatches || inlierRatio < 0.50)
                             {
                                 LogAlignmentFailure(
                                     partId,
-                                    $"仿射矩阵超出原始约束: sx={sx:F4}, sy={sy:F4}, dx={dx:F3}, dy={dy:F3}",
+                                    $"Similarity 内点不足或比例过低({templateInliers.Count}/{goodMatches.Count}, {inlierRatio:P0})",
                                     stopwatch.ElapsedMilliseconds);
                                 return false;
                             }
 
-                            // 只有矩阵通过原有尺度/平移约束后才创建输出，避免失败路径遗留半成品 Mat。
-                            Mat scaledOutput = new Mat();
-                            Mat originalOutput = null;
+                        if (!HasSufficientInlierCoverage(
+                                templateInliers,
+                                alphaFeature.Size(),
+                                out double inlierCoverage))
+                        {
+                            LogAlignmentFailure(
+                                partId,
+                                $"内点空间覆盖不足(coverage={inlierCoverage:P1})",
+                                stopwatch.ElapsedMilliseconds);
+                            return false;
+                        }
+
+                        double reprojectionRmsOriginal = CalculateAffineRmsOriginalPixels(
+                            transform,
+                            cisInliers,
+                            templateInliers,
+                            alignmentScale);
+                        if (reprojectionRmsOriginal > LocalAlignmentMaxResidualRmsOriginalPx)
+                        {
+                            LogAlignmentFailure(
+                                partId,
+                                $"内点重投影RMS过大({reprojectionRmsOriginal:F2}px)",
+                                stopwatch.ElapsedMilliseconds);
+                            return false;
+                        }
+
+                        if (!TryValidateLocalAffine(
+                                transform,
+                                alignmentScale,
+                                out string transformDiagnostic))
+                        {
+                            LogAlignmentFailure(partId, transformDiagnostic, stopwatch.ElapsedMilliseconds);
+                            return false;
+                        }
+
+                        // 相似变换负责旋转和统一缩放，小范围边缘 Chamfer 精修剩余整体平移。
+                        // 如果相似变换因微小旋转/缩放让某个局部区域变差，再尝试一个由匹配点
+                        // 位移中位数确定的纯平移模型；它能稳定处理“实际只有整体错位”的零件。
+                        string alignmentModel = "Similarity";
+                        bool refinementAccepted = TryRefineAffineTranslationByEdges(
+                                alphaFeature,
+                                cisFeature,
+                                alphaBinaryThreshold,
+                                cisBinaryThreshold,
+                                alignmentScale,
+                                transform,
+                                true,
+                                out double edgeScoreBefore,
+                                out double edgeScoreAfter,
+                                out int refineX,
+                                out int refineY,
+                                out double worstLocalRegression,
+                                out int checkedLocalCells);
+                        string similarityFailure =
+                            $"global={edgeScoreBefore:F3}->{edgeScoreAfter:F3}, " +
+                            $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px, " +
+                            $"cells={checkedLocalCells}";
+
+                        if (!refinementAccepted)
+                        {
+                            Mat translationFallback = null;
                             try
                             {
-                                Cv2.WarpAffine(cisScaled, scaledOutput, transform, alphaScaled.Size(), InterpolationFlags.Cubic);
-
-                                // 原分辨率对齐图仅在细线复核或裁图保存需要时生成；普通面积通道不承担这次大图 Warp。
-                                if (needOriginalWarp)
+                                if (TryBuildTranslationFallback(
+                                        cisInliers,
+                                        templateInliers,
+                                        alignmentScale,
+                                        out translationFallback,
+                                        out double translationConsensusP80) &&
+                                    TryRefineAffineTranslationByEdges(
+                                        alphaFeature,
+                                        cisFeature,
+                                        alphaBinaryThreshold,
+                                        cisBinaryThreshold,
+                                        alignmentScale,
+                                        translationFallback,
+                                        false,
+                                        out edgeScoreBefore,
+                                        out edgeScoreAfter,
+                                        out refineX,
+                                        out refineY,
+                                        out worstLocalRegression,
+                                        out checkedLocalCells))
                                 {
-                                    originalOutput = new Mat();
-                                    using (Mat originalTransform = transform.Clone())
-                                    {
-                                        originalTransform.Set(0, 2, transform.At<double>(0, 2) / scale);
-                                        originalTransform.Set(1, 2, transform.At<double>(1, 2) / scale);
-                                        Cv2.WarpAffine(
-                                            cisImgOrig,
-                                            originalOutput,
-                                            originalTransform,
-                                            cisImgOrig.Size(),
-                                            InterpolationFlags.Cubic);
-                                    }
+                                    translationFallback.CopyTo(transform);
+                                    alignmentModel = "Translation";
+                                    refinementAccepted = true;
                                 }
-
-                                cisAligned = scaledOutput;
-                                cisAlignedOrig = originalOutput;
-                                scaledOutput = null;
-                                originalOutput = null;
-
-                                stopwatch.Stop();
-                                Console.WriteLine(
-                                    $"[LocalAlign] {FormatPartId(partId)} Applied(original): " +
-                                    $"kp={template.KeyPoints.Length}/{cisKeyPoints.Length}, " +
-                                    $"matches={goodMatches.Count}, fundamentalInliers={templateInliers.Count}, " +
-                                    $"sx={sx:F4}, sy={sy:F4}, dx={dx:F3}, dy={dy:F3}, " +
-                                    $"time={stopwatch.ElapsedMilliseconds}ms");
-                                return true;
+                                else
+                                {
+                                    LogAlignmentFailure(
+                                        partId,
+                                        $"相似变换与纯平移均未通过局部稳定性：" +
+                                        $"similarity({similarityFailure}), " +
+                                        $"translation(global={edgeScoreBefore:F3}->{edgeScoreAfter:F3}, " +
+                                        $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px, " +
+                                        $"cells={checkedLocalCells}, P80={translationConsensusP80:F2}px, " +
+                                        $"move=({translationFallback?.At<double>(0, 2) / alignmentScale:F2}," +
+                                        $"{translationFallback?.At<double>(1, 2) / alignmentScale:F2})px)",
+                                        stopwatch.ElapsedMilliseconds);
+                                    return false;
+                                }
                             }
                             finally
                             {
-                                scaledOutput?.Dispose();
-                                originalOutput?.Dispose();
+                                translationFallback?.Dispose();
                             }
+                        }
+
+                        // 精修平移也属于最终矩阵的一部分；再次检查，避免初始矩阵已接近
+                        // 最大平移边界时，被后续 ±10 px 搜索推到安全范围之外。
+                        if (!TryValidateLocalAffine(
+                                transform,
+                                alignmentScale,
+                                out string refinedTransformDiagnostic))
+                        {
+                            LogAlignmentFailure(
+                                partId,
+                                "边缘精修后" + refinedTransformDiagnostic,
+                                stopwatch.ElapsedMilliseconds);
+                            return false;
+                        }
+
+                        // 只有所有质量检查通过后才创建输出，失败路径继续使用 H0 裁出的原始小图。
+                        Mat scaledOutput = new Mat();
+                        Mat originalOutput = null;
+                        try
+                        {
+                            using (Mat defectScaleTransform = transform.Clone())
+                            {
+                                double translationScale = defectScale / alignmentScale;
+                                defectScaleTransform.Set(
+                                    0,
+                                    2,
+                                    transform.At<double>(0, 2) * translationScale);
+                                defectScaleTransform.Set(
+                                    1,
+                                    2,
+                                    transform.At<double>(1, 2) * translationScale);
+                                Cv2.WarpAffine(
+                                    cisScaled,
+                                    scaledOutput,
+                                    defectScaleTransform,
+                                    alphaScaled.Size(),
+                                    InterpolationFlags.Cubic);
+                            }
+
+                            // 原分辨率变换的线性部分不变，平移从配准工作尺度除以 alignmentScale。
+                            if (needOriginalWarp)
+                            {
+                                originalOutput = new Mat();
+                                using (Mat originalTransform = transform.Clone())
+                                {
+                                    originalTransform.Set(
+                                        0,
+                                        2,
+                                        transform.At<double>(0, 2) / alignmentScale);
+                                    originalTransform.Set(
+                                        1,
+                                        2,
+                                        transform.At<double>(1, 2) / alignmentScale);
+                                    Cv2.WarpAffine(
+                                        cisImgOrig,
+                                        originalOutput,
+                                        originalTransform,
+                                        cisImgOrig.Size(),
+                                        InterpolationFlags.Cubic);
+                                }
+                            }
+
+                            cisAligned = scaledOutput;
+                            cisAlignedOrig = originalOutput;
+                            scaledOutput = null;
+                            originalOutput = null;
+
+                            double dxOriginal = transform.At<double>(0, 2) / alignmentScale;
+                            double dyOriginal = transform.At<double>(1, 2) / alignmentScale;
+                            stopwatch.Stop();
+                            Console.WriteLine(
+                                $"[LocalAlign] {FormatPartId(partId)} Applied/{alignmentModel}: " +
+                                $"workScale={alignmentScale:F3}, defectScale={defectScale:F3}, " +
+                                $"kp={template.KeyPoints.Length}/{cisKeyPoints.Length}, " +
+                                $"mutual={goodMatches.Count}, inliers={templateInliers.Count}({inlierRatio:P0}), " +
+                                $"coverage={inlierCoverage:P1}, rms={reprojectionRmsOriginal:F2}px, " +
+                                $"move=({dxOriginal:F2},{dyOriginal:F2})px, refine=({refineX},{refineY}), " +
+                                $"edge={edgeScoreBefore:F3}->{edgeScoreAfter:F3}, " +
+                                $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px/{checkedLocalCells}, " +
+                                $"time={stopwatch.ElapsedMilliseconds}ms");
+                            return true;
+                        }
+                        finally
+                        {
+                            scaledOutput?.Dispose();
+                            originalOutput?.Dispose();
                         }
                     }
                 }
+            }
             }
             catch (Exception ex)
             {
@@ -1797,6 +2016,492 @@ namespace CIS_WebInspector.Services
                 cisAligned = null;
                 cisAlignedOrig = null;
                 return false;
+            }
+        }
+
+        private static List<DMatch> SelectRatioMatches(DMatch[][] knnMatches, float ratioThreshold)
+        {
+            var selected = new List<DMatch>(knnMatches.Length);
+            foreach (DMatch[] matches in knnMatches)
+            {
+                if (matches.Length >= 2 &&
+                    matches[0].Distance < ratioThreshold * matches[1].Distance)
+                {
+                    selected.Add(matches[0]);
+                }
+            }
+            return selected;
+        }
+
+        /// <summary>
+        /// 内点不能全部挤在一个局部重复纹理块内。这里要求至少跨越三个 3x3 网格，
+        /// 并在 X/Y 至少一个方向覆盖图像 20%，兼容细长图案而不强制二维铺满。
+        /// </summary>
+        private static bool HasSufficientInlierCoverage(
+            List<Point2f> points,
+            Size imageSize,
+            out double boundingCoverage)
+        {
+            boundingCoverage = 0;
+            if (points == null || points.Count == 0 || imageSize.Width <= 0 || imageSize.Height <= 0)
+                return false;
+
+            float minX = points.Min(point => point.X);
+            float maxX = points.Max(point => point.X);
+            float minY = points.Min(point => point.Y);
+            float maxY = points.Max(point => point.Y);
+            double spanX = Math.Max(0, maxX - minX) / imageSize.Width;
+            double spanY = Math.Max(0, maxY - minY) / imageSize.Height;
+            boundingCoverage = spanX * spanY;
+
+            var occupiedCells = new HashSet<int>();
+            foreach (Point2f point in points)
+            {
+                int cellX = Math.Max(0, Math.Min(2, (int)(point.X * 3 / imageSize.Width)));
+                int cellY = Math.Max(0, Math.Min(2, (int)(point.Y * 3 / imageSize.Height)));
+                occupiedCells.Add(cellY * 3 + cellX);
+            }
+            return occupiedCells.Count >= 3 && Math.Max(spanX, spanY) >= 0.20;
+        }
+
+        private static double CalculateAffineRmsOriginalPixels(
+            Mat transform,
+            List<Point2f> sourcePoints,
+            List<Point2f> targetPoints,
+            double alignmentScale)
+        {
+            double a = transform.At<double>(0, 0);
+            double b = transform.At<double>(0, 1);
+            double tx = transform.At<double>(0, 2);
+            double c = transform.At<double>(1, 0);
+            double d = transform.At<double>(1, 1);
+            double ty = transform.At<double>(1, 2);
+            double squaredError = 0;
+            int count = Math.Min(sourcePoints.Count, targetPoints.Count);
+            for (int index = 0; index < count; index++)
+            {
+                Point2f source = sourcePoints[index];
+                Point2f target = targetPoints[index];
+                double errorX = a * source.X + b * source.Y + tx - target.X;
+                double errorY = c * source.X + d * source.Y + ty - target.Y;
+                squaredError += errorX * errorX + errorY * errorY;
+            }
+            return count == 0
+                ? double.PositiveInfinity
+                : Math.Sqrt(squaredError / count) / alignmentScale;
+        }
+
+        /// <summary>检查完整 2x2 线性部分，防止镜像、过大旋转/缩放或剪切仅靠对角元素漏检。</summary>
+        private static bool TryValidateLocalAffine(
+            Mat transform,
+            double alignmentScale,
+            out string diagnostic)
+        {
+            double a = transform.At<double>(0, 0);
+            double b = transform.At<double>(0, 1);
+            double tx = transform.At<double>(0, 2);
+            double c = transform.At<double>(1, 0);
+            double d = transform.At<double>(1, 1);
+            double ty = transform.At<double>(1, 2);
+            double determinant = a * d - b * c;
+            double firstColumnScale = Math.Sqrt(a * a + c * c);
+            double secondColumnScale = Math.Sqrt(b * b + d * d);
+            double shearCosine = firstColumnScale > 0 && secondColumnScale > 0
+                ? Math.Abs((a * b + c * d) / (firstColumnScale * secondColumnScale))
+                : double.PositiveInfinity;
+            double rotationDeg = Math.Atan2(c, a) * 180.0 / Math.PI;
+            double dxOriginal = tx / alignmentScale;
+            double dyOriginal = ty / alignmentScale;
+
+            bool finite = new[]
+            {
+                a, b, c, d, tx, ty, determinant,
+                firstColumnScale, secondColumnScale, shearCosine, rotationDeg
+            }.All(value => !double.IsNaN(value) && !double.IsInfinity(value));
+            bool accepted = finite && determinant > 0 &&
+                            firstColumnScale >= 0.90 && firstColumnScale <= 1.10 &&
+                            secondColumnScale >= 0.90 && secondColumnScale <= 1.10 &&
+                            shearCosine <= 0.15 &&
+                            Math.Abs(rotationDeg) <= 5.0 &&
+                            Math.Abs(dxOriginal) <= LocalAlignmentMaxTranslationOriginalPx &&
+                            Math.Abs(dyOriginal) <= LocalAlignmentMaxTranslationOriginalPx;
+            diagnostic = accepted
+                ? string.Empty
+                : $"仿射矩阵越界: scale=({firstColumnScale:F4},{secondColumnScale:F4}), " +
+                  $"rot={rotationDeg:F2}deg, shear={shearCosine:F3}, " +
+                  $"move=({dxOriginal:F2},{dyOriginal:F2})px, det={determinant:F4}";
+            return accepted;
+        }
+
+        /// <summary>
+        /// 当相似变换对局部结构产生不利影响时，使用 RANSAC 内点位移的中位数构造纯平移候选。
+        /// P80 残差限制保证大多数内点确实支持同一个平移；存在真实旋转或缩放时不会误走该分支。
+        /// 返回的矩阵由调用方负责释放。
+        /// </summary>
+        private static bool TryBuildTranslationFallback(
+            List<Point2f> sourcePoints,
+            List<Point2f> targetPoints,
+            double alignmentScale,
+            out Mat translationTransform,
+            out double residualP80OriginalPixels)
+        {
+            translationTransform = null;
+            residualP80OriginalPixels = double.PositiveInfinity;
+            int count = Math.Min(sourcePoints?.Count ?? 0, targetPoints?.Count ?? 0);
+            if (count < 3 || alignmentScale <= 0)
+                return false;
+
+            var displacementX = new double[count];
+            var displacementY = new double[count];
+            for (int index = 0; index < count; index++)
+            {
+                displacementX[index] = targetPoints[index].X - sourcePoints[index].X;
+                displacementY[index] = targetPoints[index].Y - sourcePoints[index].Y;
+            }
+            Array.Sort(displacementX);
+            Array.Sort(displacementY);
+            double medianX = MedianOfSorted(displacementX);
+            double medianY = MedianOfSorted(displacementY);
+
+            var residuals = new double[count];
+            for (int index = 0; index < count; index++)
+            {
+                double dx = targetPoints[index].X - sourcePoints[index].X - medianX;
+                double dy = targetPoints[index].Y - sourcePoints[index].Y - medianY;
+                residuals[index] = Math.Sqrt(dx * dx + dy * dy) / alignmentScale;
+            }
+            Array.Sort(residuals);
+            int percentileIndex = Math.Max(
+                0,
+                Math.Min(count - 1, (int)Math.Ceiling(count * 0.80) - 1));
+            residualP80OriginalPixels = residuals[percentileIndex];
+            if (residualP80OriginalPixels > LocalAlignmentTranslationConsensusP80OriginalPx)
+                return false;
+
+            translationTransform = Mat.Eye(2, 3, MatType.CV_64FC1);
+            translationTransform.Set(0, 2, medianX);
+            translationTransform.Set(1, 2, medianY);
+            return true;
+        }
+
+        private static double MedianOfSorted(double[] sortedValues)
+        {
+            int count = sortedValues?.Length ?? 0;
+            if (count == 0)
+                return double.NaN;
+            int middle = count / 2;
+            return (count & 1) == 0
+                ? 0.5 * (sortedValues[middle - 1] + sortedValues[middle])
+                : sortedValues[middle];
+        }
+
+        /// <summary>
+        /// 在仿射结果附近搜索小范围整数平移，以模板/CIS二值边缘的对称Chamfer距离作为唯一评分。
+        /// 若最终评分没有优于未做局部配准的输入，则拒绝矩阵，避免错误匹配使结果变差。
+        /// </summary>
+        private static bool TryRefineAffineTranslationByEdges(
+            Mat alphaFeature,
+            Mat cisFeature,
+            int alphaThreshold,
+            int cisThreshold,
+            double alignmentScale,
+            Mat transform,
+            bool requireLocalStability,
+            out double scoreBefore,
+            out double scoreAfter,
+            out int refineX,
+            out int refineY,
+            out double worstLocalRegression,
+            out int checkedLocalCells)
+        {
+            scoreBefore = double.PositiveInfinity;
+            scoreAfter = double.PositiveInfinity;
+            refineX = 0;
+            refineY = 0;
+            worstLocalRegression = double.PositiveInfinity;
+            checkedLocalCells = 0;
+            int searchRadius = Math.Max(
+                1,
+                (int)Math.Ceiling(LocalAlignmentTranslationRefineRadiusOriginalPx * alignmentScale));
+
+            using (var alphaBinary = new Mat())
+            using (var cisBinary = new Mat())
+            using (var cisWarpedBinary = new Mat())
+            using (var alphaEdges = new Mat())
+            using (var cisEdgesBefore = new Mat())
+            using (var cisEdgesAfter = new Mat())
+            using (var cisWarpedFinalBinary = new Mat())
+            using (var cisEdgesFinal = new Mat())
+            using (Mat edgeKernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3)))
+            {
+                Cv2.Threshold(alphaFeature, alphaBinary, alphaThreshold, 255, ThresholdTypes.Binary);
+                Cv2.Threshold(cisFeature, cisBinary, cisThreshold, 255, ThresholdTypes.Binary);
+                Cv2.MorphologyEx(alphaBinary, alphaEdges, MorphTypes.Gradient, edgeKernel);
+                Cv2.MorphologyEx(cisBinary, cisEdgesBefore, MorphTypes.Gradient, edgeKernel);
+                scoreBefore = FindBestChamferShift(
+                    alphaEdges,
+                    cisEdgesBefore,
+                    0,
+                    out _,
+                    out _);
+
+                Cv2.WarpAffine(
+                    cisBinary,
+                    cisWarpedBinary,
+                    transform,
+                    alphaBinary.Size(),
+                    InterpolationFlags.Nearest);
+                Cv2.MorphologyEx(cisWarpedBinary, cisEdgesAfter, MorphTypes.Gradient, edgeKernel);
+                scoreAfter = FindBestChamferShift(
+                    alphaEdges,
+                    cisEdgesAfter,
+                    searchRadius,
+                    out refineX,
+                    out refineY);
+
+                double improvementRatio = (scoreBefore - scoreAfter) /
+                                          Math.Max(scoreBefore, 1e-6);
+                if (double.IsInfinity(scoreBefore) || double.IsInfinity(scoreAfter) ||
+                    double.IsNaN(scoreBefore) || double.IsNaN(scoreAfter) ||
+                    improvementRatio < LocalAlignmentMinEdgeImprovementRatio)
+                {
+                    return false;
+                }
+
+                transform.Set(0, 2, transform.At<double>(0, 2) + refineX);
+                transform.Set(1, 2, transform.At<double>(1, 2) + refineY);
+
+                // 纯平移不会改变局部形状，前面的全局 Chamfer 改善率和匹配位移共识已经足够。
+                // 直接结束可避免再做一次 Warp、形态学梯度和两次距离变换；相似变换才需要
+                // 下面的 3x3 分区检查来防止微小旋转/缩放伤害局部细线。
+                if (!requireLocalStability)
+                {
+                    worstLocalRegression = 0;
+                    checkedLocalCells = 0;
+                    return true;
+                }
+
+                // 全局平均值可能掩盖“主体更好、某条细线更差”的情况。用最终矩阵重新生成
+                // 边缘后，将模板划成 3x3 区域，逐区确认设计轮廓到 CIS 轮廓的距离没有显著增大。
+                // 这道门控不直接判断缺陷，只保证局部配准不会制造新的局部错位。
+                Cv2.WarpAffine(
+                    cisBinary,
+                    cisWarpedFinalBinary,
+                    transform,
+                    alphaBinary.Size(),
+                    InterpolationFlags.Nearest);
+                Cv2.MorphologyEx(
+                    cisWarpedFinalBinary,
+                    cisEdgesFinal,
+                    MorphTypes.Gradient,
+                    edgeKernel);
+                bool localStabilityAccepted = HasNoSignificantLocalEdgeRegression(
+                        alphaEdges,
+                        cisEdgesBefore,
+                        cisEdgesFinal,
+                        alignmentScale,
+                        out worstLocalRegression,
+                        out checkedLocalCells);
+                if (!localStabilityAccepted)
+                {
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 对固定的模板边缘点，比较局部配准前后到 CIS 最近边缘的平均距离。
+        /// 使用固定模板点集而不是比较两幅差分图，可避免某个区域因 CIS 偏暗、边缘点变少而
+        /// 获得虚假的“分数改善”。任一有足够模板结构的区域明显退化，整张局部矩阵即拒绝。
+        /// </summary>
+        private static bool HasNoSignificantLocalEdgeRegression(
+            Mat referenceEdges,
+            Mat movingEdgesBefore,
+            Mat movingEdgesAfter,
+            double alignmentScale,
+            out double worstRegression,
+            out int checkedCells)
+        {
+            worstRegression = double.NegativeInfinity;
+            checkedCells = 0;
+            using (var inverseBefore = new Mat())
+            using (var inverseAfter = new Mat())
+            using (var distanceBefore = new Mat())
+            using (var distanceAfter = new Mat())
+            {
+                Cv2.BitwiseNot(movingEdgesBefore, inverseBefore);
+                Cv2.BitwiseNot(movingEdgesAfter, inverseAfter);
+                Cv2.DistanceTransform(
+                    inverseBefore,
+                    distanceBefore,
+                    DistanceTypes.L2,
+                    DistanceTransformMasks.Mask3);
+                Cv2.DistanceTransform(
+                    inverseAfter,
+                    distanceAfter,
+                    DistanceTypes.L2,
+                    DistanceTransformMasks.Mask3);
+
+                referenceEdges.GetArray(out byte[] referenceValues);
+                distanceBefore.GetArray(out float[] beforeDistances);
+                distanceAfter.GetArray(out float[] afterDistances);
+                int width = referenceEdges.Width;
+                int height = referenceEdges.Height;
+                // Warp 后图像外侧会因源图越界自然缺失。该现象属于裁切边界条件，不能拿来
+                // 判断内部配准质量；忽略最大允许平移对应的安全边框，只评价可完整采样区域。
+                int safeBorder = Math.Max(
+                    1,
+                    (int)Math.Ceiling(LocalAlignmentMaxTranslationOriginalPx * alignmentScale));
+
+                for (int gridY = 0; gridY < LocalAlignmentValidationGridSize; gridY++)
+                {
+                    int top = gridY * height / LocalAlignmentValidationGridSize;
+                    int bottom = (gridY + 1) * height / LocalAlignmentValidationGridSize;
+                    for (int gridX = 0; gridX < LocalAlignmentValidationGridSize; gridX++)
+                    {
+                        int left = gridX * width / LocalAlignmentValidationGridSize;
+                        int right = (gridX + 1) * width / LocalAlignmentValidationGridSize;
+                        int referenceCount = 0;
+                        double beforeSum = 0;
+                        double afterSum = 0;
+                        for (int y = top; y < bottom; y++)
+                        {
+                            int rowOffset = y * width;
+                            for (int x = left; x < right; x++)
+                            {
+                                if (x < safeBorder || x >= width - safeBorder ||
+                                    y < safeBorder || y >= height - safeBorder)
+                                {
+                                    continue;
+                                }
+
+                                int index = rowOffset + x;
+                                if (referenceValues[index] == 0)
+                                    continue;
+
+                                referenceCount++;
+                                beforeSum += beforeDistances[index];
+                                afterSum += afterDistances[index];
+                            }
+                        }
+
+                        if (referenceCount < LocalAlignmentMinReferenceEdgesPerCell)
+                            continue;
+
+                        checkedCells++;
+                        double beforeMean = beforeSum / referenceCount;
+                        double afterMean = afterSum / referenceCount;
+                        double regression = afterMean - beforeMean;
+                        worstRegression = Math.Max(worstRegression, regression);
+                        double allowedRegression = Math.Max(
+                            LocalAlignmentMaxLocalRegressionPixels,
+                            beforeMean * LocalAlignmentMaxLocalRegressionRatio);
+                        if (regression > allowedRegression)
+                            return false;
+                    }
+                }
+
+                // 没有任何可评价区域时无法证明局部矩阵安全；保守回退到全局对齐裁图。
+                if (checkedCells == 0)
+                {
+                    worstRegression = double.PositiveInfinity;
+                    return false;
+                }
+
+                if (double.IsNegativeInfinity(worstRegression))
+                    worstRegression = 0;
+                return true;
+            }
+        }
+
+        private static double FindBestChamferShift(
+            Mat referenceEdges,
+            Mat movingEdges,
+            int searchRadius,
+            out int bestShiftX,
+            out int bestShiftY)
+        {
+            bestShiftX = 0;
+            bestShiftY = 0;
+            using (var inverseReference = new Mat())
+            using (var inverseMoving = new Mat())
+            using (var referenceDistance = new Mat())
+            using (var movingDistance = new Mat())
+            {
+                Cv2.BitwiseNot(referenceEdges, inverseReference);
+                Cv2.BitwiseNot(movingEdges, inverseMoving);
+                Cv2.DistanceTransform(
+                    inverseReference,
+                    referenceDistance,
+                    DistanceTypes.L2,
+                    DistanceTransformMasks.Mask3);
+                Cv2.DistanceTransform(
+                    inverseMoving,
+                    movingDistance,
+                    DistanceTypes.L2,
+                    DistanceTransformMasks.Mask3);
+
+                referenceEdges.GetArray(out byte[] referenceValues);
+                movingEdges.GetArray(out byte[] movingValues);
+                referenceDistance.GetArray(out float[] referenceDistances);
+                movingDistance.GetArray(out float[] movingDistances);
+                int width = referenceEdges.Width;
+                int height = referenceEdges.Height;
+                var referencePoints = new List<Point>();
+                var movingPoints = new List<Point>();
+                for (int y = searchRadius; y < height - searchRadius; y++)
+                {
+                    int rowOffset = y * width;
+                    for (int x = searchRadius; x < width - searchRadius; x++)
+                    {
+                        int index = rowOffset + x;
+                        if (referenceValues[index] != 0)
+                            referencePoints.Add(new Point(x, y));
+                        if (movingValues[index] != 0)
+                            movingPoints.Add(new Point(x, y));
+                    }
+                }
+                if (referencePoints.Count == 0 || movingPoints.Count == 0)
+                    return double.PositiveInfinity;
+
+                double bestScore = double.PositiveInfinity;
+                int bestMagnitudeSquared = int.MaxValue;
+                for (int shiftY = -searchRadius; shiftY <= searchRadius; shiftY++)
+                {
+                    for (int shiftX = -searchRadius; shiftX <= searchRadius; shiftX++)
+                    {
+                        double movingToReference = 0;
+                        foreach (Point point in movingPoints)
+                        {
+                            movingToReference += referenceDistances[
+                                (point.Y + shiftY) * width + point.X + shiftX];
+                        }
+
+                        double referenceToMoving = 0;
+                        foreach (Point point in referencePoints)
+                        {
+                            referenceToMoving += movingDistances[
+                                (point.Y - shiftY) * width + point.X - shiftX];
+                        }
+
+                        double score = 0.5 *
+                            (movingToReference / movingPoints.Count +
+                             referenceToMoving / referencePoints.Count);
+                        int magnitudeSquared = shiftX * shiftX + shiftY * shiftY;
+                        if (score < bestScore - 1e-9 ||
+                            (Math.Abs(score - bestScore) <= 1e-9 &&
+                             magnitudeSquared < bestMagnitudeSquared))
+                        {
+                            bestScore = score;
+                            bestShiftX = shiftX;
+                            bestShiftY = shiftY;
+                            bestMagnitudeSquared = magnitudeSquared;
+                        }
+                    }
+                }
+                return bestScore;
             }
         }
 
