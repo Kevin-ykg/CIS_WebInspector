@@ -19,8 +19,10 @@ namespace CIS_WebInspector.Services
     public class PatchDefectResult
     {
         public string PartId { get; set; }
-        public int MaxAreaInner { get; set; }
-        public int MaxAreaOuter { get; set; }
+        /// <summary>普通内部缺陷的最大连通域物理面积，单位 mm²。</summary>
+        public double MaxAreaInnerMm2 { get; set; }
+        /// <summary>普通外部缺陷的最大连通域物理面积，单位 mm²。</summary>
+        public double MaxAreaOuterMm2 { get; set; }
         public int InnerDefectCount { get; set; }
         public int OuterDefectCount { get; set; }
         public int FineLineBreakCount { get; set; }
@@ -253,6 +255,11 @@ namespace CIS_WebInspector.Services
     /// </summary>
     public static class PatchDefectDetector
     {
+        // 局部对比窗口只用于建立“相对周围背景仍然可见”的细线前景证据。
+        // 固定为物理尺寸可避免分析缩放或 DPI 改变时窗口语义漂移；它不再由最大允许线宽控制。
+        // 10 mm 与此前 FineLineMaxWidthMm=5 mm 时约 61 px 的默认窗口基本一致，降低算法改动风险。
+        private const double FineLineLocalContrastWindowMm = 10.0;
+
         private static readonly ImageEncodingParam[] AlignedPatchJpegParameters =
         {
             new ImageEncodingParam(ImwriteFlags.JpegQuality, 95)
@@ -380,8 +387,14 @@ namespace CIS_WebInspector.Services
                             int scaledEdgeSmall = config.DefectEdgeExclusionSmall > 0
                                 ? Math.Max(1, (int)Math.Round(config.DefectEdgeExclusionSmall * scale))
                                 : 0;
-                            int scaledAreaThreshInner = Math.Max(1, (int)Math.Round(config.DefectAreaThreshInner * scale * scale));
-                            int scaledAreaThreshOuter = Math.Max(1, (int)Math.Round(config.DefectAreaThreshOuter * scale * scale));
+                            int scaledAreaThreshInner = ConvertAreaMm2ToScaledPixels(
+                                config.DefectAreaThreshInner,
+                                config.LayoutDpi,
+                                scale);
+                            int scaledAreaThreshOuter = ConvertAreaMm2ToScaledPixels(
+                                config.DefectAreaThreshOuter,
+                                config.LayoutDpi,
+                                scale);
 
                             using (Mat kernelInner = Cv2.GetStructuringElement(
                                 MorphShapes.Ellipse, new Size(scaledTolInner, scaledTolInner)))
@@ -448,7 +461,6 @@ namespace CIS_WebInspector.Services
                                                 fineAnalysisScale,
                                                 config,
                                                 fineLineMaskAnalysis,
-                                                out _,
                                                 out fineLineCount,
                                                 out maxFineLineLengthMm);
 
@@ -507,8 +519,16 @@ namespace CIS_WebInspector.Services
                                     Cv2.BitwiseOr(difInner, fineLineMask, difInner);
 
                                 // 普通通道以连通域面积判定，细线通道以结构连续性判定；任一命中都使零件 NG。
-                                result.MaxAreaInner = maxAreaInner;
-                                result.MaxAreaOuter = maxAreaOuter;
+                                // 连通域分析发生在缩小后的检测图上；对外结果换算成 mm²，
+                                // 使日志中的最大面积与用户配置阈值使用同一物理单位。
+                                result.MaxAreaInnerMm2 = ConvertScaledAreaToMm2(
+                                    maxAreaInner,
+                                    config.LayoutDpi,
+                                    scale);
+                                result.MaxAreaOuterMm2 = ConvertScaledAreaToMm2(
+                                    maxAreaOuter,
+                                    config.LayoutDpi,
+                                    scale);
                                 result.InnerDefectCount = innerCount;
                                 result.OuterDefectCount = outerCount;
                                 result.FineLineBreakCount = fineLineCount;
@@ -638,433 +658,230 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>
-        /// 在独立细节尺度上检测细线闭合断口。
-        /// 候选两侧必须仍有可靠线段，并且 CIS 在模板线附近的窄走廊内不能连接两端。
-        /// 因此轻微平移、线宽变化或阈值波动形成的成对轮廓不会被当成断裂。
+        /// 在独立细节尺度上检测细线中间断口，所有断口统一执行同一条证据链：
+        /// 1. 建立模板/CIS 前景；2. 提取轮廓屏蔽区内的缺失候选；
+        /// 3. 在候选 ROI 上提取骨架；4. 校验物理长度和线宽；
+        /// 5. 确认笔画横截面被切断；6. 确认缺口前后仍有结构；
+        /// 7. 排除可由同一微小位移解释的配准残差；8. 合并同一物理断口。
+        /// 返回的矩形和掩膜均位于 analysisScale 对应的检测坐标系，最长长度使用毫米。
         /// </summary>
         private static List<Rect> DetectFineLineBreaksAtDetailScale(
-            Mat alphaGray,
-            Mat cisGray,
-            int cisBaseThresh,
+            Mat templateGray,
+            Mat capturedGray,
+            int capturedBaseThreshold,
             double analysisScale,
             AppConfig config,
-            Mat acceptedFineLineMask,
-            out int maxAcceptedArea,
-            out int acceptedCount,
-            out double maxAcceptedLengthMm)
+            Mat acceptedGapMask,
+            out int acceptedGapCount,
+            out double longestAcceptedGapMm)
         {
+            // 以下三个比例属于内部证据门槛，不作为用户参数暴露：
+            // 端点覆盖用于证明断口前后仍有线；横截面缺失用于证明不是局部暗斑；
+            // 绝对缺失用于低对比光晕情况下的保守恢复。
             const double minimumEndpointCoverage = 0.40;
+            const double minimumCrossSectionMissingRatio = 0.75;
+            const double minimumAbsoluteMissingRatio = 0.90;
 
-            maxAcceptedArea = 0;
-            acceptedCount = 0;
-            maxAcceptedLengthMm = 0;
-            var acceptedRects = new List<Rect>();
+            acceptedGapCount = 0;
+            longestAcceptedGapMm = 0;
+            var acceptedGapRects = new List<Rect>();
 
             double pixelsPerMm = config.LayoutDpi > 0
                 ? config.LayoutDpi / 25.4 * analysisScale
                 : 0;
             if (pixelsPerMm <= 0 || config.FineLineMinBreakLengthMm <= 0 ||
-                config.FineLineMaxWidthMm <= 0 || alphaGray.Empty() || cisGray.Empty())
+                config.FineLineMaxWidthMm <= 0 || templateGray.Empty() || capturedGray.Empty())
             {
-                return acceptedRects;
+                return acceptedGapRects;
             }
 
-            int minimumLengthPixels = Math.Max(
+            const double minimumSupportedGapMm = 0.5;
+            double minimumGapMm = Math.Max(
+                minimumSupportedGapMm,
+                config.FineLineMinBreakLengthMm);
+            int minimumGapPixels = Math.Max(
                 2,
-                (int)Math.Ceiling(config.FineLineMinBreakLengthMm * pixelsPerMm));
-            double maximumThinLineHalfWidthPixels =
+                (int)Math.Ceiling(minimumGapMm * pixelsPerMm));
+            double maximumLineHalfWidthPixels =
                 Math.Max(1.0, config.FineLineMaxWidthMm * pixelsPerMm * 0.5 + 1.25);
+            int localContrastWindowPixels = Math.Max(
+                3,
+                (int)Math.Ceiling(FineLineLocalContrastWindowMm * pixelsPerMm));
+            if ((localContrastWindowPixels & 1) == 0)
+                localContrastWindowPixels++;
+            double minimumAbsoluteRecoveryHalfWidthPixels =
+                Math.Max(1.5, 0.30 * pixelsPerMm);
 
-            // 横向只允许约 0.17 mm 的偏差；更大的错位交给下方“是否仍有连续桥接线”判断。
-            int scaledToleranceInner = Math.Max(
+            // 局部 SIFT 已完成零件级精对准，但弯曲细线仍可能存在少量法向漂移。
+            // 法向可以使用内轮廓容差吸收局部错位；沿线方向必须严格限制，
+            // 否则搜索窗口会把断口后方的正常线段平移过来，掩盖约 0.5 mm 的真实缺口。
+            int scaledInnerTolerance = Math.Max(
                 1,
                 (int)Math.Round(config.DefectToleranceInner * analysisScale));
-            int transverseAllowance = Math.Max(
+            int maximumTangentialShift = Math.Max(
                 1,
                 Math.Min(
-                    Math.Max(1, scaledToleranceInner / 2),
+                    Math.Max(1, scaledInnerTolerance / 2),
                     (int)Math.Round(0.17 * pixelsPerMm)));
-            int corridorRadius = Math.Max(
-                transverseAllowance + 1,
-                Math.Max(2, scaledToleranceInner * 2));
-            // 端点只用于确认断口两侧仍有真实线段，可使用完整轮廓容差；
-            // 缺口本体仍由未膨胀证据计算，并由后续平移/桥接检查排除错位。
-            int endpointAllowance = corridorRadius;
-            int anchorReach = Math.Max(minimumLengthPixels * 2, corridorRadius * 2);
+            int normalAlignmentSearchRadius = Math.Max(
+                maximumTangentialShift,
+                Math.Min(
+                    scaledInnerTolerance,
+                    (int)Math.Round(0.40 * pixelsPerMm)));
+            int endpointSearchRadius = Math.Max(
+                normalAlignmentSearchRadius + 1,
+                Math.Max(2, scaledInnerTolerance * 2));
+            // 端点只用于确认断口两侧仍有真实线段，可使用比缺口本体更宽松的搜索半径。
+            int endpointAnchorLength = Math.Max(minimumGapPixels * 2, endpointSearchRadius * 2);
             // 正常前景由绝对亮度与局部对比度共同建立，避免把偏灰但连续的线条切断。
-            // 深色核心只作为亚毫米候选的辅助证据，不再限制较长的自然灰度断线。
-            int relaxedThreshold = Math.Max(
+            int relaxedForegroundThreshold = Math.Max(
                 8,
-                Math.Min(cisBaseThresh - 1, (int)Math.Round(cisBaseThresh * 0.82)));
-            int darkCoreThreshold = Math.Max(
-                5,
-                Math.Min(relaxedThreshold - 1, (int)Math.Round(cisBaseThresh * 0.20)));
-            int maximumLineWidthPixels = Math.Max(
-                1,
-                (int)Math.Ceiling(config.FineLineMaxWidthMm * pixelsPerMm));
-
-            using (var alphaBinary = new Mat())
-            using (var cisSized = new Mat())
-            using (var cisRelaxed = new Mat())
-            using (var edgeMask = new Mat())
-            using (var cisNearby = new Mat())
-            using (var missingEdge = new Mat())
-            using (var labels = new Mat())
-            using (var stats = new Mat())
-            using (var centroids = new Mat())
-            using (Mat nearbyKernel = Cv2.GetStructuringElement(
+                Math.Min(capturedBaseThreshold - 1, (int)Math.Round(capturedBaseThreshold * 0.82)));
+            // 绝对灰度恢复分支只处理“局部对比度把真实断口补亮”的情况。
+            // 真断口的原始灰度应接近周围背景；若仍明显更亮，说明该处仍有墨迹，
+            // 更可能是连续细线的局部变暗或轻微配准偏移。
+            int recoveryBackgroundBrightnessTolerance = Math.Max(
+                4,
+                CalculateFineLineLocalContrastThreshold(relaxedForegroundThreshold) / 2);
+            int recoveryBackgroundRingWidth = Math.Max(
+                3,
+                (int)Math.Ceiling(0.80 * pixelsPerMm));
+            using (var templateBinary = new Mat())
+            using (var capturedSized = new Mat())
+            using (var capturedForeground = new Mat())
+            using (var capturedAbsoluteForeground = new Mat())
+            using (var templateEdgeMask = new Mat())
+            using (var capturedNearEndpoints = new Mat())
+            using (var missingCandidates = new Mat())
+            using (var candidateLabels = new Mat())
+            using (var candidateStats = new Mat())
+            using (var candidateCentroids = new Mat())
+            using (Mat endpointSearchKernel = Cv2.GetStructuringElement(
                 MorphShapes.Ellipse,
-                new Size(endpointAllowance * 2 + 1, endpointAllowance * 2 + 1)))
+                new Size(endpointSearchRadius * 2 + 1, endpointSearchRadius * 2 + 1)))
             {
+                // 阶段 1：建立两类基础结构。
+                // templateBinary 是“设计上应该有墨”的模板；capturedForeground 是“实拍中仍可确认有墨”的
+                // 宽松前景。后者同时接受绝对亮度和局部对比度，避免整体偏灰时把连续线误切成缺口。
                 Cv2.Threshold(
-                    alphaGray,
-                    alphaBinary,
+                    templateGray,
+                    templateBinary,
                     config.DefectAlphaBinaryThresh,
                     255,
                     ThresholdTypes.Binary);
 
-                if (cisGray.Size() == alphaGray.Size())
-                    cisGray.CopyTo(cisSized);
+                if (capturedGray.Size() == templateGray.Size())
+                    capturedGray.CopyTo(capturedSized);
                 else
-                    Cv2.Resize(cisGray, cisSized, alphaGray.Size(), 0, 0, InterpolationFlags.Linear);
+                    Cv2.Resize(capturedGray, capturedSized, templateGray.Size(), 0, 0, InterpolationFlags.Linear);
 
                 BuildFineLineForegroundEvidence(
-                    cisSized,
-                    cisRelaxed,
-                    relaxedThreshold,
-                    maximumLineWidthPixels * 2 + 1);
+                    capturedSized,
+                    capturedForeground,
+                    relaxedForegroundThreshold,
+                    localContrastWindowPixels);
+                Cv2.Threshold(
+                    capturedSized,
+                    capturedAbsoluteForeground,
+                    relaxedForegroundThreshold,
+                    255,
+                    ThresholdTypes.Binary);
 
                 using (Mat builtEdgeMask = BuildEdgeExclusionMask(
-                    alphaBinary,
+                    templateBinary,
                     ScalePositiveLength(config.DefectEdgeExclusionThick, analysisScale),
                     ScalePositiveLength(config.DefectEdgeExclusionSmall, analysisScale)))
                 {
-                    builtEdgeMask.CopyTo(edgeMask);
+                    builtEdgeMask.CopyTo(templateEdgeMask);
                 }
 
-                Cv2.Dilate(cisRelaxed, cisNearby, nearbyKernel);
-                using (var notForeground = new Mat())
-                using (var rawMissing = new Mat())
+                Cv2.Dilate(capturedForeground, capturedNearEndpoints, endpointSearchKernel);
+                using (var inverseCapturedForeground = new Mat())
+                using (var rawMissingForeground = new Mat())
                 {
-                    // “缺口”定义：模板要求有前景、CIS 宽松前景中却不存在，并且位于原轮廓屏蔽区。
-                    // 缺口长度由未膨胀证据计算；cisNearby 仅用于确认断口前后仍有结构。
-                    Cv2.BitwiseNot(cisRelaxed, notForeground);
-                    Cv2.BitwiseAnd(alphaBinary, notForeground, rawMissing);
-                    Cv2.BitwiseAnd(rawMissing, edgeMask, missingEdge);
+                    // 阶段 2：生成唯一候选源。
+                    // “缺口”定义为：模板要求有前景、CIS 宽松前景不存在，并且该位置属于
+                    // 普通差分会屏蔽的轮廓区域。后续无论断口长短，都只走同一条验证路径。
+                    Cv2.BitwiseNot(capturedForeground, inverseCapturedForeground);
+                    Cv2.BitwiseAnd(templateBinary, inverseCapturedForeground, rawMissingForeground);
+                    Cv2.BitwiseAnd(rawMissingForeground, templateEdgeMask, missingCandidates);
                 }
-                if (Cv2.CountNonZero(missingEdge) == 0)
-                    return acceptedRects;
+                if (Cv2.CountNonZero(missingCandidates) == 0)
+                    return acceptedGapRects;
 
-                int labelCount = Cv2.ConnectedComponentsWithStats(
-                    missingEdge, labels, stats, centroids);
-                for (int label = 1; label < labelCount; label++)
+                int candidateCount = Cv2.ConnectedComponentsWithStats(
+                    missingCandidates, candidateLabels, candidateStats, candidateCentroids);
+                for (int label = 1; label < candidateCount; label++)
                 {
-                    Rect componentRect = new Rect(
-                        stats.At<int>(label, 0),
-                        stats.At<int>(label, 1),
-                        stats.At<int>(label, 2),
-                        stats.At<int>(label, 3));
-                    double visibleMissingLength = Math.Sqrt(
-                        componentRect.Width * componentRect.Width +
-                        componentRect.Height * componentRect.Height);
-                    double estimatedBreakLength = visibleMissingLength;
-                    if (estimatedBreakLength < minimumLengthPixels)
+                    // 阶段 3A：一个缺失区域内可能包含一段或多段模板中心线。
+                    // 先建立包含端点搜索范围的局部 ROI，再只对该 ROI 做骨架化。
+                    Rect candidateBounds = new Rect(
+                        candidateStats.At<int>(label, 0),
+                        candidateStats.At<int>(label, 1),
+                        candidateStats.At<int>(label, 2),
+                        candidateStats.At<int>(label, 3));
+
+                    // 外接框对角线只是低成本预筛，不作为最终长度。明显不足最小长度的
+                    // 单像素噪声无需进入骨架化；真正长度仍在后面按骨架路径重新计算。
+                    double candidateSpan = Math.Sqrt(
+                        candidateBounds.Width * candidateBounds.Width +
+                        candidateBounds.Height * candidateBounds.Height);
+                    if (candidateSpan < minimumGapPixels)
                         continue;
 
-                    int borderMargin = corridorRadius + 1;
-                    if (componentRect.X <= borderMargin || componentRect.Y <= borderMargin ||
-                        componentRect.Right >= alphaBinary.Width - borderMargin ||
-                        componentRect.Bottom >= alphaBinary.Height - borderMargin)
-                        continue;
-
-                    Rect evidenceRect = ExpandRect(
-                        componentRect,
-                        anchorReach + corridorRadius,
-                        alphaBinary.Size());
-
-                    using (Mat labelsRoi = new Mat(labels, evidenceRect))
-                    using (Mat alphaRoi = new Mat(alphaBinary, evidenceRect))
-                    using (Mat cisGrayRoi = new Mat(cisSized, evidenceRect))
-                    using (Mat cisRelaxedRoi = new Mat(cisRelaxed, evidenceRect))
-                    using (Mat cisNearbyRoi = new Mat(cisNearby, evidenceRect))
-                    using (var componentMask = new Mat())
-                    using (var templateSkeleton = new Mat())
-                    using (var gapSkeleton = new Mat())
-                    using (var distanceInside = new Mat())
-                    {
-                        Cv2.InRange(
-                            labelsRoi,
-                            new Scalar(label),
-                            new Scalar(label),
-                            componentMask);
-                        // 只在候选附近的小 ROI 内细化，避免对整张 2K×3K 零件图执行高代价骨架化。
-                        CvXImgProc.Thinning(alphaRoi, templateSkeleton, ThinningTypes.GUOHALL);
-                        Cv2.BitwiseAnd(templateSkeleton, componentMask, gapSkeleton);
-                        if (Cv2.CountNonZero(gapSkeleton) == 0)
-                            continue;
-
-                        Cv2.DistanceTransform(
-                            alphaRoi,
-                            distanceInside,
-                            DistanceTypes.L2,
-                            DistanceTransformMasks.Mask3);
-                        using (var gapLabels = new Mat())
-                        using (var gapStats = new Mat())
-                        using (var gapCentroids = new Mat())
-                        {
-                            int gapCount = Cv2.ConnectedComponentsWithStats(
-                                gapSkeleton, gapLabels, gapStats, gapCentroids);
-                            for (int gapLabel = 1; gapLabel < gapCount; gapLabel++)
-                            {
-                                Rect gapRectLocal = new Rect(
-                                    gapStats.At<int>(gapLabel, 0),
-                                    gapStats.At<int>(gapLabel, 1),
-                                    gapStats.At<int>(gapLabel, 2),
-                                    gapStats.At<int>(gapLabel, 3));
-                                double gapVisibleLength = Math.Sqrt(
-                                    gapRectLocal.Width * gapRectLocal.Width +
-                                    gapRectLocal.Height * gapRectLocal.Height);
-                                double gapEstimatedLength = gapVisibleLength;
-                                if (gapEstimatedLength < minimumLengthPixels)
-                                    continue;
-
-                                using (var gapComponent = new Mat())
-                                {
-                                    Cv2.InRange(
-                                        gapLabels,
-                                        new Scalar(gapLabel),
-                                        new Scalar(gapLabel),
-                                        gapComponent);
-                                    if (CalculateMedianDistance(distanceInside, gapComponent) >
-                                        maximumThinLineHalfWidthPixels)
-                                        continue;
-
-                                    double gapLengthMm = gapEstimatedLength / pixelsPerMm;
-                                    if (gapLengthMm < 1.0 &&
-                                        CalculateDarkCoreRatio(
-                                            cisGrayRoi,
-                                            gapComponent,
-                                            darkCoreThreshold) < 0.20)
-                                    {
-                                        continue;
-                                    }
-                                    Mat firstAnchor = null;
-                                    Mat secondAnchor = null;
-                                    try
-                                    {
-                                        // “前后均有结构”指断口外环中存在位于缺口相反方向的两段模板骨架，
-                                        // 且两段骨架在 CIS 附近均有足够覆盖；单端缺失或边界截断不会通过。
-                                        if (!TryBuildEndpointAnchors(
-                                            templateSkeleton,
-                                            gapComponent,
-                                            transverseAllowance + 1,
-                                            anchorReach,
-                                            out firstAnchor,
-                                            out secondAnchor))
-                                        {
-                                            continue;
-                                        }
-
-                                        double firstEndpointCoverage = CalculateCoverage(firstAnchor, cisNearbyRoi);
-                                        double secondEndpointCoverage = CalculateCoverage(secondAnchor, cisNearbyRoi);
-                                        if (firstEndpointCoverage < minimumEndpointCoverage ||
-                                            secondEndpointCoverage < minimumEndpointCoverage)
-                                        {
-                                            continue;
-                                        }
-
-                                        // 若同一平移可同时解释缺口和两端结构，优先判为局部错位而非真实断裂。
-                                        if (HasConsistentLocalTranslation(
-                                            cisRelaxedRoi,
-                                            gapComponent,
-                                            firstAnchor,
-                                            secondAnchor,
-                                            Math.Max(
-                                                1,
-                                                Math.Max(corridorRadius, (int)Math.Round(1.5 * pixelsPerMm))),
-                                            transverseAllowance))
-                                        {
-                                            continue;
-                                        }
-
-                                        // 即使差分中有缺口，只要 CIS 在模板走廊内仍能连通两端，也不是结构断裂。
-                                        if (HasContinuousForegroundBridge(
-                                            templateSkeleton,
-                                            gapComponent,
-                                            cisRelaxedRoi,
-                                            firstAnchor,
-                                            secondAnchor,
-                                            corridorRadius,
-                                            anchorReach))
-                                        {
-                                            continue;
-                                        }
-
-                                        using (Mat acceptedRoi = new Mat(acceptedFineLineMask, evidenceRect))
-                                            Cv2.BitwiseOr(acceptedRoi, gapComponent, acceptedRoi);
-
-                                        Rect gapRectGlobal = new Rect(
-                                            evidenceRect.X + gapRectLocal.X,
-                                            evidenceRect.Y + gapRectLocal.Y,
-                                            gapRectLocal.Width,
-                                            gapRectLocal.Height);
-                                        Rect acceptedRect = ExpandRect(
-                                            gapRectGlobal,
-                                            transverseAllowance + 1,
-                                            alphaBinary.Size());
-                                        acceptedRects.Add(acceptedRect);
-                                        maxAcceptedLengthMm = Math.Max(
-                                            maxAcceptedLengthMm,
-                                            gapLengthMm);
-                                    }
-                                    finally
-                                    {
-                                        secondAnchor?.Dispose();
-                                        firstAnchor?.Dispose();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                List<Rect> longBreakRects = DetectLongThinBreaks(
-                    alphaBinary,
-                    cisSized,
-                    relaxedThreshold,
-                    maximumLineWidthPixels,
-                    maximumThinLineHalfWidthPixels,
-                    pixelsPerMm,
-                    Math.Max(
-                        config.FineLineMinBreakLengthMm,
-                        config.FineLineMaxWidthMm * 2.0),
-                    transverseAllowance + 1,
-                    acceptedFineLineMask,
-                    out double maxLongBreakLengthMm);
-                acceptedRects.AddRange(longBreakRects);
-                maxAcceptedLengthMm = Math.Max(
-                    maxAcceptedLengthMm,
-                    maxLongBreakLengthMm);
-
-                // 短断口分支和长细分支可能命中同一物理位置，合并后再计数。
-                acceptedRects = MergeNearbyRects(acceptedRects, corridorRadius);
-                acceptedCount = acceptedRects.Count;
-                foreach (Rect rect in acceptedRects)
-                {
-                    using (Mat defectRoi = new Mat(acceptedFineLineMask, rect))
-                        maxAcceptedArea = Math.Max(maxAcceptedArea, Cv2.CountNonZero(defectRoi));
-                }
-
-            }
-
-            return acceptedRects;
-        }
-
-        /// <summary>
-        /// 复核长度明显大于线宽的连续缺口。该分支只使用长度/线宽关系，
-        /// 不增加可调阈值，用于覆盖偏灰但已经完整断开的细线。
-        /// </summary>
-        private static List<Rect> DetectLongThinBreaks(
-            Mat alphaBinary,
-            Mat cisGray,
-            int foregroundThreshold,
-            int maximumLineWidthPixels,
-            double maximumThinLineHalfWidthPixels,
-            double pixelsPerMm,
-            double minimumLengthMm,
-            int rectMargin,
-            Mat acceptedMask,
-            out double maxLengthMm)
-        {
-            maxLengthMm = 0;
-            var result = new List<Rect>();
-            int minimumLengthPixels = Math.Max(
-                2,
-                (int)Math.Ceiling(minimumLengthMm * pixelsPerMm));
-            int translationSearchRadius = Math.Max(
-                1,
-                (int)Math.Round(1.5 * pixelsPerMm));
-
-            using (var foreground = new Mat())
-            using (var nearbyForeground = new Mat())
-            using (var notForeground = new Mat())
-            using (var missingRegion = new Mat())
-            using (var distanceInside = new Mat())
-            using (var labels = new Mat())
-            using (var stats = new Mat())
-            using (var centroids = new Mat())
-            using (Mat nearbyKernel = Cv2.GetStructuringElement(
-                MorphShapes.Ellipse, new Size(3, 3)))
-            {
-                BuildFineLineForegroundEvidence(
-                    cisGray,
-                    foreground,
-                    foregroundThreshold,
-                    maximumLineWidthPixels + 1);
-                // 仅容忍一个像素的重采样偏差，不能沿线方向填平真实长断口。
-                Cv2.Dilate(foreground, nearbyForeground, nearbyKernel);
-                Cv2.BitwiseNot(nearbyForeground, notForeground);
-                Cv2.BitwiseAnd(alphaBinary, notForeground, missingRegion);
-                Cv2.DistanceTransform(
-                    alphaBinary,
-                    distanceInside,
-                    DistanceTypes.L2,
-                    DistanceTransformMasks.Mask3);
-
-                int componentCount = Cv2.ConnectedComponentsWithStats(
-                    missingRegion,
-                    labels,
-                    stats,
-                    centroids);
-                for (int label = 1; label < componentCount; label++)
-                {
-                    Rect candidateRect = new Rect(
-                        stats.At<int>(label, 0),
-                        stats.At<int>(label, 1),
-                        stats.At<int>(label, 2),
-                        stats.At<int>(label, 3));
-                    double candidateLength = Math.Sqrt(
-                        candidateRect.Width * candidateRect.Width +
-                        candidateRect.Height * candidateRect.Height);
-                    if (candidateLength < minimumLengthPixels ||
-                        candidateRect.X <= rectMargin || candidateRect.Y <= rectMargin ||
-                        candidateRect.Right >= alphaBinary.Width - rectMargin ||
-                        candidateRect.Bottom >= alphaBinary.Height - rectMargin)
+                    // ROI 边界外没有足够空间确认“缺口前后均有结构”。边界候选宁可不判，
+                    // 也不能把零件裁切边界当作断口；如需检测边缘结构，应由 PatchCropper 提供 padding。
+                    int borderMargin = endpointSearchRadius + 1;
+                    if (candidateBounds.X <= borderMargin || candidateBounds.Y <= borderMargin ||
+                        candidateBounds.Right >= templateBinary.Width - borderMargin ||
+                        candidateBounds.Bottom >= templateBinary.Height - borderMargin)
                     {
                         continue;
                     }
 
-                    Rect evidenceRect = ExpandRect(
-                        candidateRect,
-                        translationSearchRadius,
-                        alphaBinary.Size());
-                    using (Mat labelsRoi = new Mat(labels, evidenceRect))
-                    using (Mat alphaRoi = new Mat(alphaBinary, evidenceRect))
-                    using (Mat distanceRoi = new Mat(distanceInside, evidenceRect))
-                    using (Mat foregroundRoi = new Mat(foreground, evidenceRect))
+                    Rect evidenceBounds = ExpandRect(
+                        candidateBounds,
+                        endpointAnchorLength + endpointSearchRadius,
+                        templateBinary.Size());
+
+                    using (Mat candidateLabelsRoi = new Mat(candidateLabels, evidenceBounds))
+                    using (Mat templateRoi = new Mat(templateBinary, evidenceBounds))
+                    using (Mat capturedGrayRoi = new Mat(capturedSized, evidenceBounds))
+                    using (Mat capturedForegroundRoi = new Mat(capturedForeground, evidenceBounds))
+                    using (Mat capturedAbsoluteForegroundRoi = new Mat(
+                        capturedAbsoluteForeground, evidenceBounds))
+                    using (Mat capturedNearEndpointsRoi = new Mat(
+                        capturedNearEndpoints, evidenceBounds))
                     using (var candidateMask = new Mat())
-                    using (var localSkeleton = new Mat())
+                    using (var templateSkeletonRoi = new Mat())
+                    using (var templateDistanceRoi = new Mat())
                     using (var gapSkeleton = new Mat())
                     using (var gapLabels = new Mat())
                     using (var gapStats = new Mat())
                     using (var gapCentroids = new Mat())
                     {
                         Cv2.InRange(
-                            labelsRoi,
+                            candidateLabelsRoi,
                             new Scalar(label),
                             new Scalar(label),
                             candidateMask);
-                        if (CalculateMedianDistance(distanceRoi, candidateMask) >
-                            maximumThinLineHalfWidthPixels)
-                        {
-                            continue;
-                        }
 
+                        // 阶段 3B：骨架化和距离变换都限定在候选 ROI。
+                        // 当前零件图较大、候选数量较少；实测整幅预计算会显著增加耗时，
+                        // 因此这里用小 ROI 换取更低的总计算量和更小的临时内存。
                         CvXImgProc.Thinning(
-                            alphaRoi,
-                            localSkeleton,
+                            templateRoi,
+                            templateSkeletonRoi,
                             ThinningTypes.GUOHALL);
-                        Cv2.BitwiseAnd(localSkeleton, candidateMask, gapSkeleton);
+                        Cv2.DistanceTransform(
+                            templateRoi,
+                            templateDistanceRoi,
+                            DistanceTypes.L2,
+                            DistanceTransformMasks.Mask3);
+                        Cv2.BitwiseAnd(templateSkeletonRoi, candidateMask, gapSkeleton);
+                        if (Cv2.CountNonZero(gapSkeleton) == 0)
+                            continue;
+
                         int gapCount = Cv2.ConnectedComponentsWithStats(
                             gapSkeleton,
                             gapLabels,
@@ -1072,91 +889,242 @@ namespace CIS_WebInspector.Services
                             gapCentroids);
                         for (int gapLabel = 1; gapLabel < gapCount; gapLabel++)
                         {
-                            Rect gapRectLocal = new Rect(
+                            Rect gapBoundsLocal = new Rect(
                                 gapStats.At<int>(gapLabel, 0),
                                 gapStats.At<int>(gapLabel, 1),
                                 gapStats.At<int>(gapLabel, 2),
                                 gapStats.At<int>(gapLabel, 3));
-                            double lengthPixels = Math.Sqrt(
-                                gapRectLocal.Width * gapRectLocal.Width +
-                                gapRectLocal.Height * gapRectLocal.Height);
-                            if (lengthPixels < minimumLengthPixels)
-                                continue;
 
-                            using (var gapComponent = new Mat())
+                            using (var gapMask = new Mat())
                             {
                                 Cv2.InRange(
                                     gapLabels,
                                     new Scalar(gapLabel),
                                     new Scalar(gapLabel),
-                                    gapComponent);
-                                if (CalculateMedianDistance(distanceRoi, gapComponent) >
-                                    maximumThinLineHalfWidthPixels)
+                                    gapMask);
+
+                                // 阶段 4：先用物理长度和模板局部线宽排除短噪声与宽实心区域。
+                                double gapLengthPixels =
+                                    CalculateSkeletonPathLengthPixels(gapMask);
+                                double localLineHalfWidth =
+                                    CalculateMedianDistance(templateDistanceRoi, gapMask);
+                                if (gapLengthPixels < minimumGapPixels ||
+                                    localLineHalfWidth > maximumLineHalfWidthPixels)
                                 {
                                     continue;
                                 }
 
-                                if (HasTranslatedGap(
-                                    foregroundRoi,
-                                    gapComponent,
-                                    translationSearchRadius))
+                                // 阶段 5：真正的断线应横向切断模板笔画的大部分宽度。
+                                // 宽松前景若被低对比光晕误导，只允许通过同一套绝对灰度恢复，
+                                // 无论断口长短都不再进入其他旁路。
+                                double crossSectionMissingRatio =
+                                    CalculateCrossSectionMissingRatio(
+                                        templateRoi,
+                                        capturedForegroundRoi,
+                                        gapMask,
+                                        localLineHalfWidth);
+                                bool useAbsoluteRecovery = false;
+                                if (crossSectionMissingRatio < minimumCrossSectionMissingRatio)
                                 {
-                                    continue;
+                                    double absoluteMissingRatio =
+                                        CalculateCrossSectionMissingRatio(
+                                            templateRoi,
+                                            capturedAbsoluteForegroundRoi,
+                                            gapMask,
+                                            localLineHalfWidth);
+                                    useAbsoluteRecovery =
+                                        localLineHalfWidth >=
+                                            minimumAbsoluteRecoveryHalfWidthPixels &&
+                                        absoluteMissingRatio >= minimumAbsoluteMissingRatio &&
+                                        IsGapBrightnessConsistentWithBackground(
+                                            capturedGrayRoi,
+                                            templateRoi,
+                                            gapMask,
+                                            localLineHalfWidth,
+                                            recoveryBackgroundRingWidth,
+                                            recoveryBackgroundBrightnessTolerance);
+                                    if (!useAbsoluteRecovery)
+                                        continue;
                                 }
 
-                                using (Mat acceptedRoi = new Mat(acceptedMask, evidenceRect))
-                                    Cv2.BitwiseOr(acceptedRoi, gapComponent, acceptedRoi);
+                                // 阶段 6：“前后均有结构”排除线端、裁切边界和孤立暗点。
+                                // 两个锚点必须位于缺口相反方向，并在 CIS 附近都能找到对应线段。
+                                Mat firstAnchor = null;
+                                Mat secondAnchor = null;
+                                try
+                                {
+                                    if (!TryBuildEndpointAnchors(
+                                        templateSkeletonRoi,
+                                        gapMask,
+                                        maximumTangentialShift + 1,
+                                        endpointAnchorLength,
+                                        out firstAnchor,
+                                        out secondAnchor))
+                                    {
+                                        continue;
+                                    }
+
+                                    double firstEndpointCoverage =
+                                        CalculateCoverage(
+                                            firstAnchor,
+                                            capturedNearEndpointsRoi);
+                                    double secondEndpointCoverage =
+                                        CalculateCoverage(
+                                            secondAnchor,
+                                            capturedNearEndpointsRoi);
+                                    if (firstEndpointCoverage < minimumEndpointCoverage ||
+                                        secondEndpointCoverage < minimumEndpointCoverage)
+                                    {
+                                        continue;
+                                    }
+
+                                    // 阶段 7：排除局部配准残差。
+                                    // 只有同一个小位移能够同时覆盖缺口和两端，才说明线条实际连续；
+                                    // 沿线位移限制更严格，防止用断口后的正常线段填补真实短断口。
+                                    if (IsGapExplainedByMinorAlignmentOffset(
+                                        useAbsoluteRecovery
+                                            ? capturedAbsoluteForegroundRoi
+                                            : capturedForegroundRoi,
+                                        gapMask,
+                                        firstAnchor,
+                                        secondAnchor,
+                                        normalAlignmentSearchRadius,
+                                        maximumTangentialShift))
+                                    {
+                                        continue;
+                                    }
+
+                                    // 阶段 8：全部证据通过后，才写入最终掩膜、结果框和物理长度。
+                                    using (Mat acceptedRoi =
+                                        new Mat(acceptedGapMask, evidenceBounds))
+                                    {
+                                        Cv2.BitwiseOr(
+                                            acceptedRoi,
+                                            gapMask,
+                                            acceptedRoi);
+                                    }
+
+                                    Rect gapBoundsGlobal = new Rect(
+                                        evidenceBounds.X + gapBoundsLocal.X,
+                                        evidenceBounds.Y + gapBoundsLocal.Y,
+                                        gapBoundsLocal.Width,
+                                        gapBoundsLocal.Height);
+                                    acceptedGapRects.Add(ExpandRect(
+                                        gapBoundsGlobal,
+                                        normalAlignmentSearchRadius + 1,
+                                        templateBinary.Size()));
+                                    longestAcceptedGapMm = Math.Max(
+                                        longestAcceptedGapMm,
+                                        gapLengthPixels / pixelsPerMm);
+                                }
+                                finally
+                                {
+                                    secondAnchor?.Dispose();
+                                    firstAnchor?.Dispose();
+                                }
                             }
-
-                            Rect gapRectGlobal = new Rect(
-                                evidenceRect.X + gapRectLocal.X,
-                                evidenceRect.Y + gapRectLocal.Y,
-                                gapRectLocal.Width,
-                                gapRectLocal.Height);
-                            result.Add(ExpandRect(
-                                gapRectGlobal,
-                                rectMargin,
-                                alphaBinary.Size()));
-                            maxLengthMm = Math.Max(
-                                maxLengthMm,
-                                lengthPixels / pixelsPerMm);
                         }
                     }
                 }
+
+                // 阶段 9：同一物理断口可能因骨架离散化被切成相邻小段，统一合并后再计数。
+                acceptedGapRects = MergeNearbyRects(acceptedGapRects, endpointSearchRadius);
+                acceptedGapCount = acceptedGapRects.Count;
+
             }
 
-            return result;
+            return acceptedGapRects;
         }
 
-        /// <summary>搜索局部平移后缺口是否能被 CIS 前景覆盖；能覆盖说明更像配准偏移而非真实长断口。</summary>
-        private static bool HasTranslatedGap(
-            Mat foreground,
-            Mat gap,
-            int searchRadius)
+        /// <summary>
+        /// 计算缺口附近模板笔画有多少宽度在 CIS 前景中确实缺失。
+        /// 结果接近 1 表示笔画被完整截断；仅中心变暗而两侧仍连接时结果明显较低。
+        /// </summary>
+        private static double CalculateCrossSectionMissingRatio(
+            Mat templateForeground,
+            Mat capturedForeground,
+            Mat gapSkeleton,
+            double localLineHalfWidth)
         {
-            const double minimumCoverage = 0.80;
-            List<Point> gapPoints = CollectMaskPoints(gap);
-            if (gapPoints.Count == 0)
-                return false;
-
-            foreground.GetArray(out byte[] foregroundValues);
-            for (int dy = -searchRadius; dy <= searchRadius; dy++)
+            int crossSectionRadius = Math.Max(1, (int)Math.Ceiling(localLineHalfWidth));
+            using (Mat crossSectionKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new Size(crossSectionRadius * 2 + 1, crossSectionRadius * 2 + 1)))
+            using (var expandedGap = new Mat())
+            using (var templateCrossSection = new Mat())
+            using (var inverseCapturedForeground = new Mat())
+            using (var missingCrossSection = new Mat())
             {
-                for (int dx = -searchRadius; dx <= searchRadius; dx++)
-                {
-                    if (CalculateShiftedCoverage(
-                        gapPoints,
-                        foregroundValues,
-                        foreground.Width,
-                        foreground.Height,
-                        dx,
-                        dy) >= minimumCoverage)
-                    {
-                        return true;
-                    }
-                }
+                Cv2.Dilate(gapSkeleton, expandedGap, crossSectionKernel);
+                Cv2.BitwiseAnd(templateForeground, expandedGap, templateCrossSection);
+                int templatePixels = Cv2.CountNonZero(templateCrossSection);
+                if (templatePixels <= 0)
+                    return 0;
+
+                Cv2.BitwiseNot(capturedForeground, inverseCapturedForeground);
+                Cv2.BitwiseAnd(
+                    templateCrossSection,
+                    inverseCapturedForeground,
+                    missingCrossSection);
+                return Cv2.CountNonZero(missingCrossSection) / (double)templatePixels;
             }
-            return false;
+        }
+
+        /// <summary>
+        /// 判断绝对灰度恢复候选是否真的已经退回到局部背景。
+        /// 该检查用于区分两种外观相近的情况：真实断口与仍有墨迹、但局部偏灰的连续细线。
+        /// </summary>
+        private static bool IsGapBrightnessConsistentWithBackground(
+            Mat capturedGray,
+            Mat templateForeground,
+            Mat gapSkeleton,
+            double localLineHalfWidth,
+            int backgroundRingWidth,
+            int maximumBrightnessExcess)
+        {
+            int crossSectionRadius = Math.Max(1, (int)Math.Ceiling(localLineHalfWidth));
+            int innerRadius = crossSectionRadius + 1;
+            int outerRadius = innerRadius + Math.Max(2, backgroundRingWidth);
+
+            using (Mat crossSectionKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new Size(crossSectionRadius * 2 + 1, crossSectionRadius * 2 + 1)))
+            using (Mat innerKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new Size(innerRadius * 2 + 1, innerRadius * 2 + 1)))
+            using (Mat outerKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new Size(outerRadius * 2 + 1, outerRadius * 2 + 1)))
+            using (var expandedGap = new Mat())
+            using (var gapSampleMask = new Mat())
+            using (var innerArea = new Mat())
+            using (var outerArea = new Mat())
+            using (var inverseInnerArea = new Mat())
+            using (var backgroundRing = new Mat())
+            using (var inverseTemplate = new Mat())
+            using (var backgroundSampleMask = new Mat())
+            {
+                // 缺口亮度在模板笔画的完整横截面上统计，避免只取骨架中心造成偶然性。
+                Cv2.Dilate(gapSkeleton, expandedGap, crossSectionKernel);
+                Cv2.BitwiseAnd(templateForeground, expandedGap, gapSampleMask);
+
+                // 背景样本取缺口外围的环带，并排除模板中本来就应有图案的区域。
+                Cv2.Dilate(gapSkeleton, innerArea, innerKernel);
+                Cv2.Dilate(gapSkeleton, outerArea, outerKernel);
+                Cv2.BitwiseNot(innerArea, inverseInnerArea);
+                Cv2.BitwiseAnd(outerArea, inverseInnerArea, backgroundRing);
+                Cv2.BitwiseNot(templateForeground, inverseTemplate);
+                Cv2.BitwiseAnd(backgroundRing, inverseTemplate, backgroundSampleMask);
+
+                int gapSampleCount = Cv2.CountNonZero(gapSampleMask);
+                int backgroundSampleCount = Cv2.CountNonZero(backgroundSampleMask);
+                if (gapSampleCount < 3 || backgroundSampleCount < 8)
+                    return false;
+
+                double gapMean = Cv2.Mean(capturedGray, gapSampleMask).Val0;
+                double backgroundMean = Cv2.Mean(capturedGray, backgroundSampleMask).Val0;
+                return gapMean <= backgroundMean + maximumBrightnessExcess;
+            }
         }
 
         /// <summary>
@@ -1175,9 +1143,9 @@ namespace CIS_WebInspector.Services
             if ((openingDiameter & 1) == 0)
                 openingDiameter++;
 
-            int localContrastThreshold = Math.Max(
-                6,
-                Math.Min(20, (int)Math.Round(absoluteThreshold * 0.08)));
+            // 局部对比度用于补回“绝对灰度偏低但仍连续”的细线。11% 可保留模糊弧线的
+            // 连续证据，同时不会把当前回归样本中约 0.75 mm 的真实空档当成弱纹理补回。
+            int localContrastThreshold = CalculateFineLineLocalContrastThreshold(absoluteThreshold);
             using (Mat openingKernel = Cv2.GetStructuringElement(
                 MorphShapes.Ellipse,
                 new Size(openingDiameter, openingDiameter)))
@@ -1195,6 +1163,135 @@ namespace CIS_WebInspector.Services
                     ThresholdTypes.Binary);
                 Cv2.BitwiseOr(foreground, localContrast, foreground);
             }
+        }
+
+        /// <summary>统一计算细线局部对比度阈值，保证前景提取与恢复复核使用同一尺度。</summary>
+        private static int CalculateFineLineLocalContrastThreshold(int absoluteThreshold)
+        {
+            return Math.Max(
+                9,
+                Math.Min(20, (int)Math.Round(absoluteThreshold * 0.11)));
+        }
+
+        /// <summary>
+        /// 计算骨架主路径长度，而不是把分叉的所有支路长度相加。
+        /// 对连通骨架执行两次最远点搜索：第一次找到远端，第二次得到主路径跨度；
+        /// 水平/垂直相邻按 1 px、对角相邻按 √2 px。这样交叉点或 T 形结构不会虚增断口长度。
+        /// </summary>
+        private static double CalculateSkeletonPathLengthPixels(Mat skeletonComponent)
+        {
+            skeletonComponent.GetArray(out byte[] pixels);
+            int width = skeletonComponent.Width;
+            int height = skeletonComponent.Height;
+            var skeletonIndices = new List<int>();
+            var skeletonSet = new HashSet<int>();
+            for (int index = 0; index < pixels.Length; index++)
+            {
+                if (pixels[index] == 0)
+                    continue;
+                skeletonIndices.Add(index);
+                skeletonSet.Add(index);
+            }
+
+            if (skeletonIndices.Count == 0)
+                return 0;
+            if (skeletonIndices.Count == 1)
+                return 1.0;
+
+            FindFarthestSkeletonPoint(
+                skeletonIndices[0],
+                skeletonIndices,
+                skeletonSet,
+                width,
+                height,
+                out int firstEnd);
+            double mainPathLength = FindFarthestSkeletonPoint(
+                firstEnd,
+                skeletonIndices,
+                skeletonSet,
+                width,
+                height,
+                out _);
+            // 像素中心间距离比可见骨架少约一个像素，补 1 与最小长度的像素语义保持一致。
+            return mainPathLength + 1.0;
+        }
+
+        /// <summary>
+        /// 在八邻域骨架图上执行小规模 Dijkstra，返回起点到最远骨架点的距离。
+        /// 候选骨架通常只有几十个像素，使用清晰的 O(N²) 实现可避免引入复杂堆结构。
+        /// </summary>
+        private static double FindFarthestSkeletonPoint(
+            int startIndex,
+            List<int> skeletonIndices,
+            HashSet<int> skeletonSet,
+            int width,
+            int height,
+            out int farthestIndex)
+        {
+            var distances = new Dictionary<int, double>(skeletonIndices.Count);
+            var visited = new HashSet<int>();
+            foreach (int index in skeletonIndices)
+                distances[index] = double.PositiveInfinity;
+            distances[startIndex] = 0;
+
+            double diagonalStep = Math.Sqrt(2.0);
+            while (visited.Count < skeletonIndices.Count)
+            {
+                int current = -1;
+                double currentDistance = double.PositiveInfinity;
+                foreach (int index in skeletonIndices)
+                {
+                    if (!visited.Contains(index) && distances[index] < currentDistance)
+                    {
+                        current = index;
+                        currentDistance = distances[index];
+                    }
+                }
+                if (current < 0)
+                    break;
+
+                visited.Add(current);
+                int currentX = current % width;
+                int currentY = current / width;
+                for (int offsetY = -1; offsetY <= 1; offsetY++)
+                {
+                    for (int offsetX = -1; offsetX <= 1; offsetX++)
+                    {
+                        if (offsetX == 0 && offsetY == 0)
+                            continue;
+
+                        int neighborX = currentX + offsetX;
+                        int neighborY = currentY + offsetY;
+                        if (neighborX < 0 || neighborX >= width ||
+                            neighborY < 0 || neighborY >= height)
+                        {
+                            continue;
+                        }
+
+                        int neighbor = neighborY * width + neighborX;
+                        if (!skeletonSet.Contains(neighbor) || visited.Contains(neighbor))
+                            continue;
+
+                        double step = offsetX == 0 || offsetY == 0 ? 1.0 : diagonalStep;
+                        double candidateDistance = currentDistance + step;
+                        if (candidateDistance < distances[neighbor])
+                            distances[neighbor] = candidateDistance;
+                    }
+                }
+            }
+
+            farthestIndex = startIndex;
+            double farthestDistance = 0;
+            foreach (int index in skeletonIndices)
+            {
+                double distance = distances[index];
+                if (!double.IsInfinity(distance) && distance > farthestDistance)
+                {
+                    farthestDistance = distance;
+                    farthestIndex = index;
+                }
+            }
+            return farthestDistance;
         }
 
         /// <summary>读取掩膜内距离变换的中位数，用于判断候选是否位于设计细线而非宽实心区域。</summary>
@@ -1218,27 +1315,6 @@ namespace CIS_WebInspector.Services
             return selected.Count % 2 == 0
                 ? (selected[middle - 1] + selected[middle]) * 0.5
                 : selected[middle];
-        }
-
-        /// <summary>统计候选中深暗像素比例；只作为很短断口的附加证据，避免灰度波动误报。</summary>
-        private static double CalculateDarkCoreRatio(Mat gray, Mat mask, int threshold)
-        {
-            gray.GetArray(out byte[] grayValues);
-            mask.GetArray(out byte[] maskValues);
-            int selected = 0;
-            int dark = 0;
-            int length = Math.Min(grayValues.Length, maskValues.Length);
-            for (int index = 0; index < length; index++)
-            {
-                if (maskValues[index] == 0)
-                    continue;
-
-                selected++;
-                if (grayValues[index] <= threshold)
-                    dark++;
-            }
-
-            return selected == 0 ? 0 : dark / (double)selected;
         }
 
         /// <summary>
@@ -1366,7 +1442,7 @@ namespace CIS_WebInspector.Services
         /// 在限定搜索半径内寻找一个共同位移，要求缺口区域和两个端点同时被 CIS 前景解释。
         /// 找到时说明差分主要来自整体错位，应拒绝该断裂候选。
         /// </summary>
-        private static bool HasConsistentLocalTranslation(
+        private static bool IsGapExplainedByMinorAlignmentOffset(
             Mat cisForeground,
             Mat gap,
             Mat firstAnchor,
@@ -1464,72 +1540,6 @@ namespace CIS_WebInspector.Services
                 }
             }
             return covered / (double)points.Count;
-        }
-
-        /// <summary>
-        /// 限定在模板骨架附近的窄走廊内检查 CIS 连通域；同一连通域触达两端即说明线仍连续。
-        /// </summary>
-        private static bool HasContinuousForegroundBridge(
-            Mat skeleton,
-            Mat componentMask,
-            Mat cisForeground,
-            Mat firstAnchor,
-            Mat secondAnchor,
-            int corridorRadius,
-            int anchorReach)
-        {
-            int supportRadius = corridorRadius + Math.Max(2, anchorReach);
-            using (Mat supportKernel = Cv2.GetStructuringElement(
-                MorphShapes.Ellipse,
-                new Size(supportRadius * 2 + 1, supportRadius * 2 + 1)))
-            using (Mat corridorKernel = Cv2.GetStructuringElement(
-                MorphShapes.Ellipse,
-                new Size(corridorRadius * 2 + 1, corridorRadius * 2 + 1)))
-            using (Mat closeKernel = Cv2.GetStructuringElement(
-                MorphShapes.Rect, new Size(3, 3)))
-            using (var support = new Mat())
-            using (var supportedSkeleton = new Mat())
-            using (var corridor = new Mat())
-            using (var foregroundPath = new Mat())
-            using (var firstTouch = new Mat())
-            using (var secondTouch = new Mat())
-            using (var labels = new Mat())
-            {
-                Cv2.Dilate(componentMask, support, supportKernel);
-                Cv2.BitwiseAnd(skeleton, support, supportedSkeleton);
-                Cv2.Dilate(supportedSkeleton, corridor, corridorKernel);
-                Cv2.BitwiseAnd(cisForeground, corridor, foregroundPath);
-                Cv2.MorphologyEx(foregroundPath, foregroundPath, MorphTypes.Close, closeKernel);
-
-                Cv2.Dilate(firstAnchor, firstTouch, corridorKernel);
-                Cv2.Dilate(secondAnchor, secondTouch, corridorKernel);
-                int componentCount = Cv2.ConnectedComponents(foregroundPath, labels);
-                if (componentCount <= 1)
-                    return false;
-
-                labels.GetArray(out int[] labelValues);
-                firstTouch.GetArray(out byte[] firstValues);
-                secondTouch.GetArray(out byte[] secondValues);
-                var firstLabels = new HashSet<int>();
-                for (int index = 0; index < labelValues.Length; index++)
-                {
-                    int label = labelValues[index];
-                    if (label > 0 && firstValues[index] != 0)
-                        firstLabels.Add(label);
-                }
-
-                if (firstLabels.Count == 0)
-                    return false;
-
-                for (int index = 0; index < labelValues.Length; index++)
-                {
-                    int label = labelValues[index];
-                    if (label > 0 && secondValues[index] != 0 && firstLabels.Contains(label))
-                        return true;
-                }
-
-                return false;
-            }
         }
 
         /// <summary>把检测尺度矩形映射回另一尺度，并裁剪到目标图像边界。</summary>
@@ -1828,6 +1838,54 @@ namespace CIS_WebInspector.Services
                 }
             }
             return rects;
+        }
+
+        /// <summary>
+        /// 把用户配置的物理面积阈值换算到当前检测尺度的像素面积。
+        /// LayoutDpi 定义 TIFF/对齐目标空间的像素密度，线性缩放后面积再乘 scale²。
+        /// </summary>
+        private static int ConvertAreaMm2ToScaledPixels(
+            double areaMm2,
+            double layoutDpi,
+            double linearScale)
+        {
+            double pixelsPerMm = GetValidPixelsPerMm(layoutDpi);
+            double validScale = linearScale > 0 && !double.IsNaN(linearScale) && !double.IsInfinity(linearScale)
+                ? linearScale
+                : 1.0;
+            double scaledPixelArea = Math.Max(0, areaMm2) *
+                                     pixelsPerMm * pixelsPerMm *
+                                     validScale * validScale;
+            if (scaledPixelArea >= int.MaxValue)
+                return int.MaxValue;
+            return Math.Max(
+                1,
+                (int)Math.Round(scaledPixelArea, MidpointRounding.AwayFromZero));
+        }
+
+        /// <summary>把检测尺度连通域的像素面积换算为 TIFF 目标空间中的物理面积 mm²。</summary>
+        private static double ConvertScaledAreaToMm2(
+            int scaledArea,
+            double layoutDpi,
+            double linearScale)
+        {
+            if (scaledArea <= 0)
+                return 0;
+
+            double pixelsPerMm = GetValidPixelsPerMm(layoutDpi);
+            double validScale = linearScale > 0 && !double.IsNaN(linearScale) && !double.IsInfinity(linearScale)
+                ? linearScale
+                : 1.0;
+            return scaledArea /
+                   (pixelsPerMm * pixelsPerMm * validScale * validScale);
+        }
+
+        private static double GetValidPixelsPerMm(double layoutDpi)
+        {
+            double effectiveDpi = layoutDpi > 0 && !double.IsNaN(layoutDpi) && !double.IsInfinity(layoutDpi)
+                ? layoutDpi
+                : 300.0;
+            return effectiveDpi / 25.4;
         }
 
         /// <summary>

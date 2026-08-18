@@ -209,18 +209,18 @@ namespace CIS_WebInspector.Services
                     // 性能日志不能影响检测主流程。
                 }
 
-                // 性能 CSV 用于比较同一设备/数据集上的趋势，不参与 Pass/Fail，也不是验收阈值。
-                TryAppendPerformanceBaseline(
-                    outputDir,
-                    durations.Length,
-                    resultsBag.Count,
-                    patchStopwatch.ElapsedMilliseconds,
-                    maxParallelism,
-                    durations,
-                    templateCache,
-                    managedBytesAfter - managedBytesBefore,
-                    privateBytesAfter - privateBytesBefore);
-            }
+                    // 性能 CSV 用于比较同一设备/数据集上的趋势，不参与 Pass/Fail，也不是验收阈值。
+                    TryAppendPerformanceBaseline(
+                        outputDir,
+                        durations.Length,
+                        resultsBag.Count,
+                        patchStopwatch.ElapsedMilliseconds,
+                        maxParallelism,
+                        durations,
+                        templateCache,
+                        managedBytesAfter - managedBytesBefore,
+                        privateBytesAfter - privateBytesBefore);
+                }
             finally
             {
                 templateCache?.Dispose();

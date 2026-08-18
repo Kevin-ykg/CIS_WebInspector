@@ -355,8 +355,10 @@ namespace CIS_WebInspector.Services
                                 : string.Empty;
                             Log(log,
                                 $"  [{status}] {defectResult.PartId} — 内部缺陷: {defectResult.InnerDefectCount}个 " +
-                                $"(最大 {defectResult.MaxAreaInner}px²) | 外部缺陷: {defectResult.OuterDefectCount}个 " +
-                                $"(最大 {defectResult.MaxAreaOuter}px²){fineLineSummary}");
+                                $"(最大 {defectResult.MaxAreaInnerMm2:F3}mm² / 阈值 {config.DefectAreaThreshInner:F3}mm²) | " +
+                                $"外部缺陷: {defectResult.OuterDefectCount}个 " +
+                                $"(最大 {defectResult.MaxAreaOuterMm2:F3}mm² / 阈值 {config.DefectAreaThreshOuter:F3}mm²)" +
+                                $"{fineLineSummary}");
                         }
 
                         int totalParts = defectTaskResult.Results.Count;

@@ -379,16 +379,16 @@
                         <TextBlock Text="将与全局 Mark 点检测到的最佳阈值相加作为实际使用值。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="内部缺陷(断漏)判定面积" Width="180"/>
+                            <TextBlock Text="内部缺陷最小面积 (mm²)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectAreaThreshInner}"/>
                         </StackPanel>
-                        <TextBlock Text="断墨、漏印等缺陷的最小生效面积阈值。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="断墨、漏印等缺陷的最小物理面积；不受检测图缩放比例影响。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="外部缺陷(脏污)判定面积" Width="180"/>
+                            <TextBlock Text="外部缺陷最小面积 (mm²)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectAreaThreshOuter}"/>
                         </StackPanel>
-                        <TextBlock Text="飞墨、脏污等缺陷的最小生效面积阈值。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="飞墨、脏污等缺陷的最小物理面积；不受检测图缩放比例影响。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="边缘屏蔽厚度(外)" Width="180"/>
@@ -417,14 +417,14 @@
                                     <TextBlock Text="最小断裂长度 (mm)" Width="162"/>
                                     <TextBox Text="{Binding Config.FineLineMinBreakLengthMm}"/>
                                 </StackPanel>
-                                <TextBlock Text="连续缺失达到该长度才进入判定；小于 1 mm 时还需明显深色证据，以抑制锐角圆化误报。"
+                                <TextBlock Text="连续缺失达到该长度才进入判定；当前可靠检测下限为 0.5 mm，更小输入会自动按 0.5 mm 执行。"
                                            Style="{StaticResource ParamDescription}"/>
 
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="最大细线宽度 (mm)" Width="162"/>
                                     <TextBox Text="{Binding Config.FineLineMaxWidthMm}"/>
                                 </StackPanel>
-                                <TextBlock Text="只有模板线宽不超过该值的细线才进入断裂复核；调大可覆盖更宽图案，但也可能增加边缘误检。"
+                                <TextBlock Text="只过滤模板线宽：超过该值的图案不按细线断裂处理；不会改变局部对比候选的提取窗口。"
                                            Style="{StaticResource ParamDescription}"/>
                             </StackPanel>
                         </Expander>

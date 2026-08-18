@@ -229,11 +229,23 @@ namespace CIS_WebInspector.Models
         /// <summary>CIS 实拍图二值化阈值偏移量（将与 Mark 点检测到的 optimal_thresh 相加）</summary>
         public int DefectCisThreshOffset { get; set; } = 10;
 
-        /// <summary>内部缺陷面积判定阈值（断墨、漏印），与缩放比例相关</summary>
-        public int DefectAreaThreshInner { get; set; } = 200;
+        /// <summary>
+        /// 内部缺陷面积判定阈值（断墨、漏印），单位 mm²。
+        /// 默认 1.434 mm² 等价于 300 DPI 下原有的 200 px²。
+        /// </summary>
+        public double DefectAreaThreshInner { get; set; } = 1.434;
 
-        /// <summary>外部缺陷面积判定阈值（飞墨、脏污），与缩放比例相关</summary>
-        public int DefectAreaThreshOuter { get; set; } = 300;
+        /// <summary>
+        /// 外部缺陷面积判定阈值（飞墨、脏污），单位 mm²。
+        /// 默认 2.151 mm² 等价于 300 DPI 下原有的 300 px²。
+        /// </summary>
+        public double DefectAreaThreshOuter { get; set; } = 2.151;
+
+        /// <summary>
+        /// 面积阈值的持久化单位标识。ConfigManager 用它识别并迁移旧版 px² 配置。
+        /// 该字段不作为用户参数展示。
+        /// </summary>
+        public string DefectAreaThresholdUnit { get; set; } = "mm2";
 
         /// <summary>内部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L565: TOLERANCE_inner=5）</summary>
         public int DefectToleranceInner { get; set; } = 6;
@@ -254,12 +266,19 @@ namespace CIS_WebInspector.Models
         public bool EnableFineLineBreakDetection { get; set; } = true;
 
         /// <summary>
-        /// 细线断裂的最小连续长度（mm）。使用 TIFF 排版 DPI 换算，避免缩放比例变化时检测语义漂移。
+        /// 细线断裂的最小连续长度（mm）。当前成像与分析尺度下的可靠下限为 0.5 mm；
+        /// 从旧配置加载到更小数值时自动按 0.5 mm 修正，避免参数精度高于图像采样能力。
         /// </summary>
-        public double FineLineMinBreakLengthMm { get; set; } = 3;
+        private double _fineLineMinBreakLengthMm = 0.5;
+        public double FineLineMinBreakLengthMm
+        {
+            get => _fineLineMinBreakLengthMm;
+            set => _fineLineMinBreakLengthMm = value >= 0.5 ? value : 0.5;
+        }
 
         /// <summary>
-        /// 进入细线专用通道的模板线宽上限（mm）。默认 2 mm 可覆盖当前图库右侧钩线的实际线宽。
+        /// 进入细线专用通道的模板线宽上限（mm），仅用于最终线宽过滤；
+        /// 不再改变局部对比前景的提取窗口，调整该值不会重新定义候选生成尺度。
         /// 可在“参数设置 → 缺陷检测 → 细线断裂检测参数”中调整。
         /// </summary>
         public double FineLineMaxWidthMm { get; set; } = 5;

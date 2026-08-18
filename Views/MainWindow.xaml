@@ -156,14 +156,25 @@
                         </TabControl.Resources>
                         
                         <TabItem Header="🧩 拼接结果">
-                            <Border Background="#FF1A1A28" CornerRadius="4" Margin="0,4,0,0">
-                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" 
-                                              VerticalScrollBarVisibility="Auto">
+                            <Border Background="#FF1A1A28" CornerRadius="4" Margin="0,4,0,0" ClipToBounds="True">
+                                <!-- 与全局缺陷图共用同一组交互事件：滚轮以鼠标位置为中心缩放，左键拖动画面。 -->
+                                <Grid Background="Transparent"
+                                      MouseWheel="Image_MouseWheel"
+                                      MouseLeftButtonDown="Image_MouseLeftButtonDown"
+                                      MouseLeftButtonUp="Image_MouseLeftButtonUp"
+                                      MouseMove="Image_MouseMove">
                                     <Image x:Name="imgStitchedPreview" 
                                            Source="{Binding StitchedPreview}"
                                            RenderOptions.BitmapScalingMode="NearestNeighbor"
-                                           Stretch="Uniform"/>
-                                </ScrollViewer>
+                                           Stretch="Uniform">
+                                        <Image.RenderTransform>
+                                            <TransformGroup>
+                                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                                                <TranslateTransform X="0" Y="0" />
+                                            </TransformGroup>
+                                        </Image.RenderTransform>
+                                    </Image>
+                                </Grid>
                             </Border>
                         </TabItem>
                         

@@ -12,6 +12,8 @@ namespace CIS_WebInspector.Services
     /// </summary>
     public static class ConfigManager
     {
+        private const string SquareMillimeterAreaUnit = "mm2";
+        private const double DefaultLayoutDpi = 300.0;
         private static readonly object ConfigSync = new object();
         // JsonSerializerOptions 首次使用后即按只读方式并发复用，避免每次保存重新构建元数据选项。
         private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
@@ -50,9 +52,44 @@ namespace CIS_WebInspector.Services
                 try
                 {
                     string json = File.ReadAllText(ConfigPath);
+                    bool requiresLegacyAreaMigration = UsesLegacyPixelAreaThresholds(json);
                     _instance = JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions);
                     if (_instance == null)
                         _instance = new AppConfig();
+
+                    if (requiresLegacyAreaMigration)
+                    {
+                        // 旧版配置用原图 px² 表示面积。升级时按 LayoutDpi 换算为 mm²，
+                        // 保证检测灵敏度不因单位切换而变化；单位标识随后持久化，迁移只执行一次。
+                        double pixelsPerMm = GetPixelsPerMm(_instance.LayoutDpi);
+                        _instance.DefectAreaThreshInner = Math.Round(
+                            _instance.DefectAreaThreshInner / (pixelsPerMm * pixelsPerMm),
+                            3,
+                            MidpointRounding.AwayFromZero);
+                        _instance.DefectAreaThreshOuter = Math.Round(
+                            _instance.DefectAreaThreshOuter / (pixelsPerMm * pixelsPerMm),
+                            3,
+                            MidpointRounding.AwayFromZero);
+                        _instance.DefectAreaThresholdUnit = SquareMillimeterAreaUnit;
+
+                        try
+                        {
+                            string migratedJson = JsonSerializer.Serialize(_instance, SerializerOptions);
+                            File.WriteAllText(ConfigPath, migratedJson);
+                            System.Diagnostics.Debug.WriteLine(
+                                "缺陷面积阈值已由旧版 px² 自动迁移为 mm²。");
+                        }
+                        catch (Exception ex)
+                        {
+                            // 写回失败不影响本次运行；内存中的配置已经完成正确换算。
+                            System.Diagnostics.Debug.WriteLine($"面积阈值迁移后写回失败: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        // 接受 mm2/mm²/mm^2 等人工写法，保存时统一规范为机器友好的 mm2。
+                        _instance.DefectAreaThresholdUnit = SquareMillimeterAreaUnit;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -74,6 +111,43 @@ namespace CIS_WebInspector.Services
                     System.Diagnostics.Debug.WriteLine($"创建默认配置失败: {ex.Message}");
                 }
             }
+        }
+
+        /// <summary>
+        /// 旧配置没有面积单位字段，数值语义为原图 px²；新版明确保存 mm2，避免重复换算。
+        /// </summary>
+        private static bool UsesLegacyPixelAreaThresholds(string json)
+        {
+            using (JsonDocument document = JsonDocument.Parse(
+                       json,
+                       new JsonDocumentOptions
+                       {
+                           CommentHandling = JsonCommentHandling.Skip,
+                           AllowTrailingCommas = true
+                       }))
+            {
+                if (!document.RootElement.TryGetProperty(
+                        nameof(AppConfig.DefectAreaThresholdUnit),
+                        out JsonElement unitElement))
+                {
+                    return true;
+                }
+
+                string unit = unitElement.ValueKind == JsonValueKind.String
+                    ? unitElement.GetString()
+                    : null;
+                return !string.Equals(unit, "mm2", StringComparison.OrdinalIgnoreCase) &&
+                       !string.Equals(unit, "mm²", StringComparison.OrdinalIgnoreCase) &&
+                       !string.Equals(unit, "mm^2", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        private static double GetPixelsPerMm(double layoutDpi)
+        {
+            double effectiveDpi = layoutDpi > 0 && !double.IsNaN(layoutDpi) && !double.IsInfinity(layoutDpi)
+                ? layoutDpi
+                : DefaultLayoutDpi;
+            return effectiveDpi / 25.4;
         }
 
         /// <summary>把当前内存配置写回 app_config.json；失败仅记录调试信息。</summary>
