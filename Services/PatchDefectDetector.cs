@@ -251,7 +251,8 @@ namespace CIS_WebInspector.Services
     /// <summary>
     /// 零件级缺陷检测引擎。
     /// 移植自 localpeizhun.cpp 及 align_diff.py 结合策略：
-    /// [可选]SIFT 二次局部对齐 → 各自二值化 → 形态学容差差分 → 边缘屏蔽 → 连通域判定。
+    /// [可选]分级二次局部对齐（轮廓平移/SIFT/亚像素精修）→ 各自二值化 →
+    /// 形态学容差差分 → 边缘屏蔽 → 连通域判定。
     /// </summary>
     public static class PatchDefectDetector
     {
@@ -277,13 +278,41 @@ namespace CIS_WebInspector.Services
         private const double LocalAlignmentMaxMatchDisplacementOriginalPx = 60.0;
         private const double LocalAlignmentMaxResidualRmsOriginalPx = 3.0;
         private const double LocalAlignmentTranslationRefineRadiusOriginalPx = 10.0;
-        private const double LocalAlignmentMinEdgeImprovementRatio = 0.02;
+        // SIFT/RANSAC 或内点中位数已经给出可靠初值后，只允许距离场再修正 1 px；
+        // 防止轮廓评分被真实缺陷牵引，覆盖掉特征点提供的几何共识。
+        private const double LocalAlignmentCandidateRefineRadiusOriginalPx = 1.0;
+        // 距离场先在工作图上做整数搜索，再以 0.25 px 步长搜索整数最优点周围的 2 px 邻域。
+        // 700 px 固定工作宽度下，这已经能把最终平移细化到原图约 1 px 以内；最终 Warp 仍只执行一次。
+        private const double LocalAlignmentSubpixelStepWorkPx = 0.25;
+        private const double LocalAlignmentSubpixelRadiusWorkPx = 1.0;
+        // 距离超过该值后不再继续增大惩罚，避免真实缺口、飞墨等少量异常轮廓牵引配准结果。
+        private const double LocalAlignmentChamferDistanceCapWorkPx = 4.0;
+        private const int LocalAlignmentMaxEdgeSamplesPerDirection = 6000;
+        // 未配准轮廓平均误差低于此原图像素值时，继续重采样的收益很小，直接保留全局对齐结果。
+        private const double LocalAlignmentNotNeededScoreOriginalPx = 0.50;
+        private const double LocalAlignmentNotNeededShiftOriginalPx = 0.75;
+        // 小于 10% 的全局轮廓收益很容易来自阈值噪声、JPEG 纹理或真实缺陷，而不是稳定错位。
+        // 宁可保留 H0 结果，也不为小幅评分收益承担新增细线误检的风险。
+        private const double LocalAlignmentMinEdgeImprovementRatio = 0.10;
+        // 纯轮廓平移缺少特征几何共识，周期图案可能在错误的小位移上取得有限收益；
+        // 因此快速分支使用更严格的 20%，不足时交给 SIFT 分支继续判断。
+        private const double LocalAlignmentFastTranslationMinImprovementRatio = 0.20;
+        // 快速搜索的最优点若贴近搜索边界，说明距离场仍想继续向外移动，当前结果不是可信极小值。
+        // 这类候选不得直接应用，应交给具有特征几何约束的 SIFT 分支继续判断。
+        private const double LocalAlignmentFastTranslationBoundaryRatio = 0.85;
+        private const double LocalAlignmentStrongEdgeImprovementRatio = 0.20;
+        private const double LocalAlignmentStrongCaseMaxLocalRegressionPixels = 0.75;
         private const double LocalAlignmentTranslationConsensusP80OriginalPx = 5.0;
+        // 对明显整体平移，若 SIFT 内点位移高度一致，可直接信任纯平移模型；此时逐格轮廓
+        // 可能被真实缺陷干扰而出现假退化。小位移仍必须通过局部稳定性，避免新增细线误检。
+        private const double LocalAlignmentStrongTranslationConsensusP80OriginalPx = 2.0;
+        private const double LocalAlignmentStrongTranslationMinMagnitudeOriginalPx = 5.0;
         private const ulong LocalAlignmentRansacSeed = 0x5EED2026UL;
         private const int LocalAlignmentValidationGridSize = 3;
         private const int LocalAlignmentMinReferenceEdgesPerCell = 30;
-        private const double LocalAlignmentMaxLocalRegressionPixels = 0.20;
-        private const double LocalAlignmentMaxLocalRegressionRatio = 0.10;
+        private const double LocalAlignmentMaxLocalRegressionPixels = 0.25;
+        // 局部稳定门控只允许绝对 0.25 个工作像素的轻微数值波动；不再按当前误差比例放宽，
+        // 否则原本较差的局部区域反而会获得更大的退化额度，容易新增细线误检。
 
         // OpenCV 的随机数发生器会被 EstimateAffinePartial2D/RANSAC 使用。并行零件检测时如果任由
         // 各 worker 竞争随机状态，同一批图可能得到不同的内点集合和仿射矩阵。
@@ -358,8 +387,9 @@ namespace CIS_WebInspector.Services
                             if (alignmentWorker == null)
                                 throw new InvalidOperationException("启用局部配准时必须提供 SIFT worker。");
 
-                            // SIFT 使用独立、固定目标宽度的工作图；DefectDetectScale 只负责后续缺陷差分。
-                            // Area 缩小先抑制混叠，再沿用 3x3 均值滤波降低 CIS 纹理噪声。
+                            // 局部配准使用独立、固定目标宽度的工作图；DefectDetectScale 只负责后续缺陷差分。
+                            // Area 缩小先抑制混叠，再用 3x3 均值滤波降低 CIS 纹理噪声；快速轮廓分支
+                            // 与困难场景的 SIFT 分支共享同一输入，避免两套尺度定义造成参数耦合。
                             using (var alphaBlurred = new Mat())
                             using (var cisBlurred = new Mat())
                             using (var alphaAlignmentInput = new Mat())
@@ -392,7 +422,7 @@ namespace CIS_WebInspector.Services
                                 // 多生成一张原始分辨率对齐图，不改变现有 SIFT 匹配与矩阵估计路径。
                                 bool needOriginalWarp = config.EnableFineLineBreakDetection ||
                                     (!string.IsNullOrEmpty(cisOutputPath) && config.SaveCroppedImages);
-                                if (TrySiftAlign(
+                                if (TryLocalAlign(
                                     alphaBlurred,
                                     cisBlurred,
                                     alphaScaled,
@@ -1661,11 +1691,12 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>
-        /// SIFT 特征匹配 + RANSAC + 仿射对齐。
+        /// 零件级分级局部对齐：已对齐跳过 → 轮廓距离场快速平移 →
+        /// SIFT + RANSAC 相似变换 → 统一亚像素轮廓精修与局部稳定性门控。
         /// 成功时输出新建且由调用方负责释放的缩放图/可选原图；失败时输出 null，
         /// 调用方继续使用未局部变换的 cisScaled，从而让配准失败与缺陷判定解耦。
         /// </summary>
-        private static bool TrySiftAlign(
+        private static bool TryLocalAlign(
             Mat alphaFeature,
             Mat cisFeature,
             Mat alphaScaled,
@@ -1687,6 +1718,128 @@ namespace CIS_WebInspector.Services
 
             try
             {
+                // 第一级：全局对齐后的零件通常只剩少量整体平移。先使用设计/实拍轮廓的
+                // 双向距离场直接求解，不创建 SIFT 描述子；只有该低自由度模型不能可靠改善时，
+                // 才进入后面的 SIFT 相似变换。这样简单零件更快，周期纹理也不必先承担特征误配风险。
+                using (Mat fastTranslation = Mat.Eye(2, 3, MatType.CV_64FC1))
+                {
+                    bool fastTranslationAccepted = TryRefineAffineTranslationByEdges(
+                        alphaFeature,
+                        cisFeature,
+                        alphaBinaryThreshold,
+                        cisBinaryThreshold,
+                        alignmentScale,
+                        fastTranslation,
+                        true,
+                        LocalAlignmentFastTranslationMinImprovementRatio,
+                        LocalAlignmentTranslationRefineRadiusOriginalPx,
+                        out double initialEdgeScore,
+                        out double translatedEdgeScore,
+                        out double fastRefineX,
+                        out double fastRefineY,
+                        out double fastWorstLocalRegression,
+                        out int fastCheckedLocalCells);
+
+                    double initialEdgeScoreOriginal = initialEdgeScore / Math.Max(alignmentScale, 1e-6);
+                    double fastShiftOriginal = Math.Sqrt(
+                        fastRefineX * fastRefineX + fastRefineY * fastRefineY) /
+                        Math.Max(alignmentScale, 1e-6);
+                    double fastImprovementRatio =
+                        (initialEdgeScore - translatedEdgeScore) /
+                        Math.Max(initialEdgeScore, 1e-6);
+                    bool finiteInitialScore = !double.IsInfinity(initialEdgeScoreOriginal) &&
+                                              !double.IsNaN(initialEdgeScoreOriginal);
+                    bool alreadyAlignedByAbsoluteScore = finiteInitialScore &&
+                        initialEdgeScoreOriginal <= LocalAlignmentNotNeededScoreOriginalPx;
+                    bool noUsefulTranslationRemaining = finiteInitialScore &&
+                        !double.IsInfinity(translatedEdgeScore) &&
+                        !double.IsNaN(translatedEdgeScore) &&
+                        fastShiftOriginal <= LocalAlignmentNotNeededShiftOriginalPx &&
+                        fastImprovementRatio < LocalAlignmentFastTranslationMinImprovementRatio;
+                    if (alreadyAlignedByAbsoluteScore || noUsefulTranslationRemaining)
+                    {
+                        // 已经足够对齐时不再重采样；直接使用 H0 裁图能最大限度保留原始缺陷边缘。
+                        stopwatch.Stop();
+                        Console.WriteLine(
+                            $"[LocalAlign] {FormatPartId(partId)} NotNeeded: " +
+                            $"edge={initialEdgeScore:F3}workPx/{initialEdgeScoreOriginal:F2}origPx, " +
+                            $"bestShift={fastShiftOriginal:F2}px, improve={fastImprovementRatio:P1}, " +
+                            $"time={stopwatch.ElapsedMilliseconds}ms");
+                        return false;
+                    }
+
+                    string fastTranslationDiagnostic = string.Empty;
+                    double fastRefineMagnitudeWork = Math.Sqrt(
+                        fastRefineX * fastRefineX + fastRefineY * fastRefineY);
+                    double fastSearchRadiusWork =
+                        LocalAlignmentTranslationRefineRadiusOriginalPx * alignmentScale;
+                    bool fastTouchesSearchBoundary = fastRefineMagnitudeWork >=
+                        fastSearchRadiusWork * LocalAlignmentFastTranslationBoundaryRatio;
+                    if (fastTranslationAccepted &&
+                        !fastTouchesSearchBoundary &&
+                        TryValidateLocalAffine(
+                            fastTranslation,
+                            alignmentScale,
+                            out fastTranslationDiagnostic))
+                    {
+                        Mat fastScaledOutput = null;
+                        Mat fastOriginalOutput = null;
+                        try
+                        {
+                            CreateAlignedOutputs(
+                                alphaScaled,
+                                cisScaled,
+                                cisImgOrig,
+                                defectScale,
+                                alignmentScale,
+                                needOriginalWarp,
+                                fastTranslation,
+                                out fastScaledOutput,
+                                out fastOriginalOutput);
+
+                            cisAligned = fastScaledOutput;
+                            cisAlignedOrig = fastOriginalOutput;
+                            fastScaledOutput = null;
+                            fastOriginalOutput = null;
+
+                            double dxOriginal = fastTranslation.At<double>(0, 2) / alignmentScale;
+                            double dyOriginal = fastTranslation.At<double>(1, 2) / alignmentScale;
+                            stopwatch.Stop();
+                            Console.WriteLine(
+                                $"[LocalAlign] {FormatPartId(partId)} Applied/FastTranslation: " +
+                                $"workScale={alignmentScale:F3}, defectScale={defectScale:F3}, " +
+                                $"move=({dxOriginal:F2},{dyOriginal:F2})px, " +
+                                $"refine=({fastRefineX:F2},{fastRefineY:F2})workPx, " +
+                                $"edge={initialEdgeScore:F3}->{translatedEdgeScore:F3}, " +
+                                $"localWorst={fastWorstLocalRegression:+0.000;-0.000;0.000}px/" +
+                                $"{fastCheckedLocalCells}, time={stopwatch.ElapsedMilliseconds}ms");
+                            return true;
+                        }
+                        finally
+                        {
+                            fastScaledOutput?.Dispose();
+                            fastOriginalOutput?.Dispose();
+                        }
+                    }
+
+                    if (fastTranslationAccepted && fastTouchesSearchBoundary)
+                    {
+                        Console.WriteLine(
+                            $"[LocalAlign] {FormatPartId(partId)} FastTranslation rejected: " +
+                            $"best shift touches search boundary " +
+                            $"({fastRefineMagnitudeWork:F2}/{fastSearchRadiusWork:F2}workPx), " +
+                            $"fallback to SIFT, time={stopwatch.ElapsedMilliseconds}ms");
+                    }
+                    else if (fastTranslationAccepted)
+                    {
+                        LogAlignmentFailure(
+                            partId,
+                            "快速平移矩阵越界: " + fastTranslationDiagnostic,
+                            stopwatch.ElapsedMilliseconds);
+                    }
+                }
+
+                // 第二级：快速平移不足以解释残差时，才提取 SIFT 特征估计少量旋转/统一缩放。
                 PatchSiftTemplateFeatures template = worker.TemplateCache.GetOrCreate(alphaFeature, worker.Sift);
                 if (template.KeyPoints.Length == 0 || template.Descriptors == null || template.Descriptors.Empty())
                 {
@@ -1856,16 +2009,19 @@ namespace CIS_WebInspector.Services
                                 alignmentScale,
                                 transform,
                                 true,
+                                LocalAlignmentMinEdgeImprovementRatio,
+                                LocalAlignmentCandidateRefineRadiusOriginalPx,
                                 out double edgeScoreBefore,
                                 out double edgeScoreAfter,
-                                out int refineX,
-                                out int refineY,
+                                out double refineX,
+                                out double refineY,
                                 out double worstLocalRegression,
                                 out int checkedLocalCells);
-                        string similarityFailure =
-                            $"global={edgeScoreBefore:F3}->{edgeScoreAfter:F3}, " +
-                            $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px, " +
-                            $"cells={checkedLocalCells}";
+                        string similarityFailure = FormatEdgeGateDiagnostic(
+                            edgeScoreBefore,
+                            edgeScoreAfter,
+                            worstLocalRegression,
+                            checkedLocalCells);
 
                         if (!refinementAccepted)
                         {
@@ -1885,7 +2041,12 @@ namespace CIS_WebInspector.Services
                                         cisBinaryThreshold,
                                         alignmentScale,
                                         translationFallback,
-                                        false,
+                                        !HasStrongTranslationConsensus(
+                                            translationFallback,
+                                            translationConsensusP80,
+                                            alignmentScale),
+                                        LocalAlignmentMinEdgeImprovementRatio,
+                                        LocalAlignmentCandidateRefineRadiusOriginalPx,
                                         out edgeScoreBefore,
                                         out edgeScoreAfter,
                                         out refineX,
@@ -1901,11 +2062,10 @@ namespace CIS_WebInspector.Services
                                 {
                                     LogAlignmentFailure(
                                         partId,
-                                        $"相似变换与纯平移均未通过局部稳定性：" +
+                                        $"相似变换与纯平移均未通过轮廓质量门控：" +
                                         $"similarity({similarityFailure}), " +
-                                        $"translation(global={edgeScoreBefore:F3}->{edgeScoreAfter:F3}, " +
-                                        $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px, " +
-                                        $"cells={checkedLocalCells}, P80={translationConsensusP80:F2}px, " +
+                                        $"translation({FormatEdgeGateDiagnostic(edgeScoreBefore, edgeScoreAfter, worstLocalRegression, checkedLocalCells)}, " +
+                                        $"P80={translationConsensusP80:F2}px, " +
                                         $"move=({translationFallback?.At<double>(0, 2) / alignmentScale:F2}," +
                                         $"{translationFallback?.At<double>(1, 2) / alignmentScale:F2})px)",
                                         stopwatch.ElapsedMilliseconds);
@@ -1933,51 +2093,20 @@ namespace CIS_WebInspector.Services
                         }
 
                         // 只有所有质量检查通过后才创建输出，失败路径继续使用 H0 裁出的原始小图。
-                        Mat scaledOutput = new Mat();
+                        Mat scaledOutput = null;
                         Mat originalOutput = null;
                         try
                         {
-                            using (Mat defectScaleTransform = transform.Clone())
-                            {
-                                double translationScale = defectScale / alignmentScale;
-                                defectScaleTransform.Set(
-                                    0,
-                                    2,
-                                    transform.At<double>(0, 2) * translationScale);
-                                defectScaleTransform.Set(
-                                    1,
-                                    2,
-                                    transform.At<double>(1, 2) * translationScale);
-                                Cv2.WarpAffine(
-                                    cisScaled,
-                                    scaledOutput,
-                                    defectScaleTransform,
-                                    alphaScaled.Size(),
-                                    InterpolationFlags.Cubic);
-                            }
-
-                            // 原分辨率变换的线性部分不变，平移从配准工作尺度除以 alignmentScale。
-                            if (needOriginalWarp)
-                            {
-                                originalOutput = new Mat();
-                                using (Mat originalTransform = transform.Clone())
-                                {
-                                    originalTransform.Set(
-                                        0,
-                                        2,
-                                        transform.At<double>(0, 2) / alignmentScale);
-                                    originalTransform.Set(
-                                        1,
-                                        2,
-                                        transform.At<double>(1, 2) / alignmentScale);
-                                    Cv2.WarpAffine(
-                                        cisImgOrig,
-                                        originalOutput,
-                                        originalTransform,
-                                        cisImgOrig.Size(),
-                                        InterpolationFlags.Cubic);
-                                }
-                            }
+                            CreateAlignedOutputs(
+                                alphaScaled,
+                                cisScaled,
+                                cisImgOrig,
+                                defectScale,
+                                alignmentScale,
+                                needOriginalWarp,
+                                transform,
+                                out scaledOutput,
+                                out originalOutput);
 
                             cisAligned = scaledOutput;
                             cisAlignedOrig = originalOutput;
@@ -1993,7 +2122,7 @@ namespace CIS_WebInspector.Services
                                 $"kp={template.KeyPoints.Length}/{cisKeyPoints.Length}, " +
                                 $"mutual={goodMatches.Count}, inliers={templateInliers.Count}({inlierRatio:P0}), " +
                                 $"coverage={inlierCoverage:P1}, rms={reprojectionRmsOriginal:F2}px, " +
-                                $"move=({dxOriginal:F2},{dyOriginal:F2})px, refine=({refineX},{refineY}), " +
+                                $"move=({dxOriginal:F2},{dyOriginal:F2})px, refine=({refineX:F2},{refineY:F2})workPx, " +
                                 $"edge={edgeScoreBefore:F3}->{edgeScoreAfter:F3}, " +
                                 $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px/{checkedLocalCells}, " +
                                 $"time={stopwatch.ElapsedMilliseconds}ms");
@@ -2184,6 +2313,22 @@ namespace CIS_WebInspector.Services
             return true;
         }
 
+        private static bool HasStrongTranslationConsensus(
+            Mat translationTransform,
+            double residualP80OriginalPixels,
+            double alignmentScale)
+        {
+            if (translationTransform == null || translationTransform.Empty() || alignmentScale <= 0)
+                return false;
+
+            double translationX = translationTransform.At<double>(0, 2);
+            double translationY = translationTransform.At<double>(1, 2);
+            double magnitudeOriginal = Math.Sqrt(
+                translationX * translationX + translationY * translationY) / alignmentScale;
+            return residualP80OriginalPixels <= LocalAlignmentStrongTranslationConsensusP80OriginalPx &&
+                   magnitudeOriginal >= LocalAlignmentStrongTranslationMinMagnitudeOriginalPx;
+        }
+
         private static double MedianOfSorted(double[] sortedValues)
         {
             int count = sortedValues?.Length ?? 0;
@@ -2195,8 +2340,28 @@ namespace CIS_WebInspector.Services
                 : sortedValues[middle];
         }
 
+        private static string FormatEdgeGateDiagnostic(
+            double scoreBefore,
+            double scoreAfter,
+            double worstLocalRegression,
+            int checkedLocalCells)
+        {
+            double improvementRatio = (scoreBefore - scoreAfter) / Math.Max(scoreBefore, 1e-6);
+            if (checkedLocalCells <= 0)
+            {
+                return $"global={scoreBefore:F3}->{scoreAfter:F3}, " +
+                       $"improve={improvementRatio:P1}/{LocalAlignmentMinEdgeImprovementRatio:P0}";
+            }
+
+            return $"global={scoreBefore:F3}->{scoreAfter:F3}, improve={improvementRatio:P1}, " +
+                   $"localWorst={worstLocalRegression:+0.000;-0.000;0.000}px, " +
+                   $"cells={checkedLocalCells}";
+        }
+
         /// <summary>
-        /// 在仿射结果附近搜索小范围整数平移，以模板/CIS二值边缘的对称Chamfer距离作为唯一评分。
+        /// 在候选变换附近，以模板/CIS 二值轮廓的双向距离场为目标做小范围平移精修。
+        /// 先搜索工作图整像素，再在最优点附近进行亚像素搜索；距离采用截断损失，
+        /// 使少量真实缺陷不会为了降低配准分数而牵引整张零件图。
         /// 若最终评分没有优于未做局部配准的输入，则拒绝矩阵，避免错误匹配使结果变差。
         /// </summary>
         private static bool TryRefineAffineTranslationByEdges(
@@ -2207,22 +2372,25 @@ namespace CIS_WebInspector.Services
             double alignmentScale,
             Mat transform,
             bool requireLocalStability,
+            double minimumImprovementRatio,
+            double maxRefinementOriginalPixels,
             out double scoreBefore,
             out double scoreAfter,
-            out int refineX,
-            out int refineY,
+            out double refineX,
+            out double refineY,
             out double worstLocalRegression,
             out int checkedLocalCells)
         {
             scoreBefore = double.PositiveInfinity;
             scoreAfter = double.PositiveInfinity;
-            refineX = 0;
-            refineY = 0;
+            refineX = 0.0;
+            refineY = 0.0;
             worstLocalRegression = double.PositiveInfinity;
             checkedLocalCells = 0;
-            int searchRadius = Math.Max(
-                1,
-                (int)Math.Ceiling(LocalAlignmentTranslationRefineRadiusOriginalPx * alignmentScale));
+            double maxRefinementWorkPixels = Math.Max(
+                LocalAlignmentSubpixelStepWorkPx,
+                maxRefinementOriginalPixels * alignmentScale);
+            int searchRadius = Math.Max(1, (int)Math.Ceiling(maxRefinementWorkPixels));
 
             using (var alphaBinary = new Mat())
             using (var cisBinary = new Mat())
@@ -2238,10 +2406,13 @@ namespace CIS_WebInspector.Services
                 Cv2.Threshold(cisFeature, cisBinary, cisThreshold, 255, ThresholdTypes.Binary);
                 Cv2.MorphologyEx(alphaBinary, alphaEdges, MorphTypes.Gradient, edgeKernel);
                 Cv2.MorphologyEx(cisBinary, cisEdgesBefore, MorphTypes.Gradient, edgeKernel);
-                scoreBefore = FindBestChamferShift(
+                scoreBefore = FindBestRobustChamferShift(
                     alphaEdges,
                     cisEdgesBefore,
                     0,
+                    searchRadius,
+                    0.0,
+                    true,
                     out _,
                     out _);
 
@@ -2252,10 +2423,13 @@ namespace CIS_WebInspector.Services
                     alphaBinary.Size(),
                     InterpolationFlags.Nearest);
                 Cv2.MorphologyEx(cisWarpedBinary, cisEdgesAfter, MorphTypes.Gradient, edgeKernel);
-                scoreAfter = FindBestChamferShift(
+                scoreAfter = FindBestRobustChamferShift(
                     alphaEdges,
                     cisEdgesAfter,
                     searchRadius,
+                    searchRadius,
+                    maxRefinementWorkPixels,
+                    true,
                     out refineX,
                     out refineY);
 
@@ -2263,51 +2437,124 @@ namespace CIS_WebInspector.Services
                                           Math.Max(scoreBefore, 1e-6);
                 if (double.IsInfinity(scoreBefore) || double.IsInfinity(scoreAfter) ||
                     double.IsNaN(scoreBefore) || double.IsNaN(scoreAfter) ||
-                    improvementRatio < LocalAlignmentMinEdgeImprovementRatio)
+                    improvementRatio < minimumImprovementRatio)
                 {
                     return false;
                 }
 
-                transform.Set(0, 2, transform.At<double>(0, 2) + refineX);
-                transform.Set(1, 2, transform.At<double>(1, 2) + refineY);
-
-                // 纯平移不会改变局部形状，前面的全局 Chamfer 改善率和匹配位移共识已经足够。
-                // 直接结束可避免再做一次 Warp、形态学梯度和两次距离变换；相似变换才需要
-                // 下面的 3x3 分区检查来防止微小旋转/缩放伤害局部细线。
-                if (!requireLocalStability)
+                // 不直接修改调用方矩阵：只有全局改善和局部稳定性都通过后，才提交精修结果。
+                // 这样失败分支继续尝试其他模型时，不会继承一个已被拒绝的平移量。
+                using (Mat refinedTransform = transform.Clone())
                 {
-                    worstLocalRegression = 0;
-                    checkedLocalCells = 0;
+                    refinedTransform.Set(0, 2, refinedTransform.At<double>(0, 2) + refineX);
+                    refinedTransform.Set(1, 2, refinedTransform.At<double>(1, 2) + refineY);
+
+                    if (requireLocalStability)
+                    {
+                        // 全局平均值可能掩盖“主体更好、某条细线更差”的情况。用最终矩阵重新生成
+                        // 边缘后，将模板划成 3x3 区域，逐区确认设计轮廓到 CIS 轮廓的距离没有显著增大。
+                        // 这道门控不直接判断缺陷，只保证局部配准不会制造新的局部错位。
+                        Cv2.WarpAffine(
+                            cisBinary,
+                            cisWarpedFinalBinary,
+                            refinedTransform,
+                            alphaBinary.Size(),
+                            InterpolationFlags.Nearest);
+                        Cv2.MorphologyEx(
+                            cisWarpedFinalBinary,
+                            cisEdgesFinal,
+                            MorphTypes.Gradient,
+                            edgeKernel);
+                        bool localStabilityAccepted = HasNoSignificantLocalEdgeRegression(
+                                alphaEdges,
+                                cisEdgesBefore,
+                                cisEdgesFinal,
+                                alignmentScale,
+                                improvementRatio,
+                                out worstLocalRegression,
+                                out checkedLocalCells);
+                        if (!localStabilityAccepted)
+                            return false;
+                    }
+                    else
+                    {
+                        worstLocalRegression = 0;
+                        checkedLocalCells = 0;
+                    }
+
+                    refinedTransform.CopyTo(transform);
                     return true;
                 }
+            }
+        }
 
-                // 全局平均值可能掩盖“主体更好、某条细线更差”的情况。用最终矩阵重新生成
-                // 边缘后，将模板划成 3x3 区域，逐区确认设计轮廓到 CIS 轮廓的距离没有显著增大。
-                // 这道门控不直接判断缺陷，只保证局部配准不会制造新的局部错位。
-                Cv2.WarpAffine(
-                    cisBinary,
-                    cisWarpedFinalBinary,
-                    transform,
-                    alphaBinary.Size(),
-                    InterpolationFlags.Nearest);
-                Cv2.MorphologyEx(
-                    cisWarpedFinalBinary,
-                    cisEdgesFinal,
-                    MorphTypes.Gradient,
-                    edgeKernel);
-                bool localStabilityAccepted = HasNoSignificantLocalEdgeRegression(
-                        alphaEdges,
-                        cisEdgesBefore,
-                        cisEdgesFinal,
-                        alignmentScale,
-                        out worstLocalRegression,
-                        out checkedLocalCells);
-                if (!localStabilityAccepted)
+        /// <summary>
+        /// 将配准工作尺度上的最终矩阵一次性换算到缺陷检测尺度和原始尺度。
+        /// 线性部分（旋转/统一缩放）保持不变，仅平移按尺度比换算；调用方拥有返回 Mat。
+        /// </summary>
+        private static void CreateAlignedOutputs(
+            Mat alphaScaled,
+            Mat cisScaled,
+            Mat cisImgOrig,
+            double defectScale,
+            double alignmentScale,
+            bool needOriginalWarp,
+            Mat transform,
+            out Mat scaledOutput,
+            out Mat originalOutput)
+        {
+            scaledOutput = new Mat();
+            originalOutput = null;
+            try
+            {
+                using (Mat defectScaleTransform = transform.Clone())
                 {
-                    return false;
+                    double translationScale = defectScale / alignmentScale;
+                    defectScaleTransform.Set(
+                        0,
+                        2,
+                        transform.At<double>(0, 2) * translationScale);
+                    defectScaleTransform.Set(
+                        1,
+                        2,
+                        transform.At<double>(1, 2) * translationScale);
+                    Cv2.WarpAffine(
+                        cisScaled,
+                        scaledOutput,
+                        defectScaleTransform,
+                        alphaScaled.Size(),
+                        InterpolationFlags.Cubic);
                 }
 
-                return true;
+                if (needOriginalWarp)
+                {
+                    originalOutput = new Mat();
+                    using (Mat originalTransform = transform.Clone())
+                    {
+                        originalTransform.Set(
+                            0,
+                            2,
+                            transform.At<double>(0, 2) / alignmentScale);
+                        originalTransform.Set(
+                            1,
+                            2,
+                            transform.At<double>(1, 2) / alignmentScale);
+                        Cv2.WarpAffine(
+                            cisImgOrig,
+                            originalOutput,
+                            originalTransform,
+                            cisImgOrig.Size(),
+                            InterpolationFlags.Cubic);
+                    }
+                }
+            }
+            catch
+            {
+                scaledOutput?.Dispose();
+                originalOutput?.Dispose();
+                scaledOutput = null;
+                originalOutput = null;
+                throw;
             }
         }
 
@@ -2321,6 +2568,7 @@ namespace CIS_WebInspector.Services
             Mat movingEdgesBefore,
             Mat movingEdgesAfter,
             double alignmentScale,
+            double globalImprovementRatio,
             out double worstRegression,
             out int checkedCells)
         {
@@ -2355,6 +2603,7 @@ namespace CIS_WebInspector.Services
                     1,
                     (int)Math.Ceiling(LocalAlignmentMaxTranslationOriginalPx * alignmentScale));
 
+                int significantlyRegressedCells = 0;
                 for (int gridY = 0; gridY < LocalAlignmentValidationGridSize; gridY++)
                 {
                     int top = gridY * height / LocalAlignmentValidationGridSize;
@@ -2382,8 +2631,14 @@ namespace CIS_WebInspector.Services
                                     continue;
 
                                 referenceCount++;
-                                beforeSum += beforeDistances[index];
-                                afterSum += afterDistances[index];
+                                // 局部稳定性与全局评分使用相同的截断距离。真实断口或漏印处
+                                // 可能天然找不到对应 CIS 边缘，不能让少数极大距离支配整个网格。
+                                beforeSum += Math.Min(
+                                    beforeDistances[index],
+                                    LocalAlignmentChamferDistanceCapWorkPx);
+                                afterSum += Math.Min(
+                                    afterDistances[index],
+                                    LocalAlignmentChamferDistanceCapWorkPx);
                             }
                         }
 
@@ -2395,11 +2650,9 @@ namespace CIS_WebInspector.Services
                         double afterMean = afterSum / referenceCount;
                         double regression = afterMean - beforeMean;
                         worstRegression = Math.Max(worstRegression, regression);
-                        double allowedRegression = Math.Max(
-                            LocalAlignmentMaxLocalRegressionPixels,
-                            beforeMean * LocalAlignmentMaxLocalRegressionRatio);
+                        double allowedRegression = LocalAlignmentMaxLocalRegressionPixels;
                         if (regression > allowedRegression)
-                            return false;
+                            significantlyRegressedCells++;
                     }
                 }
 
@@ -2412,19 +2665,35 @@ namespace CIS_WebInspector.Services
 
                 if (double.IsNegativeInfinity(worstRegression))
                     worstRegression = 0;
-                return true;
+
+                if (significantlyRegressedCells == 0)
+                    return true;
+
+                // 当整体轮廓改善超过 20% 时，单个网格可能因为真实缺陷或二值化波动略有变差。
+                // 仅允许 1 个网格且退化不超过 0.75 工作像素；多个区域同时变差仍然拒绝。
+                return globalImprovementRatio >= LocalAlignmentStrongEdgeImprovementRatio &&
+                       significantlyRegressedCells == 1 &&
+                       worstRegression <= LocalAlignmentStrongCaseMaxLocalRegressionPixels;
             }
         }
 
-        private static double FindBestChamferShift(
+        /// <summary>
+        /// 在两组二值轮廓之间搜索双向 Chamfer 最优平移。整数搜索负责覆盖范围，
+        /// 亚像素搜索通过双线性采样距离场细化结果；每个方向最多固定采样 6000 个点，
+        /// 保证不同轮廓复杂度下耗时可控且结果可复现。
+        /// </summary>
+        private static double FindBestRobustChamferShift(
             Mat referenceEdges,
             Mat movingEdges,
             int searchRadius,
-            out int bestShiftX,
-            out int bestShiftY)
+            int samplingMarginRadius,
+            double maximumShiftMagnitude,
+            bool enableSubpixelRefinement,
+            out double bestShiftX,
+            out double bestShiftY)
         {
-            bestShiftX = 0;
-            bestShiftY = 0;
+            bestShiftX = 0.0;
+            bestShiftY = 0.0;
             using (var inverseReference = new Mat())
             using (var inverseMoving = new Mat())
             using (var referenceDistance = new Mat())
@@ -2449,12 +2718,16 @@ namespace CIS_WebInspector.Services
                 movingDistance.GetArray(out float[] movingDistances);
                 int width = referenceEdges.Width;
                 int height = referenceEdges.Height;
+                // 双线性采样需要额外保留 1 px 边界；亚像素邻域再额外预留搜索半径。
+                int safeMargin = Math.Max(0, samplingMarginRadius) + (enableSubpixelRefinement
+                    ? (int)Math.Ceiling(LocalAlignmentSubpixelRadiusWorkPx) + 1
+                    : 1);
                 var referencePoints = new List<Point>();
                 var movingPoints = new List<Point>();
-                for (int y = searchRadius; y < height - searchRadius; y++)
+                for (int y = safeMargin; y < height - safeMargin; y++)
                 {
                     int rowOffset = y * width;
-                    for (int x = searchRadius; x < width - searchRadius; x++)
+                    for (int x = safeMargin; x < width - safeMargin; x++)
                     {
                         int index = rowOffset + x;
                         if (referenceValues[index] != 0)
@@ -2466,43 +2739,173 @@ namespace CIS_WebInspector.Services
                 if (referencePoints.Count == 0 || movingPoints.Count == 0)
                     return double.PositiveInfinity;
 
+                int referenceStride = Math.Max(
+                    1,
+                    (int)Math.Ceiling(referencePoints.Count /
+                        (double)LocalAlignmentMaxEdgeSamplesPerDirection));
+                int movingStride = Math.Max(
+                    1,
+                    (int)Math.Ceiling(movingPoints.Count /
+                        (double)LocalAlignmentMaxEdgeSamplesPerDirection));
+
                 double bestScore = double.PositiveInfinity;
-                int bestMagnitudeSquared = int.MaxValue;
+                double bestMagnitudeSquared = double.PositiveInfinity;
                 for (int shiftY = -searchRadius; shiftY <= searchRadius; shiftY++)
                 {
                     for (int shiftX = -searchRadius; shiftX <= searchRadius; shiftX++)
                     {
-                        double movingToReference = 0;
-                        foreach (Point point in movingPoints)
+                        if (Math.Sqrt(shiftX * shiftX + shiftY * shiftY) >
+                            maximumShiftMagnitude + 1e-9)
                         {
-                            movingToReference += referenceDistances[
-                                (point.Y + shiftY) * width + point.X + shiftX];
+                            continue;
                         }
 
-                        double referenceToMoving = 0;
-                        foreach (Point point in referencePoints)
-                        {
-                            referenceToMoving += movingDistances[
-                                (point.Y - shiftY) * width + point.X - shiftX];
-                        }
+                        UpdateBestRobustChamferCandidate(
+                            referencePoints,
+                            movingPoints,
+                            referenceDistances,
+                            movingDistances,
+                            width,
+                            height,
+                            referenceStride,
+                            movingStride,
+                            shiftX,
+                            shiftY,
+                            ref bestScore,
+                            ref bestShiftX,
+                            ref bestShiftY,
+                            ref bestMagnitudeSquared);
+                    }
+                }
 
-                        double score = 0.5 *
-                            (movingToReference / movingPoints.Count +
-                             referenceToMoving / referencePoints.Count);
-                        int magnitudeSquared = shiftX * shiftX + shiftY * shiftY;
-                        if (score < bestScore - 1e-9 ||
-                            (Math.Abs(score - bestScore) <= 1e-9 &&
-                             magnitudeSquared < bestMagnitudeSquared))
+                if (enableSubpixelRefinement && searchRadius > 0 && !double.IsInfinity(bestScore))
+                {
+                    // 仅在整数最优点周围做小网格精修，避免把搜索复杂度扩展到整个二维区域。
+                    double integerBestX = bestShiftX;
+                    double integerBestY = bestShiftY;
+                    for (double offsetY = -LocalAlignmentSubpixelRadiusWorkPx;
+                         offsetY <= LocalAlignmentSubpixelRadiusWorkPx + 1e-9;
+                         offsetY += LocalAlignmentSubpixelStepWorkPx)
+                    {
+                        for (double offsetX = -LocalAlignmentSubpixelRadiusWorkPx;
+                             offsetX <= LocalAlignmentSubpixelRadiusWorkPx + 1e-9;
+                             offsetX += LocalAlignmentSubpixelStepWorkPx)
                         {
-                            bestScore = score;
-                            bestShiftX = shiftX;
-                            bestShiftY = shiftY;
-                            bestMagnitudeSquared = magnitudeSquared;
+                            double shiftX = integerBestX + offsetX;
+                            double shiftY = integerBestY + offsetY;
+                            if (Math.Abs(shiftX) > searchRadius + 1e-9 ||
+                                Math.Abs(shiftY) > searchRadius + 1e-9 ||
+                                Math.Sqrt(shiftX * shiftX + shiftY * shiftY) >
+                                    maximumShiftMagnitude + 1e-9)
+                            {
+                                continue;
+                            }
+
+                            UpdateBestRobustChamferCandidate(
+                                referencePoints,
+                                movingPoints,
+                                referenceDistances,
+                                movingDistances,
+                                width,
+                                height,
+                                referenceStride,
+                                movingStride,
+                                shiftX,
+                                shiftY,
+                                ref bestScore,
+                                ref bestShiftX,
+                                ref bestShiftY,
+                                ref bestMagnitudeSquared);
                         }
                     }
                 }
                 return bestScore;
             }
+        }
+
+        private static void UpdateBestRobustChamferCandidate(
+            List<Point> referencePoints,
+            List<Point> movingPoints,
+            float[] referenceDistances,
+            float[] movingDistances,
+            int width,
+            int height,
+            int referenceStride,
+            int movingStride,
+            double shiftX,
+            double shiftY,
+            ref double bestScore,
+            ref double bestShiftX,
+            ref double bestShiftY,
+            ref double bestMagnitudeSquared)
+        {
+            double movingToReference = 0.0;
+            int movingCount = 0;
+            for (int index = 0; index < movingPoints.Count; index += movingStride)
+            {
+                Point point = movingPoints[index];
+                double distance = BilinearSample(
+                    referenceDistances,
+                    width,
+                    height,
+                    point.X + shiftX,
+                    point.Y + shiftY);
+                movingToReference += Math.Min(distance, LocalAlignmentChamferDistanceCapWorkPx);
+                movingCount++;
+            }
+
+            double referenceToMoving = 0.0;
+            int referenceCount = 0;
+            for (int index = 0; index < referencePoints.Count; index += referenceStride)
+            {
+                Point point = referencePoints[index];
+                double distance = BilinearSample(
+                    movingDistances,
+                    width,
+                    height,
+                    point.X - shiftX,
+                    point.Y - shiftY);
+                referenceToMoving += Math.Min(distance, LocalAlignmentChamferDistanceCapWorkPx);
+                referenceCount++;
+            }
+
+            if (movingCount == 0 || referenceCount == 0)
+                return;
+
+            double score = 0.5 *
+                (movingToReference / movingCount + referenceToMoving / referenceCount);
+            double magnitudeSquared = shiftX * shiftX + shiftY * shiftY;
+            if (score < bestScore - 1e-9 ||
+                (Math.Abs(score - bestScore) <= 1e-9 && magnitudeSquared < bestMagnitudeSquared))
+            {
+                bestScore = score;
+                bestShiftX = shiftX;
+                bestShiftY = shiftY;
+                bestMagnitudeSquared = magnitudeSquared;
+            }
+        }
+
+        private static double BilinearSample(
+            float[] values,
+            int width,
+            int height,
+            double x,
+            double y)
+        {
+            int x0 = (int)Math.Floor(x);
+            int y0 = (int)Math.Floor(y);
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+            if (x0 < 0 || y0 < 0 || x1 >= width || y1 >= height)
+                return LocalAlignmentChamferDistanceCapWorkPx;
+
+            double fx = x - x0;
+            double fy = y - y0;
+            double top = values[y0 * width + x0] * (1.0 - fx) +
+                         values[y0 * width + x1] * fx;
+            double bottom = values[y1 * width + x0] * (1.0 - fx) +
+                            values[y1 * width + x1] * fx;
+            return top * (1.0 - fy) + bottom * fy;
         }
 
         private static void LogAlignmentFailure(string partId, string reason, long elapsedMilliseconds)

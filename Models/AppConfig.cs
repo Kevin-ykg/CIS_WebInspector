@@ -208,7 +208,10 @@ namespace CIS_WebInspector.Models
         // 5. 零件缺陷检测参数 (localpeizhun.cpp & align_diff.py)
         // ==========================================
 
-        /// <summary>是否启用零件级 SIFT 二次局部对齐（全局已对齐时可关闭以大幅提速）</summary>
+        /// <summary>
+        /// 是否启用零件级二次局部对齐。当前流程优先使用轮廓距离场快速平移，
+        /// 困难场景再使用 SIFT 相似变换，最后统一进行亚像素轮廓精修。
+        /// </summary>
         public bool EnableSiftLocalAlign { get; set; } = true;
 
         /// <summary>
@@ -217,10 +220,10 @@ namespace CIS_WebInspector.Models
         /// </summary>
         public int DefectMaxParallelism { get; set; } = 8;
 
-        /// <summary>缺陷检测时小图缩放比例，影响SIFT 二次局部对齐，以及缺陷检测的时间和图像大小</summary>
+        /// <summary>缺陷检测时小图缩放比例，只影响缺陷检测的时间和图像大小，不改变局部配准工作分辨率。</summary>
         public double DefectDetectScale { get; set; } = 0.3;
 
-        /// <summary>缺陷检测自适应最小宽度（像素，防缩放过度导致 SIFT 失败）</summary>
+        /// <summary>缺陷检测自适应最小宽度（像素，防止主差分图缩放过度造成细节丢失）</summary>
         public int DefectMinScaledWidth { get; set; } = 200;
 
         /// <summary>Alpha 掩膜二值化阈值（align_diff.py L546: threshold(alpha_mask, 60)）</summary>

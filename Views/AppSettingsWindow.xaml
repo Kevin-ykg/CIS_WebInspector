@@ -343,10 +343,10 @@
                 <ScrollViewer Padding="16" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="启用 SIFT 局部二次对齐" Width="180"/>
+                            <TextBlock Text="启用零件级局部二次对齐" Width="180"/>
                             <CheckBox IsChecked="{Binding Config.EnableSiftLocalAlign}"/>
                         </StackPanel>
-                        <TextBlock Text="若全局已对齐，可关闭以大幅提速。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="优先轮廓快速平移，困难场景再使用 SIFT，并统一进行亚像素轮廓精修。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="保存缺陷可视化图" Width="180"/>
@@ -364,7 +364,7 @@
                             <TextBlock Text="自适应最小宽度 (px)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectMinScaledWidth}"/>
                         </StackPanel>
-                        <TextBlock Text="防缩放过度导致 SIFT 失败的最低分辨率保障。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="防止主差分图缩放过度造成细节丢失的最低分辨率保障。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="Alpha 二值化阈值" Width="180"/>
