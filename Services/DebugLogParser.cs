@@ -19,7 +19,11 @@ namespace CIS_WebInspector.Services
         /// <param name="qrCodeText">拼接完成时识别到的结束二维码文本 (如 "ZJ_202606240060006_RT")</param>
         /// <param name="tiffImageDir">TIFF 原始排版图存放的基础目录</param>
         /// <returns>解析结果 LayoutInfo，未找到或失败返回 null</returns>
-        public static LayoutInfo ParseForQrCode(string logFilePath, string qrCodeText, string tiffImageDir)
+        public static LayoutInfo ParseForQrCode(
+            string logFilePath,
+            string qrCodeText,
+            string tiffImageDir,
+            IAppLogger logger = null)
         {
             if (string.IsNullOrWhiteSpace(logFilePath) || !File.Exists(logFilePath))
             {
@@ -119,7 +123,7 @@ namespace CIS_WebInspector.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[DebugLogParser] 解析 JSON 异常: {ex.Message}");
+                AppLog.Write(logger, $"[DebugLogParser][ERROR] 解析 JSON 异常: {ex.Message}");
             }
 
             return null;

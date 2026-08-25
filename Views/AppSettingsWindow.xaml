@@ -112,10 +112,10 @@
                         <TextBlock Text="裁切及缺陷检测结果保存目录。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="保存裁切小图" Width="180"/>
+                            <TextBlock Text="保存裁切结果图像" Width="180"/>
                             <CheckBox IsChecked="{Binding Config.SaveCroppedImages}"/>
                         </StackPanel>
-                        <TextBlock Text="是否保存未包含标记结果的纯净小图。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="图像落盘总开关；关闭后不保存零件图、缺陷图、诊断图和全局结果图，但检测与界面预览不受影响。" Style="{StaticResource ParamDescription}"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -352,7 +352,7 @@
                             <TextBlock Text="保存缺陷可视化图" Width="180"/>
                             <CheckBox IsChecked="{Binding Config.SaveDefectResultImages}"/>
                         </StackPanel>
-                        <TextBlock Text="是否将每个零件及全局大图的缺陷高亮图保存到本地硬盘。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="缺陷高亮图子开关，仅在“保存裁切结果图像”开启时生效。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="缺陷检测缩放比例" Width="180"/>
@@ -391,16 +391,16 @@
                         <TextBlock Text="飞墨、脏污等缺陷的最小物理面积；不受检测图缩放比例影响。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="边缘屏蔽厚度(外)" Width="180"/>
+                            <TextBlock Text="边缘屏蔽厚度-外 (mm)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectEdgeExclusionThick}"/>
                         </StackPanel>
-                        <TextBlock Text="外包围屏蔽范围大小，抵抗外界对准误差导致的虚假边缘。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="外包围轮廓的物理屏蔽厚度；运行时按当前检测尺度自动换算为像素，0 表示关闭。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="边缘屏蔽厚度(内)" Width="180"/>
+                            <TextBlock Text="边缘屏蔽厚度-内 (mm)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectEdgeExclusionSmall}"/>
                         </StackPanel>
-                        <TextBlock Text="内细节包围屏蔽范围大小，抵抗内部细碎图案的对准误差。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="内部细节轮廓的物理屏蔽厚度；运行时按当前检测尺度自动换算为像素，0 表示关闭。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="启用细线断裂保护" Width="180"/>
@@ -430,16 +430,16 @@
                         </Expander>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="内部缺陷形态学容差" Width="180"/>
+                            <TextBlock Text="内部形态学核直径 (mm)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectToleranceInner}"/>
                         </StackPanel>
-                        <TextBlock Text="形态学闭操作核大小，影响断墨漏印区域的粘连合并。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="CIS 前景膨胀核的物理直径，用于吸收局部对准偏差；不随检测缩放比例改变。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="外部缺陷形态学容差" Width="180"/>
+                            <TextBlock Text="外部形态学核直径 (mm)" Width="180"/>
                             <TextBox Text="{Binding Config.DefectToleranceOuter}"/>
                         </StackPanel>
-                        <TextBlock Text="形态学闭操作核大小，影响外围飞墨脏污区域的粘连合并。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="标准图案膨胀核的物理直径，用于吸收局部对准偏差；不随检测缩放比例改变。" Style="{StaticResource ParamDescription}"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -453,14 +453,14 @@
                         <TextBlock Text="立即保存当前画面的缺陷标注图及拼图结果。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal" Margin="0,16,0,16">
-                            <Button Content="📂 批量保存目录..." Command="{Binding MainVm.SelectAutoSaveDirCommand}" Width="150" Padding="8,6" Background="#FF556B2F" Foreground="White" BorderThickness="0" Cursor="Hand"/>
-                            <TextBlock Text="{Binding MainVm.AutoSaveDirectory}" Foreground="#FFDDDDDD" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            <Button Content="📂 批量保存目录..." Command="{Binding SelectAutoSaveDirCommand}" Width="150" Padding="8,6" Background="#FF556B2F" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                            <TextBlock Text="{Binding AutoSaveDirectory}" Foreground="#FFDDDDDD" Margin="12,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                         <TextBlock Text="设置自动保存的文件夹路径。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="开启自动保存 (JPG)" Width="180"/>
-                            <CheckBox IsChecked="{Binding MainVm.IsAutoSaveEnabled}"/>
+                            <CheckBox IsChecked="{Binding EnableAutoSave}"/>
                         </StackPanel>
                         <TextBlock Text="勾选后，每次检测完毕均会自动将结果图保存至上述目录。" Style="{StaticResource ParamDescription}"/>
                     </StackPanel>

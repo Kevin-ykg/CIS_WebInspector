@@ -10,6 +10,12 @@
     <AssemblyName>CIS_WebInspector</AssemblyName>
     <LangVersion>latest</LangVersion>
     <Platforms>AnyCPU;x64</Platforms>
+    <!--
+      WPF/Visual Studio 可能同时生成 obj\Debug、obj\x64 和嵌套探针的 obj。
+      SDK 默认只保证排除当前 BaseIntermediateOutputPath；显式排除任意层级的 bin/obj，
+      防止其他配置生成的 AssemblyInfo.cs 被默认源码通配符再次编译。
+    -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

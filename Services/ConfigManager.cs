@@ -8,11 +8,12 @@ namespace CIS_WebInspector.Services
     /// <summary>
     /// 应用配置的进程内单例入口。配置文件固定保存在程序目录，首次访问时延迟加载；
     /// 文件缺失或内容无效时回退到 <see cref="AppConfig"/> 默认值，避免配置故障直接阻断启动。
-    /// 设置界面通常在设备空闲时调用 <see cref="SaveConfig"/>，本类不承担运行中并发写入协调。
+    /// 设置界面通过 <see cref="ApplyAndSave"/> 提交完整编辑结果；采集与检测只使用独立快照。
     /// </summary>
     public static class ConfigManager
     {
         private const string SquareMillimeterAreaUnit = "mm2";
+        private const string MillimeterLengthUnit = "mm";
         private const double DefaultLayoutDpi = 300.0;
         private static readonly object ConfigSync = new object();
         // JsonSerializerOptions 首次使用后即按只读方式并发复用，避免每次保存重新构建元数据选项。
@@ -45,6 +46,43 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>
+        /// 创建与全局配置完全断开的深拷贝。采集和检测作业只读取该快照，
+        /// 参数窗口后续保存的新值不会在一次运行过程中改变算法条件。
+        /// </summary>
+        public static AppConfig CaptureSnapshot()
+        {
+            AppConfig current = Config;
+            lock (ConfigSync)
+            {
+                return CloneConfig(current);
+            }
+        }
+
+        /// <summary>
+        /// 在同一临界区内应用设置窗口的完整编辑结果并持久化。
+        /// 保持全局对象引用不变，避免已有 WPF 绑定失效；后台服务不直接持有该对象。
+        /// </summary>
+        public static void ApplyAndSave(AppConfig updatedConfig)
+        {
+            if (updatedConfig == null)
+                throw new ArgumentNullException(nameof(updatedConfig));
+
+            AppConfig globalConfig = Config;
+            lock (ConfigSync)
+            {
+                // 先完成深拷贝和反序列化校验，再修改全局对象，避免无效输入只更新部分字段。
+                AppConfig validatedSnapshot = CloneConfig(updatedConfig);
+                foreach (System.Reflection.PropertyInfo property in typeof(AppConfig).GetProperties())
+                {
+                    if (property.CanRead && property.CanWrite)
+                        property.SetValue(globalConfig, property.GetValue(validatedSnapshot));
+                }
+
+                WriteConfigFile(globalConfig);
+            }
+        }
+
         private static void LoadOrCreateConfig()
         {
             if (File.Exists(ConfigPath))
@@ -53,10 +91,12 @@ namespace CIS_WebInspector.Services
                 {
                     string json = File.ReadAllText(ConfigPath);
                     bool requiresLegacyAreaMigration = UsesLegacyPixelAreaThresholds(json);
+                    bool requiresLegacyLengthMigration = UsesLegacyPixelLengthThresholds(json);
                     _instance = JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions);
                     if (_instance == null)
                         _instance = new AppConfig();
 
+                    bool configMigrated = false;
                     if (requiresLegacyAreaMigration)
                     {
                         // 旧版配置用原图 px² 表示面积。升级时按 LayoutDpi 换算为 mm²，
@@ -71,24 +111,54 @@ namespace CIS_WebInspector.Services
                             3,
                             MidpointRounding.AwayFromZero);
                         _instance.DefectAreaThresholdUnit = SquareMillimeterAreaUnit;
-
-                        try
-                        {
-                            string migratedJson = JsonSerializer.Serialize(_instance, SerializerOptions);
-                            File.WriteAllText(ConfigPath, migratedJson);
-                            System.Diagnostics.Debug.WriteLine(
-                                "缺陷面积阈值已由旧版 px² 自动迁移为 mm²。");
-                        }
-                        catch (Exception ex)
-                        {
-                            // 写回失败不影响本次运行；内存中的配置已经完成正确换算。
-                            System.Diagnostics.Debug.WriteLine($"面积阈值迁移后写回失败: {ex.Message}");
-                        }
+                        configMigrated = true;
                     }
                     else
                     {
                         // 接受 mm2/mm²/mm^2 等人工写法，保存时统一规范为机器友好的 mm2。
                         _instance.DefectAreaThresholdUnit = SquareMillimeterAreaUnit;
+                    }
+
+                    if (requiresLegacyLengthMigration)
+                    {
+                        // 旧版四个长度参数保存的是 TIFF 对齐空间中的原图像素数。
+                        // 只在加载旧配置时除以 px/mm；算法入口再按当前 DPI 和检测缩放率换回像素，
+                        // 因而升级前后的形态学核及边缘屏蔽宽度保持一致。
+                        double pixelsPerMm = GetPixelsPerMm(_instance.LayoutDpi);
+                        _instance.DefectToleranceInner = ConvertLegacyPixelsToMm(
+                            _instance.DefectToleranceInner,
+                            pixelsPerMm);
+                        _instance.DefectToleranceOuter = ConvertLegacyPixelsToMm(
+                            _instance.DefectToleranceOuter,
+                            pixelsPerMm);
+                        _instance.DefectEdgeExclusionThick = ConvertLegacyPixelsToMm(
+                            _instance.DefectEdgeExclusionThick,
+                            pixelsPerMm);
+                        _instance.DefectEdgeExclusionSmall = ConvertLegacyPixelsToMm(
+                            _instance.DefectEdgeExclusionSmall,
+                            pixelsPerMm);
+                        _instance.DefectLengthThresholdUnit = MillimeterLengthUnit;
+                        configMigrated = true;
+                    }
+                    else
+                    {
+                        _instance.DefectLengthThresholdUnit = MillimeterLengthUnit;
+                    }
+
+                    if (configMigrated)
+                    {
+                        try
+                        {
+                            string migratedJson = JsonSerializer.Serialize(_instance, SerializerOptions);
+                            File.WriteAllText(ConfigPath, migratedJson);
+                            System.Diagnostics.Debug.WriteLine(
+                                "缺陷面积/长度参数已由旧版像素单位自动迁移为毫米单位。");
+                        }
+                        catch (Exception ex)
+                        {
+                            // 写回失败不影响本次运行；内存中的配置已经完成正确换算。
+                            System.Diagnostics.Debug.WriteLine($"缺陷参数迁移后写回失败: {ex.Message}");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -142,6 +212,45 @@ namespace CIS_WebInspector.Services
             }
         }
 
+        /// <summary>
+        /// 旧配置没有长度单位字段，四个形态学/屏蔽参数的数值语义为原图 px；
+        /// 新版明确保存 mm，确保不同检测缩放率下物理含义一致。
+        /// </summary>
+        private static bool UsesLegacyPixelLengthThresholds(string json)
+        {
+            using (JsonDocument document = JsonDocument.Parse(
+                       json,
+                       new JsonDocumentOptions
+                       {
+                           CommentHandling = JsonCommentHandling.Skip,
+                           AllowTrailingCommas = true
+                       }))
+            {
+                if (!document.RootElement.TryGetProperty(
+                        nameof(AppConfig.DefectLengthThresholdUnit),
+                        out JsonElement unitElement))
+                {
+                    return true;
+                }
+
+                string unit = unitElement.ValueKind == JsonValueKind.String
+                    ? unitElement.GetString()
+                    : null;
+                return !string.Equals(unit, MillimeterLengthUnit, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        private static double ConvertLegacyPixelsToMm(double pixels, double pixelsPerMm)
+        {
+            if (pixels <= 0 || double.IsNaN(pixels) || double.IsInfinity(pixels))
+                return 0;
+
+            return Math.Round(
+                pixels / pixelsPerMm,
+                3,
+                MidpointRounding.AwayFromZero);
+        }
+
         private static double GetPixelsPerMm(double layoutDpi)
         {
             double effectiveDpi = layoutDpi > 0 && !double.IsNaN(layoutDpi) && !double.IsInfinity(layoutDpi)
@@ -150,25 +259,17 @@ namespace CIS_WebInspector.Services
             return effectiveDpi / 25.4;
         }
 
-        /// <summary>把当前内存配置写回 app_config.json；失败仅记录调试信息。</summary>
-        public static void SaveConfig()
+        private static AppConfig CloneConfig(AppConfig source)
         {
-            if (_instance == null) return;
-            
-            try
-            {
-                // 保存失败只记录诊断信息，不替换当前内存配置，避免运行中的服务突然失去参数。
-                lock (ConfigSync)
-                {
-                    string json = JsonSerializer.Serialize(_instance, SerializerOptions);
-                    File.WriteAllText(ConfigPath, json);
-                }
-                System.Diagnostics.Debug.WriteLine("配置已成功保存到本地。");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"保存配置失败: {ex.Message}");
-            }
+            string json = JsonSerializer.Serialize(source, SerializerOptions);
+            return JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions) ?? new AppConfig();
         }
+
+        private static void WriteConfigFile(AppConfig config)
+        {
+            string json = JsonSerializer.Serialize(config, SerializerOptions);
+            File.WriteAllText(ConfigPath, json);
+        }
+
     }
 }

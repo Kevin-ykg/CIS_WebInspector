@@ -42,11 +42,12 @@ namespace CIS_WebInspector.Services
         /// <returns>每个零件的缺陷检测结果列表</returns>
         public static (List<PatchDefectResult> Results, string GlobalImagePath, byte[] GlobalImageBytes) CropAndSave(Mat cisWarped, Mat tiffMat, Mat alphaMask,
             List<PartLocation> parts, string outputDir, double scale, double originXmm, double originYmm,
-            int cisBaseThresh, AppConfig config, Action<string> performanceLog = null)
+            int cisBaseThresh, AppConfig config, IAppLogger logger = null)
         {
+            logger = logger ?? NullAppLogger.Instance;
 
-            // 每个检测批次使用独立时间目录，避免覆盖上一批零件图和性能基线。
-            if (!Directory.Exists(outputDir))
+            // 关闭图像总开关时不创建空的时间戳目录；跨批次性能数据写入父目录的汇总文件。
+            if (config.SaveCroppedImages && !Directory.Exists(outputDir))
             {
                 Directory.CreateDirectory(outputDir);
             }
@@ -146,11 +147,27 @@ namespace CIS_WebInspector.Services
                                         if (config.SaveCroppedImages)
                                         {
                                             string alphaName = Path.Combine(outputDir, $"{part.HotInkTaskID}_alpha.png");
-                                            Cv2.ImWrite(alphaName, alphaPatch);
+                                            // “裁切结果”中的 Alpha 图用于核对缺陷模板，应直接展示实际参与
+                                            // 缺陷判断的二值语义。这里在原始裁切尺寸上应用同一个阈值；
+                                            // 使用独立 Mat，不能原地修改共享的 flippedAlpha ROI，否则会污染
+                                            // 后续并行零件检测所读取的 Alpha 模板。
+                                            using (var alphaBinaryForSave = new Mat())
+                                            {
+                                                Cv2.Threshold(
+                                                    alphaPatch,
+                                                    alphaBinaryForSave,
+                                                    config.DefectAlphaBinaryThresh,
+                                                    255,
+                                                    ThresholdTypes.Binary);
+                                                Cv2.ImWrite(alphaName, alphaBinaryForSave);
+                                            }
                                         }
 
-                                        string defectPath = config.SaveDefectResultImages
+                                        string defectPath = config.SaveCroppedImages && config.SaveDefectResultImages
                                             ? Path.Combine(outputDir, $"{part.HotInkTaskID}_defect.jpg")
+                                            : null;
+                                        string edgeExclusionPath = config.SaveCroppedImages
+                                            ? Path.Combine(outputDir, $"{part.HotInkTaskID}_edge_exclusion.png")
                                             : null;
 
                                         PatchDefectResult defectResult = PatchDefectDetector.Detect(
@@ -160,8 +177,10 @@ namespace CIS_WebInspector.Services
                                             config,
                                             defectPath,
                                             cisName,
+                                            edgeExclusionPath,
                                             worker,
-                                            part.HotInkTaskID);
+                                            part.HotInkTaskID,
+                                            logger);
                                         defectResult.PartId = part.HotInkTaskID;
                                         defectResult.GlobalRoi = roi;
                                         resultsBag.Add(defectResult);
@@ -173,7 +192,19 @@ namespace CIS_WebInspector.Services
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"裁切/检测 {part.HotInkTaskID} 异常: {ex.Message}");
+                            // 工程异常不能从并行结果中静默消失，也不能冒充产品缺陷。
+                            // 返回独立状态后，批次汇总会把它列为“处理异常”，等待复检或排障。
+                            resultsBag.Add(new PatchDefectResult
+                            {
+                                PartId = part.HotInkTaskID,
+                                GlobalRoi = roi,
+                                ProcessingStatus = PatchProcessingStatus.ProcessingError,
+                                ProcessingError = ex.Message,
+                                IsPass = false
+                            });
+                            AppLog.Write(
+                                logger,
+                                $"[零件处理][ERROR] {part.HotInkTaskID} 裁切/检测异常: {ex.Message}");
                         }
                         finally
                         {
@@ -199,15 +230,7 @@ namespace CIS_WebInspector.Services
                     $"{Percentile(durations, 0.95)}/{Percentile(durations, 1.00)}ms，" +
                     $"模板 {templateCache?.Count ?? 0}，缓存命中 {cacheHits}/{cacheRequests} ({cacheHitRate:P0})。";
 
-                Console.WriteLine(summary);
-                try
-                {
-                    performanceLog?.Invoke(summary);
-                }
-                catch
-                {
-                    // 性能日志不能影响检测主流程。
-                }
+                AppLog.Write(logger, summary);
 
                     // 性能 CSV 用于比较同一设备/数据集上的趋势，不参与 Pass/Fail，也不是验收阈值。
                     TryAppendPerformanceBaseline(
@@ -219,7 +242,8 @@ namespace CIS_WebInspector.Services
                         durations,
                         templateCache,
                         managedBytesAfter - managedBytesBefore,
-                        privateBytesAfter - privateBytesBefore);
+                        privateBytesAfter - privateBytesBefore,
+                        logger);
                 }
             finally
             {
@@ -228,10 +252,16 @@ namespace CIS_WebInspector.Services
 
             // 并行汇总顺序不稳定，但每个结果都带 PartId 和 GlobalRoi，不依赖列表下标关联零件。
             var results = new List<PatchDefectResult>(resultsBag);
-            Console.WriteLine($"[PatchCropper] 共成功处理 {count} 个零件，检测完成 {results.Count} 个。");
+            int processingErrors = results.Count(result => result.HasProcessingError);
+            AppLog.Write(
+                logger,
+                $"[PatchCropper] 共成功处理 {count} 个零件，返回 {results.Count} 个结果，" +
+                $"其中工程异常 {processingErrors} 个。");
 
             // --- 全局缺陷可视化保存与显示 ---
             // 下列缩放和绘框仅服务于 UI/报告，不回流到检测算法，避免预览分辨率影响判定。
+            // UI 仍使用 TIFF + CIS 的左右对照图；磁盘则分别保存 TIFF 基准图和带标注 CIS 图，
+            // 方便直接打开、核对或用于报告，不必再从横向合成图中人工裁切。
             byte[] globalImageBytes = null;
             string combinedPath = null;
             try
@@ -268,7 +298,10 @@ namespace CIS_WebInspector.Services
                             (int)(res.GlobalRoi.Y * displayScale),
                             (int)(res.GlobalRoi.Width * displayScale),
                             (int)(res.GlobalRoi.Height * displayScale));
-                        Scalar partColor = res.IsPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255);
+                        // 工程异常使用黄色，与产品 NG 的红色分开，避免全局图把算法失败误报成缺陷。
+                        Scalar partColor = res.HasProcessingError
+                            ? new Scalar(0, 255, 255)
+                            : (res.IsPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255));
                         Cv2.Rectangle(cisCanvas, scaledRoi, partColor, partThick);
 
                         foreach (Rect rect in res.InnerRects)
@@ -318,23 +351,34 @@ namespace CIS_WebInspector.Services
 
                     if (tiffCanvas.Channels() == 3 && cisCanvas.Channels() == 3)
                     {
+                        if (config.SaveCroppedImages && config.SaveDefectResultImages)
+                        {
+                            string tiffReferencePath = Path.Combine(outputDir, "GlobalTiffReference.jpg");
+                            string cisDefectPath = Path.Combine(outputDir, "GlobalCisDefectResult.jpg");
+
+                            Cv2.ImWrite(tiffReferencePath, tiffCanvas, GlobalPreviewJpegParameters);
+                            Cv2.ImWrite(cisDefectPath, cisCanvas, GlobalPreviewJpegParameters);
+
+                            // 兼容现有返回值：全局结果路径指向最有诊断价值的带标注 CIS 图。
+                            combinedPath = cisDefectPath;
+                            AppLog.Write(
+                                logger,
+                                $"[PatchCropper] 全局结果已分开保存：TIFF={tiffReferencePath}；CIS={cisDefectPath}");
+                        }
+
+                        // 左右合成图只编码到内存，继续供主界面“全局缺陷图”页签对照显示，
+                        // 不再写入 GlobalDefectResult.jpg，避免磁盘结果含义不清。
                         using (var combined = new Mat())
                         {
                             Cv2.HConcat(new[] { tiffCanvas, cisCanvas }, combined);
                             Cv2.ImEncode(".jpg", combined, out globalImageBytes, GlobalPreviewJpegParameters);
-
-                            if (config.SaveDefectResultImages)
-                            {
-                                combinedPath = Path.Combine(outputDir, "GlobalDefectResult.jpg");
-                                Cv2.ImWrite(combinedPath, combined, GlobalPreviewJpegParameters);
-                            }
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PatchCropper] 生成全局缺陷图异常: {ex.Message}");
+                AppLog.Write(logger, $"[PatchCropper][ERROR] 生成全局缺陷图异常: {ex.Message}");
             }
 
                 return (results, combinedPath, globalImageBytes);
@@ -373,7 +417,8 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>
-        /// 追加本批次和跨批次性能 CSV。任何文件错误都只记录日志，不影响已经完成的缺陷结果。
+        /// 追加跨批次性能 CSV。每批次的耗时明细仍写入运行日志，不再在时间戳目录重复保存
+        /// PerformanceBaseline.csv。任何文件错误都只记录日志，不影响已经完成的缺陷结果。
         /// </summary>
         private static void TryAppendPerformanceBaseline(
             string outputDir,
@@ -384,15 +429,19 @@ namespace CIS_WebInspector.Services
             long[] sortedDurations,
             PatchSiftTemplateCache templateCache,
             long managedBytesDelta,
-            long privateBytesDelta)
+            long privateBytesDelta,
+            IAppLogger logger)
         {
             try
             {
-                string batchPath = Path.Combine(outputDir, "PerformanceBaseline.csv");
                 string parentDirectory = Directory.GetParent(outputDir)?.FullName;
                 string aggregatePath = string.IsNullOrWhiteSpace(parentDirectory)
                     ? null
                     : Path.Combine(parentDirectory, "PerformanceBaselines.csv");
+                if (string.IsNullOrWhiteSpace(aggregatePath))
+                    return;
+
+                Directory.CreateDirectory(parentDirectory);
                 string header =
                     "Timestamp,Parts,Results,ElapsedMs,Parallelism,P50Ms,P95Ms,MaxMs," +
                     "CacheUnique,CacheHits,CacheMisses,CacheExactComparisons,CacheKeyMs,CacheCompareMs," +
@@ -419,17 +468,12 @@ namespace CIS_WebInspector.Services
 
                 lock (PerformanceFileSync)
                 {
-                    AppendPerformanceRow(batchPath, header, row);
-                    if (!string.IsNullOrWhiteSpace(aggregatePath) &&
-                        !string.Equals(batchPath, aggregatePath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        AppendPerformanceRow(aggregatePath, header, row);
-                    }
+                    AppendPerformanceRow(aggregatePath, header, row);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PatchCropper] 写入性能基线失败: {ex.Message}");
+                AppLog.Write(logger, $"[PatchCropper][WARN] 写入性能基线失败: {ex.Message}");
             }
         }
 

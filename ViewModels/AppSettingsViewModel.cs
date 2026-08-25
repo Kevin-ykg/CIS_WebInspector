@@ -16,6 +16,8 @@ namespace CIS_WebInspector.ViewModels
         public string DebugLogPath { get => Config.DebugLogPath; set { Config.DebugLogPath = value; OnPropertyChanged(nameof(DebugLogPath)); } }
         public string TiffImageDir { get => Config.TiffImageDir; set { Config.TiffImageDir = value; OnPropertyChanged(nameof(TiffImageDir)); } }
         public string CroppedOutputDir { get => Config.CroppedOutputDir; set { Config.CroppedOutputDir = value; OnPropertyChanged(nameof(CroppedOutputDir)); } }
+        public bool EnableAutoSave { get => Config.EnableAutoSave; set { Config.EnableAutoSave = value; OnPropertyChanged(nameof(EnableAutoSave)); } }
+        public string AutoSaveDirectory { get => Config.AutoSaveDirectory ?? string.Empty; set { Config.AutoSaveDirectory = value ?? string.Empty; OnPropertyChanged(nameof(AutoSaveDirectory)); } }
 
         public int DownscaleFactor
         {
@@ -59,6 +61,7 @@ namespace CIS_WebInspector.ViewModels
         public RelayCommand SelectDebugLogCommand { get; }
         public RelayCommand SelectTiffDirCommand { get; }
         public RelayCommand SelectCroppedDirCommand { get; }
+        public RelayCommand SelectAutoSaveDirCommand { get; }
 
         public MainViewModel MainVm { get; }
 
@@ -69,9 +72,8 @@ namespace CIS_WebInspector.ViewModels
             _window = window;
             MainVm = mainVm;
 
-            // JSON 深拷贝把编辑会话与全局单例隔离；这是“取消不生效”的关键边界。
-            var json = System.Text.Json.JsonSerializer.Serialize(ConfigManager.Config);
-            Config = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
+            // 编辑窗口持有独立快照；取消时直接丢弃，保存时再由 ConfigManager 原子应用。
+            Config = ConfigManager.CaptureSnapshot();
 
             SaveCommand = new RelayCommand(ExecuteSave);
             CancelCommand = new RelayCommand(ExecuteCancel);
@@ -79,6 +81,7 @@ namespace CIS_WebInspector.ViewModels
             SelectDebugLogCommand = new RelayCommand(ExecuteSelectDebugLog);
             SelectTiffDirCommand = new RelayCommand(ExecuteSelectTiffDir);
             SelectCroppedDirCommand = new RelayCommand(ExecuteSelectCroppedDir);
+            SelectAutoSaveDirCommand = new RelayCommand(ExecuteSelectAutoSaveDir);
         }
 
         private void ExecuteSelectDebugLog(object _)
@@ -128,26 +131,32 @@ namespace CIS_WebInspector.ViewModels
             }
         }
 
+        private void ExecuteSelectAutoSaveDir(object _)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择单帧图像批量保存文件夹",
+                Filter = "文件夹|*.none",
+                CheckFileExists = false,
+                CheckPathExists = true,
+                FileName = "选择此文件夹"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                AutoSaveDirectory = System.IO.Path.GetDirectoryName(dialog.FileName);
+            }
+        }
+
         private void ExecuteSave(object _)
         {
             try
             {
-                // 保持 ConfigManager.Config 对象引用不变，逐属性复制，避免已持有该引用的界面失效。
-                var json = System.Text.Json.JsonSerializer.Serialize(Config);
-                var globalConfig = ConfigManager.Config;
+                ConfigManager.ApplyAndSave(Config);
 
-                // 先反序列化得到类型完整的快照，再复制所有可写配置项。
-                var updatedConfig = System.Text.Json.JsonSerializer.Deserialize<AppConfig>(json);
-
-                foreach (var prop in typeof(AppConfig).GetProperties())
-                {
-                    if (prop.CanWrite)
-                    {
-                        prop.SetValue(globalConfig, prop.GetValue(updatedConfig));
-                    }
-                }
-
-                ConfigManager.SaveConfig();
+                // 参数窗口编辑的是独立配置副本；保存成功后同步主界面运行状态，
+                // 使开关和目录无需重启即可立即生效。
+                MainVm.IsAutoSaveEnabled = Config.EnableAutoSave;
+                MainVm.AutoSaveDirectory = Config.AutoSaveDirectory ?? string.Empty;
                 _window.DialogResult = true;
                 _window.Close();
             }

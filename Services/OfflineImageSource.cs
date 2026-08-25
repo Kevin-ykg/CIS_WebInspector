@@ -29,6 +29,16 @@ namespace CIS_WebInspector.Services
         private int _resumeFromIndex = -1;
         private Timer _timer;
         private const int OfflineFrameIntervalMilliseconds = 10;
+        private readonly int _downscaleFactor;
+
+        public OfflineImageSource(AppConfig configSnapshot)
+        {
+            if (configSnapshot == null)
+                throw new ArgumentNullException(nameof(configSnapshot));
+
+            // 同一轮离线回放始终使用同一处理尺度，确保恢复采集前后帧几何一致。
+            _downscaleFactor = Math.Max(1, configSnapshot.DownscaleFactor);
+        }
 
         /// <summary>
         /// 初始化离线数据源。
@@ -162,9 +172,8 @@ namespace CIS_WebInspector.Services
 
                     using (var mat = new OpenCvSharp.Mat())
                     {
-                        int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
-                        int resizedWidth = Math.Max(1, originalMat.Width / df);
-                        int resizedHeight = Math.Max(1, originalMat.Height / df);
+                        int resizedWidth = Math.Max(1, originalMat.Width / _downscaleFactor);
+                        int resizedHeight = Math.Max(1, originalMat.Height / _downscaleFactor);
                         OpenCvSharp.Cv2.Resize(originalMat, mat, new OpenCvSharp.Size(resizedWidth, resizedHeight), 0, 0, OpenCvSharp.InterpolationFlags.Area);
 
                         int lineBytes = BitsPerPixel == 8 ? mat.Width : 3 * mat.Width;

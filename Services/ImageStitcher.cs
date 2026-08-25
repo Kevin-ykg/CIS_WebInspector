@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using CIS_WebInspector.Models;
 
 namespace CIS_WebInspector.Services
@@ -34,12 +35,15 @@ namespace CIS_WebInspector.Services
 
         // ---- 配置参数 ----
         /// <summary>QR 中心 Y 往下的固定偏移行数（自动换算后）</summary>
-        public int QrOffsetRows => ConfigManager.Config.BaseQrOffsetRows /
-            Math.Max(1, ConfigManager.Config.DownscaleFactor);
+        public int QrOffsetRows => _qrOffsetRows;
 
         /// <summary>重叠检测区域行数（自动换算后）</summary>
-        public int OverlapRows => ConfigManager.Config.BaseOverlapRows /
-            Math.Max(1, ConfigManager.Config.DownscaleFactor);
+        public int OverlapRows => _overlapRows;
+
+        private int _downscaleFactor = 1;
+        private int _qrOffsetRows;
+        private int _overlapRows;
+        private int _maxFramesWithoutQr = 10;
 
         // ---- 状态机 ----
         private enum State { Scanning, Collecting }
@@ -85,13 +89,29 @@ namespace CIS_WebInspector.Services
             return initialized;
         }
 
-        /// <summary>设置图像参数</summary>
-        public void Configure(int width, int height, int stride, int bitsPerPixel)
+        /// <summary>
+        /// 设置帧几何和本轮二维码/拼接配置。所有值复制到内部字段，
+        /// 单线程状态机运行期间不再读取可变的全局配置。
+        /// </summary>
+        public void Configure(
+            int width,
+            int height,
+            int stride,
+            int bitsPerPixel,
+            AppConfig configSnapshot)
         {
+            if (configSnapshot == null)
+                throw new ArgumentNullException(nameof(configSnapshot));
+
             _width = width;
             _height = height;
             _stride = stride;
             _bpp = bitsPerPixel;
+            _downscaleFactor = Math.Max(1, configSnapshot.DownscaleFactor);
+            _qrOffsetRows = configSnapshot.BaseQrOffsetRows / _downscaleFactor;
+            _overlapRows = configSnapshot.BaseOverlapRows / _downscaleFactor;
+            _maxFramesWithoutQr = configSnapshot.MaxFramesWithoutQr;
+            _qrDetector.Configure(configSnapshot);
         }
 
         /// <summary>重置状态机（新一轮采集前调用）</summary>
@@ -144,7 +164,13 @@ namespace CIS_WebInspector.Services
             int bpp)
         {
             if (_width != width || _height != height || _stride != stride || _bpp != bpp)
-                Configure(width, height, stride, bpp);
+            {
+                // 保留原有的防御性几何同步；仅更新帧尺寸，不改变本轮固定的二维码/拼接参数。
+                _width = width;
+                _height = height;
+                _stride = stride;
+                _bpp = bpp;
+            }
 
             byte[] frameData = dataArray;
 
@@ -157,9 +183,9 @@ namespace CIS_WebInspector.Services
             int rowsToKeepFromPrevTail = 0;     // 段开始时，需要从上一帧抢捞的行数
             bool skipDetection = false;  // 延迟切割命中时跳过本帧检测
 
-            int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
+            int downscaleFactor = _downscaleFactor;
 
-            Log($"[ProcessFrame] Start processing frame, _globalProcessedRows={_globalProcessedRows * df} (Original)");
+            Log($"[ProcessFrame] Start processing frame, _globalProcessedRows={_globalProcessedRows * downscaleFactor} (Original)");
 
             // ======== 延迟切割执行（上一帧遗留） ========
             if (_hasDeferredCut)
@@ -167,7 +193,7 @@ namespace CIS_WebInspector.Services
                 if (_deferredCutRemaining <= height)
                 {
                     // 延迟切割点落在当前帧内，执行切割
-                    Log($"  [Deferred] Executing deferred cut at row {_deferredCutRemaining * df} (Original) in current frame");
+                    Log($"  [Deferred] Executing deferred cut at row {_deferredCutRemaining * downscaleFactor} (Original) in current frame");
                     qrResult = _deferredQrResult;
                     qrGlobalY = _deferredQrGlobalY;
                     cutRowInCurr = _deferredCutRemaining;
@@ -179,7 +205,7 @@ namespace CIS_WebInspector.Services
                 else
                 {
                     // 切割点仍然超出当前帧（极端情况），继续延迟，整帧入队
-                    Log($"  [Deferred] Still exceeds frame! remaining={_deferredCutRemaining * df} > height={height * df} (Original). Continuing deferral.");
+                    Log($"  [Deferred] Still exceeds frame! remaining={_deferredCutRemaining * downscaleFactor} > height={height * downscaleFactor} (Original). Continuing deferral.");
                     _deferredCutRemaining -= height;
                     // 根据状态机，如果在 Collecting 状态就把整帧数据入队
                     if (_state == State.Collecting)
@@ -195,9 +221,11 @@ namespace CIS_WebInspector.Services
             // 检测1: 当前帧整体（优先检测，覆盖 QR 完全在帧内部的常见情况）
             if (!skipDetection)
             {
+                var currentDetectWatch = Stopwatch.StartNew();
                 var fResult = _qrDetector.Detect(frameData, _width, height, _stride, _bpp);
+                currentDetectWatch.Stop();
                 string currentQrDiagnostic = fResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
-                Log($"  [Current] Detect: Found={fResult.Found}, X={fResult.CenterX * df}, Y={fResult.CenterY * df} (Original), Width={fResult.PixelWidth * df:F1}, Height={fResult.PixelHeight * df:F1} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
+                Log($"  [Current] Detect: Found={fResult.Found}, Cost={currentDetectWatch.Elapsed.TotalMilliseconds:F1}ms, Attempts={_qrDetector.LastDecodeAttemptCount}, X={fResult.CenterX * downscaleFactor}, Y={fResult.CenterY * downscaleFactor} (Original), Width={fResult.PixelWidth * downscaleFactor:F1}, Height={fResult.PixelHeight * downscaleFactor:F1} (Original), Text={fResult.DecodedText}, Diagnostic={currentQrDiagnostic}");
                 if (fResult.Found)
                 {
                     long globalY = _globalProcessedRows + fResult.CenterY;
@@ -210,7 +238,7 @@ namespace CIS_WebInspector.Services
                         // 我们在这里拒绝采纳，它将在下一帧的重叠区域被 Detection 2 捕获并切割。
                         if (cutRow <= height)
                         {
-                            Log($"  [Current] Accepted! cutRow={cutRow * df} (Original)");
+                            Log($"  [Current] Accepted! cutRow={cutRow * downscaleFactor} (Original)");
                             qrResult = fResult;
                             qrGlobalY = globalY;
                             _lastQrGlobalY = globalY;
@@ -219,7 +247,7 @@ namespace CIS_WebInspector.Services
                         else
                         {
                             // 切割点超出当前帧，启动延迟切割
-                            Log($"  [Current] Deferred! cutRow={cutRow * df} > height={height * df} (Original). Deferring to next frame.");
+                            Log($"  [Current] Deferred! cutRow={cutRow * downscaleFactor} > height={height * downscaleFactor} (Original). Deferring to next frame.");
                             _hasDeferredCut = true;
                             _deferredCutRemaining = cutRow - height;
                             _deferredQrResult = fResult;
@@ -243,14 +271,16 @@ namespace CIS_WebInspector.Services
                 Buffer.BlockCopy(frameData, 0, _overlapBuffer, _stride * _prevTailRows, _stride * currTopRows);
 
                 // 跨帧组合与普通单帧进入同一个检测器；形变增强由定位框几何证据统一触发。
+                var overlapDetectWatch = Stopwatch.StartNew();
                 var ovResult = _qrDetector.Detect(
                     _overlapBuffer,
                     _width,
                     overlapH,
                     _stride,
                     _bpp);
+                overlapDetectWatch.Stop();
                 string overlapQrDiagnostic = ovResult.Found ? _qrDetector.LastDecodeStrategy : _qrDetector.LastError;
-                Log($"  [Overlap] Detect: Found={ovResult.Found}, X={ovResult.CenterX * df}, Y={ovResult.CenterY * df} (Original), Width={ovResult.PixelWidth * df:F1}, Height={ovResult.PixelHeight * df:F1} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
+                Log($"  [Overlap] Detect: Found={ovResult.Found}, Cost={overlapDetectWatch.Elapsed.TotalMilliseconds:F1}ms, Attempts={_qrDetector.LastDecodeAttemptCount}, X={ovResult.CenterX * downscaleFactor}, Y={ovResult.CenterY * downscaleFactor} (Original), Width={ovResult.PixelWidth * downscaleFactor:F1}, Height={ovResult.PixelHeight * downscaleFactor:F1} (Original), Text={ovResult.DecodedText}, Diagnostic={overlapQrDiagnostic}");
                 if (ovResult.Found)
                 {
                     long globalY = _globalProcessedRows - _prevTailRows + ovResult.CenterY;
@@ -261,7 +291,7 @@ namespace CIS_WebInspector.Services
                         // 确保切割点不会超出当前拼接的视野
                         if (cutRowInOverlap <= overlapH)
                         {
-                            Log($"  [Overlap] Accepted! cutRowInOverlap={cutRowInOverlap * df} (Original)");
+                            Log($"  [Overlap] Accepted! cutRowInOverlap={cutRowInOverlap * downscaleFactor} (Original)");
                             qrResult = ovResult;
                             qrGlobalY = globalY;
                             _lastQrGlobalY = globalY;
@@ -282,7 +312,7 @@ namespace CIS_WebInspector.Services
                         else
                         {
                             // 切割点超出重叠区域，启动延迟切割
-                            Log($"  [Overlap] Deferred! cutRowInOverlap={cutRowInOverlap * df} > overlapH={overlapH * df} (Original). Deferring to next frame.");
+                            Log($"  [Overlap] Deferred! cutRowInOverlap={cutRowInOverlap * downscaleFactor} > overlapH={overlapH * downscaleFactor} (Original). Deferring to next frame.");
                             _hasDeferredCut = true;
                             _deferredCutRemaining = cutRowInOverlap - overlapH;
                             _deferredQrResult = ovResult;
@@ -304,7 +334,7 @@ namespace CIS_WebInspector.Services
             else
             {
                 _framesSinceLastQr++;
-                if (_framesSinceLastQr >= ConfigManager.Config.MaxFramesWithoutQr)
+                if (_framesSinceLastQr >= _maxFramesWithoutQr)
                 {
                     int missingFrameCount = _framesSinceLastQr;
                     bool abandonedCollectingSegment = _state == State.Collecting;

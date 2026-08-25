@@ -48,6 +48,17 @@ namespace CIS_WebInspector.Models
         /// </summary>
         public int ImageSaveQueueCapacity { get; set; } = 4;
 
+        /// <summary>
+        /// 是否自动保存采集到的单帧图像和拼接结果。
+        /// 该值由“参数设置 → 图像保存 → 开启自动保存”维护，并随 app_config.json 持久化。
+        /// </summary>
+        public bool EnableAutoSave { get; set; } = false;
+
+        /// <summary>
+        /// 单帧图像自动保存目录。与 EnableAutoSave 一起持久化，避免软件重启后丢失保存位置。
+        /// </summary>
+        public string AutoSaveDirectory { get; set; } = string.Empty;
+
         // ==========================================
         // 2. 图像拼接核心参数 (相对于原图坐标)
         // ==========================================
@@ -104,7 +115,10 @@ namespace CIS_WebInspector.Models
         /// <summary>裁切小图输出目录</summary>
         public string CroppedOutputDir { get; set; } = "裁切结果";
 
-        /// <summary>是否保存裁切出的小图</summary>
+        /// <summary>
+        /// “裁切结果”图像落盘总开关。关闭后仍正常执行检测并生成界面内存预览，
+        /// 但不保存零件图、缺陷图、白墨/Mark 诊断图及全局结果图。
+        /// </summary>
         public bool SaveCroppedImages { get; set; } = true;
 
         /// <summary>排版坐标系物理 DPI（readlog.cpp 中的 scale = 300/25.4）</summary>
@@ -230,19 +244,19 @@ namespace CIS_WebInspector.Models
         public int DefectAlphaBinaryThresh { get; set; } = 60;
 
         /// <summary>CIS 实拍图二值化阈值偏移量（将与 Mark 点检测到的 optimal_thresh 相加）</summary>
-        public int DefectCisThreshOffset { get; set; } = 10;
+        public int DefectCisThreshOffset { get; set; } = -20;
 
         /// <summary>
         /// 内部缺陷面积判定阈值（断墨、漏印），单位 mm²。
         /// 默认 1.434 mm² 等价于 300 DPI 下原有的 200 px²。
         /// </summary>
-        public double DefectAreaThreshInner { get; set; } = 2;
+        public double DefectAreaThreshInner { get; set; } = 4;
 
         /// <summary>
         /// 外部缺陷面积判定阈值（飞墨、脏污），单位 mm²。
         /// 默认 2.151 mm² 等价于 300 DPI 下原有的 300 px²。
         /// </summary>
-        public double DefectAreaThreshOuter { get; set; } = 2;
+        public double DefectAreaThreshOuter { get; set; } = 4;
 
         /// <summary>
         /// 面积阈值的持久化单位标识。ConfigManager 用它识别并迁移旧版 px² 配置。
@@ -250,17 +264,35 @@ namespace CIS_WebInspector.Models
         /// </summary>
         public string DefectAreaThresholdUnit { get; set; } = "mm2";
 
-        /// <summary>内部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L565: TOLERANCE_inner=5）</summary>
-        public int DefectToleranceInner { get; set; } = 6;
+        /// <summary>
+        /// 内部缺陷形态学核直径，单位 mm。运行时按 LayoutDpi 和实际检测缩放比例换算为像素；
+        /// 默认 0.508 mm 等价于 300 DPI 下原有的 6 px。
+        /// </summary>
+        public double DefectToleranceInner { get; set; } = 2;
 
-        /// <summary>外部缺陷形态学容差，与缩放比例相关（像素数，align_diff.py L566: TOLERANCE_outer=80）</summary>
-        public int DefectToleranceOuter { get; set; } = 12;
+        /// <summary>
+        /// 外部缺陷形态学核直径，单位 mm。运行时按 LayoutDpi 和实际检测缩放比例换算为像素；
+        /// 默认 1.016 mm 等价于 300 DPI 下原有的 12 px。
+        /// </summary>
+        public double DefectToleranceOuter { get; set; } = 3;
 
-        /// <summary>边缘屏蔽轮廓厚度-外包围，与缩放比例相关（align_diff.py L585）</summary>
-        public int DefectEdgeExclusionThick { get; set; } = 6;
+        /// <summary>
+        /// 外包围轮廓的屏蔽厚度，单位 mm；默认 0.508 mm 等价于 300 DPI 下原有的 6 px。
+        /// 配置为 0 时保持关闭该层屏蔽的语义。
+        /// </summary>
+        public double DefectEdgeExclusionThick { get; set; } = 2;
 
-        /// <summary>边缘屏蔽轮廓厚度-内包围，与缩放比例相关（align_diff.py L591）</summary>
-        public int DefectEdgeExclusionSmall { get; set; } = 6;
+        /// <summary>
+        /// 内部细节轮廓的屏蔽厚度，单位 mm；默认 0.508 mm 等价于 300 DPI 下原有的 6 px。
+        /// 配置为 0 时保持关闭该层屏蔽的语义。
+        /// </summary>
+        public double DefectEdgeExclusionSmall { get; set; } = 2;
+
+        /// <summary>
+        /// 上述形态学核和边缘屏蔽长度的持久化单位标识。
+        /// ConfigManager 用它识别旧版 px 配置并执行一次性迁移，不作为用户参数展示。
+        /// </summary>
+        public string DefectLengthThresholdUnit { get; set; } = "mm";
 
         /// <summary>
         /// 是否在轮廓屏蔽区内额外检测细线断裂。
@@ -286,7 +318,9 @@ namespace CIS_WebInspector.Models
         /// </summary>
         public double FineLineMaxWidthMm { get; set; } = 5;
 
-        /// <summary>是否保存缺陷检测可视化结果图</summary>
+        /// <summary>
+        /// 是否保存缺陷检测可视化结果图；仅在 SaveCroppedImages 总开关开启时生效。
+        /// </summary>
         public bool SaveDefectResultImages { get; set; } = true;
     }
 }

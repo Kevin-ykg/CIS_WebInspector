@@ -34,13 +34,25 @@ namespace CIS_WebInspector.Services
         private int _bufferSize;
         private bool _useUserBuffer;
 
+        // 采集参数在打开设备前固定；SDK 回调线程不再读取可被设置窗口修改的全局对象。
+        private readonly int _bufferCount;
+        private readonly int _downscaleFactor;
+
         // ---- 非托管内存池 ----
-        private int BufferCount => Math.Max(1, ConfigManager.Config.BufferCount);
         private readonly List<IntPtr> _imgBuffers = new List<IntPtr>();
         private int _imgIndex;
 
         // ---- 回调句柄（防止GC回收委托） ----
         private VolansEventHandler _callbackImageReady;
+
+        public CisCameraEngine(AppConfig configSnapshot)
+        {
+            if (configSnapshot == null)
+                throw new ArgumentNullException(nameof(configSnapshot));
+
+            _bufferCount = Math.Max(1, configSnapshot.BufferCount);
+            _downscaleFactor = Math.Max(1, configSnapshot.DownscaleFactor);
+        }
 
         /// <summary>
         /// 打开首个 Volans 设备、加载 .arcf、读取图像几何并注册帧回调；失败通过 ErrorOccurred 返回原因。
@@ -114,7 +126,7 @@ namespace CIS_WebInspector.Services
                 b = b && _device.setProperty((uint)AriPropertyType.AriProp_EnableRemainingFrames, 1);
 
                 // 用户缓冲模式下由本类分配并最终释放；内部缓冲模式仍通过 SDK 拷贝到该池后统一处理。
-                for (int i = 0; i < BufferCount; ++i)
+                for (int i = 0; i < _bufferCount; ++i)
                 {
                     IntPtr ptr = Marshal.AllocHGlobal(_bufferSize);
                     _imgBuffers.Add(ptr);
@@ -185,7 +197,7 @@ namespace CIS_WebInspector.Services
                     }
                     else
                     {
-                        if (arg0 >= BufferCount) return;
+                        if (arg0 >= _bufferCount) return;
                     }
 
                     IntPtr originalData = _imgBuffers[(int)arg0];
@@ -195,10 +207,8 @@ namespace CIS_WebInspector.Services
                     using (var originalMat = OpenCvSharp.Mat.FromPixelData((int)ImageHeight, (int)ImageWidth, matType, originalData, (int)LineStride))
                     using (var resizedMat = new OpenCvSharp.Mat())
                     {
-                        // 配置文件可被人工编辑，运行边界再次限幅，避免除零使 SDK 回调线程退出。
-                        int df = Math.Max(1, ConfigManager.Config.DownscaleFactor);
-                        int resizedWidth = Math.Max(1, ImageWidth / df);
-                        int resizedHeight = Math.Max(1, ImageHeight / df);
+                        int resizedWidth = Math.Max(1, ImageWidth / _downscaleFactor);
+                        int resizedHeight = Math.Max(1, ImageHeight / _downscaleFactor);
                         OpenCvSharp.Cv2.Resize(originalMat, resizedMat, new OpenCvSharp.Size(resizedWidth, resizedHeight), 0, 0, OpenCvSharp.InterpolationFlags.Area);
                         
                         int newWidth = resizedMat.Width;

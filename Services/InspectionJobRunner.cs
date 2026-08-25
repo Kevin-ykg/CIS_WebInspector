@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CIS_WebInspector.Models;
@@ -12,12 +15,14 @@ namespace CIS_WebInspector.Services
     /// 执行一次完整的拼接段检测作业：排版日志解析 → TIFF/Alpha 加载 → 全局对准 →
     /// 零件裁切与缺陷检测 → 汇总输出。该类不依赖 WPF，UI 只负责启动、取消和展示结果。
     /// </summary>
-    public sealed class InspectionJobRunner
+    public sealed class InspectionJobRunner : IInspectionJobRunner
     {
         private readonly string _baseDirectory;
+        private readonly IAppLogger _logger;
 
-        public InspectionJobRunner(string baseDirectory = null)
+        public InspectionJobRunner(string baseDirectory = null, IAppLogger logger = null)
         {
+            _logger = logger ?? NullAppLogger.Instance;
             _baseDirectory = string.IsNullOrWhiteSpace(baseDirectory)
                 ? AppDomain.CurrentDomain.BaseDirectory
                 : baseDirectory;
@@ -30,7 +35,6 @@ namespace CIS_WebInspector.Services
         public InspectionJobResult Run(
             StitchedImageResult stitchedResult,
             AppConfig config,
-            Action<string> log,
             CancellationToken cancellationToken)
         {
             if (stitchedResult == null)
@@ -44,6 +48,7 @@ namespace CIS_WebInspector.Services
             WhiteInkInspectionResult whiteInkInspection = WhiteInkInspectionResult.Disabled();
             byte[] whiteInkPreviewBytes = null;
             string outputDirectory = null;
+            IAppLogger log = _logger;
 
             try
             {
@@ -51,12 +56,20 @@ namespace CIS_WebInspector.Services
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (config == null)
-                    return Failure(log, "[缺陷流水线] 未加载有效配置，终止流水线。");
+                    return CreateEarlyResult(
+                        log,
+                        InspectionJobStatus.Failed,
+                        InspectionJobIssueCode.InvalidConfiguration,
+                        "[缺陷流水线] 未加载有效配置，终止流水线。");
 
                 // 结束二维码是排版日志的业务主键，也是底部 Mark 的几何锚点。
                 string qrCode = stitchedResult.EndQrText;
                 if (string.IsNullOrEmpty(qrCode))
-                    return Failure(log, "[缺陷流水线] 未找到有效的结束二维码，终止流水线。");
+                    return CreateEarlyResult(
+                        log,
+                        InspectionJobStatus.Failed,
+                        InspectionJobIssueCode.MissingEndQrCode,
+                        "[缺陷流水线] 未找到有效的结束二维码，终止流水线。");
 
                 // 白墨检查只依赖拼接图和结束二维码锚点，必须先于 Debug.log/TIFF 流水线执行。
                 // 这样即使当前图库没有排版日志或 TIFF，供墨异常仍会产生日志、预览和 UI 告警。
@@ -96,7 +109,10 @@ namespace CIS_WebInspector.Services
                     {
                         whiteInkPreviewBytes = ImageAligner.CreateWhiteInkInspectionPreview(
                             cisMat, whiteInkInspection);
-                        if (whiteInkPreviewBytes != null && whiteInkPreviewBytes.Length > 0)
+                        // 预览字节始终保留给 UI；只有图像总开关开启时才写入裁切结果目录。
+                        if (config.SaveCroppedImages &&
+                            whiteInkPreviewBytes != null &&
+                            whiteInkPreviewBytes.Length > 0)
                         {
                             outputDirectory = Path.Combine(
                                 _baseDirectory,
@@ -122,8 +138,10 @@ namespace CIS_WebInspector.Services
                 // 白墨检查仍保留结果，零件级检测跳过，调用方继续采集而不是抛异常或弹窗阻塞。
                 if (string.IsNullOrWhiteSpace(config.DebugLogPath))
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Skipped,
+                        InspectionJobIssueCode.DebugLogNotConfigured,
                         "[缺陷流水线][WARN] 未配置 Debug.log，已跳过本拼接段的排版解析、图像对准和零件缺陷检测；本次作业正常结束，不阻塞程序运行。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -132,8 +150,10 @@ namespace CIS_WebInspector.Services
 
                 if (!File.Exists(config.DebugLogPath))
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Skipped,
+                        InspectionJobIssueCode.DebugLogNotFound,
                         $"[缺陷流水线][WARN] Debug.log 不存在：{config.DebugLogPath}；已跳过本拼接段的零件缺陷检测，本次作业正常结束。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -142,8 +162,10 @@ namespace CIS_WebInspector.Services
 
                 if (string.IsNullOrWhiteSpace(config.TiffImageDir))
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Skipped,
+                        InspectionJobIssueCode.LayoutImageDirectoryNotConfigured,
                         "[缺陷流水线][WARN] 未配置 TIFF 原图目录，已跳过本拼接段的图像对准和零件缺陷检测；本次作业正常结束，不阻塞程序运行。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -152,8 +174,10 @@ namespace CIS_WebInspector.Services
 
                 if (!Directory.Exists(config.TiffImageDir))
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Skipped,
+                        InspectionJobIssueCode.LayoutImageDirectoryNotFound,
                         $"[缺陷流水线][WARN] TIFF 原图目录不存在：{config.TiffImageDir}；已跳过本拼接段的零件缺陷检测，本次作业正常结束。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -161,11 +185,17 @@ namespace CIS_WebInspector.Services
                 }
 
                 Log(log, $"正在解析 Debug.log，目标二维码: {qrCode} ...");
-                var layoutInfo = DebugLogParser.ParseForQrCode(config.DebugLogPath, qrCode, config.TiffImageDir);
+                var layoutInfo = DebugLogParser.ParseForQrCode(
+                    config.DebugLogPath,
+                    qrCode,
+                    config.TiffImageDir,
+                    log);
                 if (layoutInfo == null)
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Skipped,
+                        InspectionJobIssueCode.LayoutRecordNotFound,
                         "[缺陷流水线][WARN] Debug.log 中未找到当前二维码对应的排版记录；已跳过本拼接段的零件缺陷检测，本次作业正常结束，白墨检查结果不受影响。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -178,8 +208,10 @@ namespace CIS_WebInspector.Services
                 Log(log, "正在加载 TIFF 原图...");
                 if (!File.Exists(layoutInfo.TiffFullPath))
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Skipped,
+                        InspectionJobIssueCode.LayoutImageNotFound,
                         $"[缺陷流水线][WARN] 无法找到 TIFF 原图文件：{layoutInfo.TiffFullPath}；已跳过本拼接段的零件缺陷检测，本次作业正常结束。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -189,8 +221,10 @@ namespace CIS_WebInspector.Services
                 tiffMat = Cv2.ImRead(layoutInfo.TiffFullPath, ImreadModes.Unchanged);
                 if (tiffMat.Empty())
                 {
-                    return Failure(
+                    return CreateEarlyResult(
                         log,
+                        InspectionJobStatus.Failed,
+                        InspectionJobIssueCode.LayoutImageLoadFailed,
                         "[缺陷流水线] TIFF 图像加载失败。",
                         whiteInkInspection,
                         whiteInkPreviewBytes,
@@ -292,8 +326,10 @@ namespace CIS_WebInspector.Services
                     // AlignmentResult 持有 H0 及逆矩阵，using 保证 OpenCV 非托管矩阵在本作业结束时释放。
                     if (alignment?.GlobalTransform == null || alignment.GlobalTransform.Empty())
                     {
-                        return Failure(
+                        return CreateEarlyResult(
                             log,
+                            InspectionJobStatus.Failed,
+                            InspectionJobIssueCode.AlignmentFailed,
                             $"[缺陷流水线] 图像对齐失败：{alignmentDiagnostic}",
                             whiteInkInspection,
                             whiteInkPreviewBytes,
@@ -303,6 +339,37 @@ namespace CIS_WebInspector.Services
                     Log(log,
                         $"变换矩阵计算成功！模式={alignment.Mode}, 质量={alignment.QualityStatus}, " +
                         $"自动最佳二值化阈值={optimalThreshold}，{alignmentDiagnostic}");
+
+                    // 对准结果生成后再保存诊断图：这里只读取最终 Mark 对应点和侧边控制点，
+                    // 不重新检测、不修改矩阵。SaveCroppedImages 是所有裁切结果图像的落盘总开关。
+                    if (config.SaveCroppedImages)
+                    {
+                        try
+                        {
+                            if (string.IsNullOrWhiteSpace(outputDirectory))
+                            {
+                                outputDirectory = Path.Combine(
+                                    _baseDirectory,
+                                    config.CroppedOutputDir,
+                                    DateTime.Now.ToString("yyyyMMdd_HHmmss_fff"));
+                            }
+
+                            var markPreviewPaths = ImageAligner.SaveAlignmentMarkPreviews(
+                                cisMat,
+                                tiffMat,
+                                alignment,
+                                outputDirectory);
+                            Log(
+                                log,
+                                "[全局对准诊断] Mark 标注图已保存：" +
+                                string.Join("；", markPreviewPaths));
+                        }
+                        catch (Exception ex)
+                        {
+                            // 诊断图保存失败只记日志，不能阻断正式 Warp 与缺陷检测。
+                            Log(log, $"[全局对准诊断][WARN] Mark 标注图保存失败：{ex.Message}");
+                        }
+                    }
 
                     cancellationToken.ThrowIfCancellationRequested();
                     Log(log, "正在将 CIS 图像变换到 TIFF 空间...");
@@ -336,13 +403,26 @@ namespace CIS_WebInspector.Services
                             config.LayoutOriginYmm,
                             finalCisThreshold,
                             config,
-                            message => Log(log, message));
+                            log);
 
                         int passCount = 0;
                         int failCount = 0;
+                        int processingErrorCount = 0;
+                        long defectDetailLogTicks = 0;
+                        int loggedDefectDetailCount = 0;
                         foreach (PatchDefectResult defectResult in defectTaskResult.Results)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
+                            if (defectResult.HasProcessingError)
+                            {
+                                processingErrorCount++;
+                                Log(
+                                    log,
+                                    $"  [⚠ 处理异常] {defectResult.PartId} — " +
+                                    $"未生成产品缺陷结论：{defectResult.ProcessingError}");
+                                continue;
+                            }
+
                             if (defectResult.IsPass)
                                 passCount++;
                             else
@@ -351,7 +431,8 @@ namespace CIS_WebInspector.Services
                             string status = defectResult.IsPass ? "✓ Pass" : "✗ FAIL";
                             string fineLineSummary = defectResult.FineLineBreakCount > 0
                                 ? $" | 细线断裂: {defectResult.FineLineBreakCount}个 " +
-                                  $"(最长 {defectResult.MaxFineLineBreakLengthMm:F2}mm)"
+                                  $"(最长 {defectResult.MaxFineLineBreakLengthMm:F2}mm，" +
+                                  $"最大宽度 {defectResult.MaxFineLineBreakWidthMm:F2}mm)"
                                 : string.Empty;
                             Log(log,
                                 $"  [{status}] {defectResult.PartId} — 内部缺陷: {defectResult.InnerDefectCount}个 " +
@@ -359,19 +440,49 @@ namespace CIS_WebInspector.Services
                                 $"外部缺陷: {defectResult.OuterDefectCount}个 " +
                                 $"(最大 {defectResult.MaxAreaOuterMm2:F3}mm² / 阈值 {config.DefectAreaThreshOuter:F3}mm²)" +
                                 $"{fineLineSummary}");
+
+                            // 单独计时新增的逐缺陷尺寸日志，便于判断该追溯功能是否需要配置开关。
+                            // 明细集合均来自最终检测结果，不会记录未通过面积/长度/线宽门槛的候选。
+                            long detailStartTicks = Stopwatch.GetTimestamp();
+                            string defectDetail = BuildDefectMeasurementLog(
+                                defectResult,
+                                out int partDetailCount);
+                            if (!string.IsNullOrEmpty(defectDetail))
+                                Log(log, defectDetail);
+                            defectDetailLogTicks += Stopwatch.GetTimestamp() - detailStartTicks;
+                            loggedDefectDetailCount += partDetailCount;
                         }
 
+                        double defectDetailLogMilliseconds =
+                            defectDetailLogTicks * 1000.0 / Stopwatch.Frequency;
+                        Log(
+                            log,
+                            $"[缺陷尺寸统计] 共记录 {loggedDefectDetailCount} 个最终缺陷，" +
+                            $"新增统计与日志耗时 {defectDetailLogMilliseconds:F1}ms" +
+                            (defectDetailLogMilliseconds > 500
+                                ? "（超过 500ms，建议启用可配置开关）"
+                                : "（未超过 500ms，无需增加控制开关）"));
+
                         int totalParts = defectTaskResult.Results.Count;
+                        string outputSummary = config.SaveCroppedImages
+                            ? $"图像结果保存在: {outputDirectory}"
+                            : "图像保存已关闭，检测结果仅用于界面显示和日志汇总";
                         string completedMessage =
                             $"[缺陷流水线] 全部完成！共 {totalParts} 个零件 | 合格 {passCount} | " +
-                            $"不合格 {failCount} | 全局对准={alignment.Mode}/{alignment.QualityStatus} | " +
+                            $"不合格 {failCount} | 处理异常 {processingErrorCount} | " +
+                            $"全局对准={alignment.Mode}/{alignment.QualityStatus} | " +
                             $"检测={alignment.DetectionMilliseconds:F1}ms, 建图={alignment.MapGenerationMilliseconds:F1}ms, " +
-                            $"变换={alignment.RemapMilliseconds:F1}ms | 结果保存在: {outputDirectory}";
+                            $"变换={alignment.RemapMilliseconds:F1}ms | {outputSummary}";
                         Log(log, completedMessage);
 
                         return new InspectionJobResult
                         {
-                            Succeeded = true,
+                            Status = processingErrorCount > 0
+                                ? InspectionJobStatus.CompletedWithProcessingErrors
+                                : InspectionJobStatus.Completed,
+                            IssueCode = processingErrorCount > 0
+                                ? InspectionJobIssueCode.PartProcessingError
+                                : InspectionJobIssueCode.None,
                             Message = completedMessage,
                             GlobalImageBytes = defectTaskResult.GlobalImageBytes,
                             WhiteInkPreviewBytes = whiteInkPreviewBytes,
@@ -380,6 +491,7 @@ namespace CIS_WebInspector.Services
                             TotalParts = totalParts,
                             PassCount = passCount,
                             FailCount = failCount,
+                            ProcessingErrorCount = processingErrorCount,
                             AlignmentMode = alignment.Mode,
                             AlignmentQualityStatus = alignment.QualityStatus,
                             DetectionMilliseconds = alignment.DetectionMilliseconds,
@@ -393,7 +505,12 @@ namespace CIS_WebInspector.Services
             {
                 const string message = "[缺陷流水线] 作业已取消。";
                 Log(log, message);
-                return new InspectionJobResult { Cancelled = true, Message = message };
+                return new InspectionJobResult
+                {
+                    Status = InspectionJobStatus.Cancelled,
+                    IssueCode = InspectionJobIssueCode.None,
+                    Message = message
+                };
             }
             catch (Exception ex)
             {
@@ -401,6 +518,8 @@ namespace CIS_WebInspector.Services
                 Log(log, message);
                 return new InspectionJobResult
                 {
+                    Status = InspectionJobStatus.Failed,
+                    IssueCode = InspectionJobIssueCode.UnhandledException,
                     Message = message,
                     WhiteInkInspection = whiteInkInspection,
                     WhiteInkPreviewBytes = whiteInkPreviewBytes,
@@ -419,9 +538,75 @@ namespace CIS_WebInspector.Services
             }
         }
 
-        /// <summary>统一记录可预期失败并返回未成功结果，避免各阶段抛出无业务语义的异常。</summary>
-        private static InspectionJobResult Failure(
-            Action<string> log,
+        /// <summary>
+        /// 生成一个零件的最终缺陷尺寸明细。用单次日志写入承载多行内容，减少磁盘 Flush 和
+        /// UI 消息发布次数；每个缺陷仍按类型和序号独立列出，便于现场追溯。
+        /// </summary>
+        private static string BuildDefectMeasurementLog(
+            PatchDefectResult result,
+            out int defectCount)
+        {
+            defectCount = 0;
+            var builder = new StringBuilder();
+            AppendDefectMeasurements(
+                builder,
+                "内部缺陷",
+                result.InnerDefectMeasurements,
+                ref defectCount);
+            AppendDefectMeasurements(
+                builder,
+                "外部缺陷",
+                result.OuterDefectMeasurements,
+                ref defectCount);
+            AppendDefectMeasurements(
+                builder,
+                "细线断裂",
+                result.FineLineBreakMeasurements,
+                ref defectCount);
+
+            if (defectCount == 0)
+                return string.Empty;
+
+            return $"  [缺陷尺寸] {result.PartId}（外接矩形尺寸 + 缺陷实际面积）{Environment.NewLine}" +
+                   builder.ToString().TrimEnd();
+        }
+
+        private static void AppendDefectMeasurements(
+            StringBuilder builder,
+            string defectType,
+            IReadOnlyList<DefectGeometryMeasurement> measurements,
+            ref int totalCount)
+        {
+            if (measurements == null)
+                return;
+
+            for (int index = 0; index < measurements.Count; index++)
+            {
+                DefectGeometryMeasurement measurement = measurements[index];
+                builder.Append("    ")
+                    .Append(defectType)
+                    .Append(" #")
+                    .Append(index + 1)
+                    .Append(": 宽=")
+                    .Append(measurement.WidthMm.ToString("F3"))
+                    .Append("mm，高=")
+                    .Append(measurement.HeightMm.ToString("F3"))
+                    .Append("mm，缺陷实际面积=")
+                    .Append(measurement.AreaMm2.ToString("F3"))
+                    .Append("mm²")
+                    .AppendLine();
+                totalCount++;
+            }
+        }
+
+        /// <summary>
+        /// 统一创建提前结束结果。Skipped 表示外部资料尚未就绪，Failed 表示本作业自身无法完成；
+        /// 两者都不会抛到采集线程，也不会丢失已完成的白墨检查和预览。
+        /// </summary>
+        private static InspectionJobResult CreateEarlyResult(
+            IAppLogger log,
+            InspectionJobStatus status,
+            InspectionJobIssueCode issueCode,
             string message,
             WhiteInkInspectionResult whiteInkInspection = null,
             byte[] whiteInkPreviewBytes = null,
@@ -430,6 +615,8 @@ namespace CIS_WebInspector.Services
             Log(log, message);
             return new InspectionJobResult
             {
+                Status = status,
+                IssueCode = issueCode,
                 Message = message,
                 WhiteInkInspection = whiteInkInspection ?? WhiteInkInspectionResult.Disabled(),
                 WhiteInkPreviewBytes = whiteInkPreviewBytes,
@@ -438,7 +625,7 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>记录白墨原始量化数据，便于现场按批次追溯和重新标定。</summary>
-        private static void LogWhiteInk(Action<string> log, WhiteInkInspectionResult result)
+        private static void LogWhiteInk(IAppLogger log, WhiteInkInspectionResult result)
         {
             string prefix = result.RequiresWarning ? "[白墨检测][WARN]" : "[白墨检测]";
             Log(
@@ -453,19 +640,9 @@ namespace CIS_WebInspector.Services
         }
 
         /// <summary>日志回调异常不得反向中断检测流水线。</summary>
-        private static void Log(Action<string> log, string message)
+        private static void Log(IAppLogger log, string message)
         {
-            if (log == null)
-                return;
-
-            try
-            {
-                log(message);
-            }
-            catch
-            {
-                // 日志失败不应中断视觉处理作业。
-            }
+            AppLog.Write(log, message);
         }
     }
 }
