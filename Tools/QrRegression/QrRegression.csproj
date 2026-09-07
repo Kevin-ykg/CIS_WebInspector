@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget><LangVersion>latest</LangVersion>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**\bin\**;**\obj\**</DefaultItemExcludes>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\..\CIS_WebInspector.csproj" /></ItemGroup>
+  <Target Name="CopyRuntime" AfterTargets="Build">
+    <Copy SourceFiles="..\..\bin\x64\$(Configuration)\net48\OpenCvSharpExtern.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="..\..\bin\x64\$(Configuration)\net48\CISVisionCore.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true"
+          Condition="Exists('..\..\bin\x64\$(Configuration)\net48\CISVisionCore.dll')" />
+  </Target>
+</Project>

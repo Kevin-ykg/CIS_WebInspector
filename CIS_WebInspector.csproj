@@ -10,6 +10,8 @@
     <AssemblyName>CIS_WebInspector</AssemblyName>
     <LangVersion>latest</LangVersion>
     <Platforms>AnyCPU;x64</Platforms>
+    <!-- C# Debug 也用优化后的算法库；混合断点调试时显式指定 VisionNativeConfiguration=Debug。 -->
+    <VisionNativeConfiguration Condition="'$(VisionNativeConfiguration)' == ''">Release</VisionNativeConfiguration>
     <!--
       WPF/Visual Studio 可能同时生成 obj\Debug、obj\x64 和嵌套探针的 obj。
       SDK 默认只保证排除当前 BaseIntermediateOutputPath；显式排除任意层级的 bin/obj，
@@ -33,15 +35,23 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Tools\QrRegression\**\*.cs" />
     <Resource Include="logo.png" />
     <None Update="Assets\WeChatQRCode\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
+    <None Include="obj\VisionNative\core-build\$(VisionNativeConfiguration)\CISVisionCore.dll" Link="CISVisionCore.dll"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Native\licenses\**\*" Link="ThirdPartyLicenses\CISVisionCore\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Post-build: copy all native DLLs to output directory -->
   <Target Name="CopyNativeDlls" AfterTargets="Build">
+    <Error Condition="!Exists('obj\VisionNative\core-build\$(VisionNativeConfiguration)\CISVisionCore.dll')"
+           Text="缺少 CISVisionCore.dll，请先运行 Tools\Build-VisionNative.ps1 构建 C++ 二维码算法库。" />
+    <Copy SourceFiles="obj\VisionNative\core-build\$(VisionNativeConfiguration)\CISVisionCore.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="..\..\lib\x64\VolansGrabberCL.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="TLC_SDK_C++_64位\tlc.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="..\..\lib\x64\CamExpRemote.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />

@@ -4,7 +4,7 @@ using System.IO;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace QrRegression.Legacy
 {
     /// <summary>
     /// WeChatQRCode 调用与资源生命周期，负责最终解码、坐标还原、模型加载预热和确定性释放。

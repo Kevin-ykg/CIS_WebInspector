@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace QrRegression.Legacy
 {
     /// <summary>
     /// 二维码几何证据与自适应尺度，依据定位框大小和 ROI 占比生成受限的缩放候选。

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace QrRegression.Legacy
 {
     /// <summary>
     /// 定位框透视恢复，根据三个定位框估计二维码四边形并生成透视归一化候选。

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace QrRegression.Legacy
 {
     /// <summary>
     /// 模糊二维码定位框恢复，利用定位框模板、候选三角形和局部透视展开处理失焦或边界受损样本。
