@@ -12,7 +12,7 @@ ImageStitcher（单帧 / 跨帧组合，仍为 C#）
   ← QrDetectionResult（原数据模型，拼接和 Mark 尺度计算无须改动）
 ```
 
-**不是只把 detectAndDecode 包一层 DLL**：灰度转换、ROI 与保护带、极性处理、定位框证据、自适应尺度、局部静区、透视展开、低对比度和模糊恢复均在 C++ 内。候选顺序、阈值、坐标还原和取整规则沿用迁移前实现。局部配准/缺陷检测也已迁入同一 DLL（见下节）；拼接状态机、全局/侧边对准和白墨算法仍在 C#。
+灰度转换、ROI 与保护带、极性处理、定位框证据、自适应尺度、局部静区、透视展开、低对比度和模糊恢复均在 C++ 内。候选顺序、阈值、坐标还原和取整规则沿用迁移前实现。局部配准/缺陷、全局/侧边对准和白墨算法也已迁入同一 DLL；拼接状态机、界面、告警调度和可视化仍在 C#。
 
 | 文件 | 职责 |
 |---|---|
@@ -35,6 +35,47 @@ ImageStitcher（单帧 / 跨帧组合，仍为 C#）
 - 调用方分配结果及字符缓冲区，不导出 STL、不要求跨运行库释放内存。缓冲区不足返回 `-3` 和需要的字节数（含 NUL），不会把截断文本作为成功结果。重新调用需要重新检测，当前没有结果缓存句柄。
 - 状态：`0` 成功，`1` 正常未检出，`-1` 参数错误，`-2` 模型/算法异常，`-3` 输出空间不足。C++ 异常不越过 C 边界；原生非法指针属于调用方违反契约，不能靠异常屏障保证安全。
 - 本轮不设置 OpenCV 全局线程数，不改变正式帧队列；同一个 QR 实例只做一帧检测。独立 DLL 和 OpenCvSharp 不共享 Mat、分配器或全局设置。
+
+## 全局对准与白墨：边界与调用关系
+
+```text
+InspectionJobRunner
+  ├─ ImageAligner.InspectBottomWhiteInk（不依赖 TIFF）
+  │   → cis_alignment_compute(mode=1) → inspect_bottom / inspect_white
+  │   ← 白墨状态、均值/方差/背景、相对墨量、采样圆及诊断
+  └─ ImageAligner.ComputeTransform
+      → cis_alignment_compute(mode=0)
+        → 大 Mark 提取 → 倾斜行 → 缺点序列配对 → RANSAC + 质量门控
+        → 可选 side_grid（通过则非线性，不通过则 GlobalOnly/Degraded）
+      ← AlignmentResult：SafeHandle + 小型诊断副本
+      → ImageAligner.WarpToTiffSpace → cis_alignment_warp
+        → WarpPerspective 或 256 行逆向 Remap（一次采样）
+```
+
+| 文件 | 职责 / 原实现定位 |
+|---|---|
+| `include/cis_alignment_api.h` | 独立 alignment ABI v1，原图描述、参数、结果读取与释放 |
+| `src/alignment_api.cpp` | C 异常屏障、步长/容量/重叠检查、结果句柄、UTF-8 诊断 |
+| `src/alignment_internal.h` | 私有 RAII 数据、坐标约定、取中位数/舍入等通用函数 |
+| `src/alignment_global.cpp` | 原 `ComputeTransform`、`ComputeRobustTransform`、Homography 门控 |
+| `src/alignment_marks.cpp` | 原 `DetectTiff/DetectJpg`、倾斜行、动态规划缺点配对、小圆评分 |
+| `src/alignment_side_grid.cpp` | 原 `TryBuildSideGrid`、MAD、孤立补点、拓扑/尺度门控及留一统计 |
+| `src/alignment_white_ink.cpp` | 原 `InspectBottomWhiteInk/InspectWhiteInk`、Hough 共线约束及灰度分级 |
+| `src/alignment_warp.cpp` | 原 `WarpToTiffSpace/FillRemapStripe`，PPL 独立行建图与分块 Remap |
+| `../Services/AlignmentNativeInterop.cs` | P/Invoke、布局校验、SafeHandle、小型结果复制 |
+| `../Services/ImageAligner.*.cs` | 保留公共入口/统计/原预览，不包含第二套运行算法 |
+
+### 接口与资源约定
+
+- Windows x64，`__cdecl`、pack=8；Image=40、Anchor=48、Config=192、Summary=296、Mark=40、Control=96、Sample=64 字节。两端同时验证 ABI；二维码/零件 ABI 版本不变。
+- 配置为作业快照，长度用 mm，图像坐标用原分辨率 px，全局行号用 `int64_t`。第二码全局 Y 减去拼接段起点后才用于图内定位；X/Y 分别由二维码宽/高标定。
+- `compute → summary/marks/controls/samples/log → warp → destroy`。结果拥有原生 H、逆矩阵及控制网格，不持有 CIS/TIFF 大图。可预期的点数/质量不足返回 `0 + has_transform=0 + diagnostic`，已完成的白墨结果仍可读取。
+- C# `AlignmentResult.Dispose` 释放原生 SafeHandle 和两份诊断 Mat；`GlobalTransform` 是只读使用的诊断副本，不能通过改写该副本控制原生 Warp。
+- `warp` 的目标 Mat 由 C# 分配，DLL 直接写像素，不跨 CRT 释放；原图与输出禁止重叠。任何失败时上层丢弃输出 Mat。不同结果可独立使用，同一结果的 Warp/读取/释放不得并发。
+- 算法关闭/正常未满足条件与 ABI 错误分开：负值 `-1/-2/-3` 为参数/运行异常/缓冲区不足；不通过隐藏 C# 回退掩盖 DLL 缺失或版本错误。
+- 独立白墨的 Hough 后备和共线圆心约束保留；百分比是相对白墨灰度指标，不是真实墨水体积计量。拉丝仍按原标准差门槛，不在迁移时换算法。
+- C# 的 Mark 叠加图、白墨预览、文件名、颜色、保存开关和 WPF 告警逻辑不变。可视化仅修改副本，不能污染后续差分输入。
+- 回归工具及迁移前快照：`Tools/AlignmentRegression`；报告：`Regression/AlignmentNative`。对照快照不参与生产构建。
 
 ## 零件配准与三类缺陷：边界与调用关系
 

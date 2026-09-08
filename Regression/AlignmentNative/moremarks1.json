@@ -1,0 +1,161 @@
+{
+  "Checks": 1103,
+  "Failures": [],
+  "Results": [
+    {
+      "Name": "real_white",
+      "WhiteOnly": true,
+      "Equal": true,
+      "OldMs": 82.77590000000001,
+      "NewMs": 31.9735,
+      "OldDiagnostic": "状态=正常, 相对白墨=99.5%, Mark均值=164.6, 背景均值=42.2, 对比度=122.2, 标准差=1.7, 方差=2.8, 拉丝=否, 样本=7",
+      "NewDiagnostic": "状态=正常, 相对白墨=99.5%, Mark均值=164.6, 背景均值=42.2, 对比度=122.2, 标准差=1.7, 方差=2.8, 拉丝=否, 样本=7"
+    },
+    {
+      "Name": "real_global",
+      "Equal": true,
+      "OldMs": 298.6161,
+      "NewMs": 159.8068,
+      "OldWarpMs": 106.05930000000001,
+      "NewWarpMs": 126.1384,
+      "WarpMaxPixelDifference": 0,
+      "OldDiagnostic": "QR(globalY=11983, segmentStart=1208, localY=10775.0, height=683.7, cisPxPerMmY=11.3952, cisPxPerMmX=11.9468) | Top: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,295,6921,591), CIS-ROI=(0,0,7803,799), SinglePass=True, Tilt=-0.07deg, YDrift=-8.9px, LineResidual=0.22px, MatchResidual=3.49px, Coverage=52.2% | Bottom: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,11161,6921,591), CIS-ROI=(0,10376,7803,798), SinglePass=True, Tilt=0.11deg, YDrift=14.6px, LineResidual=0.27px, MatchResidual=0.07px, Coverage=52.2% | HQuality=Passed(inliers=14/14, ratio=100.0%, median=0.063mm) | Nonlinear=DisabledByConfig: 侧边 4 mm Mark 功能已关闭，仅使用上下两排 20 mm Mark 计算 H0。 | WhiteInk: 状态=正常, 相对白墨=99.5%, Mark均值=164.6, 背景均值=42.2, 对比度=122.2, 标准差=1.7, 方差=2.8, 拉丝=否, 样本=7",
+      "NewDiagnostic": "QR(globalY=11983, segmentStart=1208, localY=10775.0, height=683.7, cisPxPerMmY=11.3952, cisPxPerMmX=11.9468) | Top: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,295,6921,591), CIS-ROI=(0,0,7803,799), SinglePass=True, Tilt=-0.07deg, YDrift=-8.9px, LineResidual=0.22px, MatchResidual=3.49px, Coverage=52.2% | Bottom: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,11161,6921,591), CIS-ROI=(0,10376,7803,798), SinglePass=True, Tilt=0.11deg, YDrift=14.6px, LineResidual=0.27px, MatchResidual=0.07px, Coverage=52.2% | HQuality=Passed(inliers=14/14, ratio=100.0%, median=0.063mm) | Nonlinear=DisabledByConfig: 侧边 4 mm Mark 功能已关闭，仅使用上下两排 20 mm Mark 计算 H0。 | WhiteInk: 状态=正常, 相对白墨=99.5%, Mark均值=164.6, 背景均值=42.2, 对比度=122.2, 标准差=1.7, 方差=2.8, 拉丝=否, 样本=7",
+      "Mode": "GlobalOnly",
+      "WhiteStatus": "Normal"
+    },
+    {
+      "Name": "real_side",
+      "Equal": true,
+      "OldMs": 216.31820000000002,
+      "NewMs": 172.0447,
+      "OldWarpMs": 450.0484,
+      "NewWarpMs": 210.4403,
+      "WarpMaxPixelDifference": 0,
+      "OldDiagnostic": "QR(globalY=11983, segmentStart=1208, localY=10775.0, height=683.7, cisPxPerMmY=11.3952, cisPxPerMmX=11.9468) | Top: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,295,6921,591), CIS-ROI=(0,0,7803,799), SinglePass=True, Tilt=-0.07deg, YDrift=-8.9px, LineResidual=0.22px, MatchResidual=3.49px, Coverage=52.2% | Bottom: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,11161,6921,591), CIS-ROI=(0,10376,7803,798), SinglePass=True, Tilt=0.11deg, YDrift=14.6px, LineResidual=0.27px, MatchResidual=0.07px, Coverage=52.2% | HQuality=Passed(inliers=14/14, ratio=100.0%, median=0.063mm) | Nonlinear=Enabled: SideMarks L=9/9, R=9/9, outliers L=0, R=0, LOO median=0.259mm, max=0.925mm | L1: Texp=(29.5,1677.2), Tdet=(29.0,1675.0), Cpred=(542.3,1339.7), Cdet=(550.4,1504.0), R=(4.1,-7.0), TiffROI=[(0,1618,89,119)], CisROI=[(482,1453,121,115)], expanded=False, h0Fallback=True | R1: Texp=(6891.7,1677.2), Tdet=(6891.0,1675.0), Cpred=(7498.3,1339.7), Cdet=(7497.4,1503.9), R=(-2.3,-8.2), TiffROI=[(6832,1618,89,119)], CisROI=[(7438,1455,121,115)], expanded=False, h0Fallback=True | L2: Texp=(29.5,2763.8), Tdet=(29.0,2761.0), Cpred=(538.4,2388.1), Cdet=(551.1,2529.6), R=(8.7,-13.1), TiffROI=[(0,2704,89,119)], CisROI=[(478,2485,121,115)], expanded=False, h0Fallback=True | R2: Texp=(6891.7,2763.8), Tdet=(6891.0,2761.0), Cpred=(7492.7,2388.1), Cdet=(7490.4,2531.7), R=(-3.6,-13.3), TiffROI=[(6832,2704,89,119)], CisROI=[(7432,2487,121,115)], expanded=False, h0Fallback=True | L3: Texp=(29.5,3850.4), Tdet=(29.0,3848.0), Cpred=(534.5,3436.5), Cdet=(549.7,3555.4), R=(11.2,-18.4), TiffROI=[(0,3791,89,119)], CisROI=[(474,3516,121,115)], expanded=False, h0Fallback=True | R3: Texp=(6891.7,3850.4), Tdet=(6891.0,3848.0), Cpred=(7487.1,3436.5), Cdet=(7485.4,3563.2), R=(-3.0,-14.2), TiffROI=[(6832,3791,89,119)], CisROI=[(7427,3520,120,115)], expanded=False, h0Fallback=True | L4: Texp=(29.5,4937.0), Tdet=(29.0,4934.0), Cpred=(530.5,4484.8), Cdet=(546.2,4582.1), R=(11.7,-22.5), TiffROI=[(0,4877,89,120)], CisROI=[(411,4370,239,229)], expanded=True, h0Fallback=False | R4: Texp=(6891.7,4937.0), Tdet=(6891.0,4934.0), Cpred=(7481.5,4484.8), Cdet=(7480.3,4586.6), R=(-2.6,-22.7), TiffROI=[(6832,4877,89,120)], CisROI=[(7362,4370,239,229)], expanded=True, h0Fallback=False | L5: Texp=(29.5,6023.6), Tdet=(29.0,6021.0), Cpred=(526.6,5533.2), Cdet=(542.4,5611.2), R=(11.8,-23.6), TiffROI=[(0,5964,89,119)], CisROI=[(407,5419,240,229)], expanded=True, h0Fallback=False | R5: Texp=(6891.7,6023.6), Tdet=(6891.0,6021.0), Cpred=(7475.9,5533.2), Cdet=(7475.8,5627.8), R=(-1.4,-12.9), TiffROI=[(6832,5964,89,119)], CisROI=[(7356,5419,240,229)], expanded=True, h0Fallback=False | L6: Texp=(29.5,7110.2), Tdet=(29.0,7108.0), Cpred=(522.7,6581.5), Cdet=(534.9,6628.2), R=(8.2,-36.4), TiffROI=[(0,7051,89,119)], CisROI=[(462,6524,121,115)], expanded=False, h0Fallback=False | R6: Texp=(6891.7,7110.2), Tdet=(6891.0,7108.0), Cpred=(7470.3,6581.5), Cdet=(7469.7,6662.6), R=(-2.0,-9.1), TiffROI=[(6832,7051,89,119)], CisROI=[(7350,6467,240,229)], expanded=True, h0Fallback=False | L7: Texp=(29.5,8196.9), Tdet=(29.0,8194.0), Cpred=(518.7,7629.9), Cdet=(526.6,7665.7), R=(3.9,-28.1), TiffROI=[(0,8137,89,119)], CisROI=[(458,7572,121,115)], expanded=False, h0Fallback=False | R7: Texp=(6891.7,8196.9), Tdet=(6891.0,8194.0), Cpred=(7464.8,7629.9), Cdet=(7463.1,7696.1), R=(-3.0,-5.9), TiffROI=[(6832,8137,89,119)], CisROI=[(7345,7515,240,229)], expanded=True, h0Fallback=False | L8: Texp=(29.5,9283.5), Tdet=(29.0,9281.0), Cpred=(514.8,8678.3), Cdet=(519.6,8697.4), R=(0.8,-25.2), TiffROI=[(0,9224,89,119)], CisROI=[(455,8621,120,115)], expanded=False, h0Fallback=False | R8: Texp=(6891.7,9283.5), Tdet=(6891.0,9281.0), Cpred=(7459.2,8678.3), Cdet=(7456.6,8722.0), R=(-3.9,-10.0), TiffROI=[(6832,9224,89,119)], CisROI=[(7399,8621,120,115)], expanded=False, h0Fallback=False | L9: Texp=(29.5,10370.1), Tdet=(29.0,10368.0), Cpred=(510.9,9726.6), Cdet=(513.1,9732.2), R=(-1.8,-18.6), TiffROI=[(0,10311,89,119)], CisROI=[(451,9669,120,115)], expanded=False, h0Fallback=False | R9: Texp=(6891.7,10370.1), Tdet=(6891.0,10368.0), Cpred=(7453.6,9726.6), Cdet=(7451.1,9762.0), R=(-3.8,0.5), TiffROI=[(6832,10311,89,119)], CisROI=[(7393,9669,121,115)], expanded=False, h0Fallback=False | Final: L1:Detected, C=(550.4,1504.0), R=(4.1,-7.0) | R1:Detected, C=(7497.4,1503.9), R=(-2.3,-8.2) | L2:Detected, C=(551.1,2529.6), R=(8.7,-13.1) | R2:Detected, C=(7490.4,2531.7), R=(-3.6,-13.3) | L3:Detected, C=(549.7,3555.4), R=(11.2,-18.4) | R3:Detected, C=(7485.4,3563.2), R=(-3.0,-14.2) | L4:Detected, C=(546.2,4582.1), R=(11.7,-22.5) | R4:Detected, C=(7480.3,4586.6), R=(-2.6,-22.7) | L5:Detected, C=(542.4,5611.2), R=(11.8,-23.6) | R5:Detected, C=(7475.8,5627.8), R=(-1.4,-12.9) | L6:Detected, C=(534.9,6628.2), R=(8.2,-36.4) | R6:Detected, C=(7469.7,6662.6), R=(-2.0,-9.1) | L7:Detected, C=(526.6,7665.7), R=(3.9,-28.1) | R7:Detected, C=(7463.1,7696.1), R=(-3.0,-5.9) | L8:Detected, C=(519.6,8697.4), R=(0.8,-25.2) | R8:Detected, C=(7456.6,8722.0), R=(-3.9,-10.0) | L9:Detected, C=(513.1,9732.2), R=(-1.8,-18.6) | R9:Detected, C=(7451.1,9762.0), R=(-3.8,0.5) | WhiteInk: 状态=正常, 相对白墨=99.5%, Mark均值=164.6, 背景均值=42.2, 对比度=122.2, 标准差=1.7, 方差=2.8, 拉丝=否, 样本=7",
+      "NewDiagnostic": "QR(globalY=11983, segmentStart=1208, localY=10775.0, height=683.7, cisPxPerMmY=11.3952, cisPxPerMmX=11.9468) | Top: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,295,6921,591), CIS-ROI=(0,0,7803,799), SinglePass=True, Tilt=-0.07deg, YDrift=-8.9px, LineResidual=0.22px, MatchResidual=3.49px, Coverage=52.2% | Bottom: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,11161,6921,591), CIS-ROI=(0,10376,7803,798), SinglePass=True, Tilt=0.11deg, YDrift=14.6px, LineResidual=0.27px, MatchResidual=0.07px, Coverage=52.2% | HQuality=Passed(inliers=14/14, ratio=100.0%, median=0.063mm) | Nonlinear=Enabled: SideMarks L=9/9, R=9/9, outliers L=0, R=0, LOO median=0.259mm, max=0.925mm | L1: Texp=(29.5,1677.2), Tdet=(29.0,1675.0), Cpred=(542.3,1339.7), Cdet=(550.4,1504.0), R=(4.1,-7.0), TiffROI=[(0,1618,89,119)], CisROI=[(482,1453,121,115)], expanded=False, h0Fallback=True | R1: Texp=(6891.7,1677.2), Tdet=(6891.0,1675.0), Cpred=(7498.3,1339.7), Cdet=(7497.4,1503.9), R=(-2.3,-8.2), TiffROI=[(6832,1618,89,119)], CisROI=[(7438,1455,121,115)], expanded=False, h0Fallback=True | L2: Texp=(29.5,2763.8), Tdet=(29.0,2761.0), Cpred=(538.4,2388.1), Cdet=(551.1,2529.6), R=(8.7,-13.1), TiffROI=[(0,2704,89,119)], CisROI=[(478,2485,121,115)], expanded=False, h0Fallback=True | R2: Texp=(6891.7,2763.8), Tdet=(6891.0,2761.0), Cpred=(7492.7,2388.1), Cdet=(7490.4,2531.7), R=(-3.6,-13.3), TiffROI=[(6832,2704,89,119)], CisROI=[(7432,2487,121,115)], expanded=False, h0Fallback=True | L3: Texp=(29.5,3850.4), Tdet=(29.0,3848.0), Cpred=(534.5,3436.5), Cdet=(549.7,3555.4), R=(11.2,-18.4), TiffROI=[(0,3791,89,119)], CisROI=[(474,3516,121,115)], expanded=False, h0Fallback=True | R3: Texp=(6891.7,3850.4), Tdet=(6891.0,3848.0), Cpred=(7487.1,3436.5), Cdet=(7485.4,3563.2), R=(-3.0,-14.2), TiffROI=[(6832,3791,89,119)], CisROI=[(7427,3520,120,115)], expanded=False, h0Fallback=True | L4: Texp=(29.5,4937.0), Tdet=(29.0,4934.0), Cpred=(530.5,4484.8), Cdet=(546.2,4582.1), R=(11.7,-22.5), TiffROI=[(0,4877,89,120)], CisROI=[(411,4370,239,229)], expanded=True, h0Fallback=False | R4: Texp=(6891.7,4937.0), Tdet=(6891.0,4934.0), Cpred=(7481.5,4484.8), Cdet=(7480.3,4586.6), R=(-2.6,-22.7), TiffROI=[(6832,4877,89,120)], CisROI=[(7362,4370,239,229)], expanded=True, h0Fallback=False | L5: Texp=(29.5,6023.6), Tdet=(29.0,6021.0), Cpred=(526.6,5533.2), Cdet=(542.4,5611.2), R=(11.8,-23.6), TiffROI=[(0,5964,89,119)], CisROI=[(407,5419,240,229)], expanded=True, h0Fallback=False | R5: Texp=(6891.7,6023.6), Tdet=(6891.0,6021.0), Cpred=(7475.9,5533.2), Cdet=(7475.8,5627.8), R=(-1.4,-12.9), TiffROI=[(6832,5964,89,119)], CisROI=[(7356,5419,240,229)], expanded=True, h0Fallback=False | L6: Texp=(29.5,7110.2), Tdet=(29.0,7108.0), Cpred=(522.7,6581.5), Cdet=(534.9,6628.2), R=(8.2,-36.4), TiffROI=[(0,7051,89,119)], CisROI=[(462,6524,121,115)], expanded=False, h0Fallback=False | R6: Texp=(6891.7,7110.2), Tdet=(6891.0,7108.0), Cpred=(7470.3,6581.5), Cdet=(7469.7,6662.6), R=(-2.0,-9.1), TiffROI=[(6832,7051,89,119)], CisROI=[(7350,6467,240,229)], expanded=True, h0Fallback=False | L7: Texp=(29.5,8196.9), Tdet=(29.0,8194.0), Cpred=(518.7,7629.9), Cdet=(526.6,7665.7), R=(3.9,-28.1), TiffROI=[(0,8137,89,119)], CisROI=[(458,7572,121,115)], expanded=False, h0Fallback=False | R7: Texp=(6891.7,8196.9), Tdet=(6891.0,8194.0), Cpred=(7464.8,7629.9), Cdet=(7463.1,7696.1), R=(-3.0,-5.9), TiffROI=[(6832,8137,89,119)], CisROI=[(7345,7515,240,229)], expanded=True, h0Fallback=False | L8: Texp=(29.5,9283.5), Tdet=(29.0,9281.0), Cpred=(514.8,8678.3), Cdet=(519.6,8697.4), R=(0.8,-25.2), TiffROI=[(0,9224,89,119)], CisROI=[(455,8621,120,115)], expanded=False, h0Fallback=False | R8: Texp=(6891.7,9283.5), Tdet=(6891.0,9281.0), Cpred=(7459.2,8678.3), Cdet=(7456.6,8722.0), R=(-3.9,-10.0), TiffROI=[(6832,9224,89,119)], CisROI=[(7399,8621,120,115)], expanded=False, h0Fallback=False | L9: Texp=(29.5,10370.1), Tdet=(29.0,10368.0), Cpred=(510.9,9726.6), Cdet=(513.1,9732.2), R=(-1.8,-18.6), TiffROI=[(0,10311,89,119)], CisROI=[(451,9669,120,115)], expanded=False, h0Fallback=False | R9: Texp=(6891.7,10370.1), Tdet=(6891.0,10368.0), Cpred=(7453.6,9726.6), Cdet=(7451.1,9762.0), R=(-3.8,0.5), TiffROI=[(6832,10311,89,119)], CisROI=[(7393,9669,121,115)], expanded=False, h0Fallback=False | Final:  | L1:Detected, C=(550.4,1504.0), R=(4.1,-7.0) | R1:Detected, C=(7497.4,1503.9), R=(-2.3,-8.2) | L2:Detected, C=(551.1,2529.6), R=(8.7,-13.1) | R2:Detected, C=(7490.4,2531.7), R=(-3.6,-13.3) | L3:Detected, C=(549.7,3555.4), R=(11.2,-18.4) | R3:Detected, C=(7485.4,3563.2), R=(-3.0,-14.2) | L4:Detected, C=(546.2,4582.1), R=(11.7,-22.5) | R4:Detected, C=(7480.3,4586.6), R=(-2.6,-22.7) | L5:Detected, C=(542.4,5611.2), R=(11.8,-23.6) | R5:Detected, C=(7475.8,5627.8), R=(-1.4,-12.9) | L6:Detected, C=(534.9,6628.2), R=(8.2,-36.4) | R6:Detected, C=(7469.7,6662.6), R=(-2.0,-9.1) | L7:Detected, C=(526.6,7665.7), R=(3.9,-28.1) | R7:Detected, C=(7463.1,7696.1), R=(-3.0,-5.9) | L8:Detected, C=(519.6,8697.4), R=(0.8,-25.2) | R8:Detected, C=(7456.6,8722.0), R=(-3.9,-10.0) | L9:Detected, C=(513.1,9732.2), R=(-1.8,-18.6) | R9:Detected, C=(7451.1,9762.0), R=(-3.8,0.5) | WhiteInk: 状态=正常, 相对白墨=99.5%, Mark均值=164.6, 背景均值=42.2, 对比度=122.2, 标准差=1.7, 方差=2.8, 拉丝=否, 样本=7",
+      "Mode": "Nonlinear",
+      "WhiteStatus": "Normal"
+    },
+    {
+      "Name": "real_white_disabled",
+      "Equal": true,
+      "OldMs": 215.14690000000002,
+      "NewMs": 162.942,
+      "OldWarpMs": 451.36490000000003,
+      "NewWarpMs": 243.3069,
+      "WarpMaxPixelDifference": 0,
+      "OldDiagnostic": "QR(globalY=11983, segmentStart=1208, localY=10775.0, height=683.7, cisPxPerMmY=11.3952, cisPxPerMmX=11.9468) | Top: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,295,6921,591), CIS-ROI=(0,0,7803,799), SinglePass=True, Tilt=-0.07deg, YDrift=-8.9px, LineResidual=0.22px, MatchResidual=3.49px, Coverage=52.2% | Bottom: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,11161,6921,591), CIS-ROI=(0,10376,7803,798), SinglePass=True, Tilt=0.11deg, YDrift=14.6px, LineResidual=0.27px, MatchResidual=0.07px, Coverage=52.2% | HQuality=Passed(inliers=14/14, ratio=100.0%, median=0.063mm) | Nonlinear=Enabled: SideMarks L=9/9, R=9/9, outliers L=0, R=0, LOO median=0.259mm, max=0.925mm | L1: Texp=(29.5,1677.2), Tdet=(29.0,1675.0), Cpred=(542.3,1339.7), Cdet=(550.4,1504.0), R=(4.1,-7.0), TiffROI=[(0,1618,89,119)], CisROI=[(482,1453,121,115)], expanded=False, h0Fallback=True | R1: Texp=(6891.7,1677.2), Tdet=(6891.0,1675.0), Cpred=(7498.3,1339.7), Cdet=(7497.4,1503.9), R=(-2.3,-8.2), TiffROI=[(6832,1618,89,119)], CisROI=[(7438,1455,121,115)], expanded=False, h0Fallback=True | L2: Texp=(29.5,2763.8), Tdet=(29.0,2761.0), Cpred=(538.4,2388.1), Cdet=(551.1,2529.6), R=(8.7,-13.1), TiffROI=[(0,2704,89,119)], CisROI=[(478,2485,121,115)], expanded=False, h0Fallback=True | R2: Texp=(6891.7,2763.8), Tdet=(6891.0,2761.0), Cpred=(7492.7,2388.1), Cdet=(7490.4,2531.7), R=(-3.6,-13.3), TiffROI=[(6832,2704,89,119)], CisROI=[(7432,2487,121,115)], expanded=False, h0Fallback=True | L3: Texp=(29.5,3850.4), Tdet=(29.0,3848.0), Cpred=(534.5,3436.5), Cdet=(549.7,3555.4), R=(11.2,-18.4), TiffROI=[(0,3791,89,119)], CisROI=[(474,3516,121,115)], expanded=False, h0Fallback=True | R3: Texp=(6891.7,3850.4), Tdet=(6891.0,3848.0), Cpred=(7487.1,3436.5), Cdet=(7485.4,3563.2), R=(-3.0,-14.2), TiffROI=[(6832,3791,89,119)], CisROI=[(7427,3520,120,115)], expanded=False, h0Fallback=True | L4: Texp=(29.5,4937.0), Tdet=(29.0,4934.0), Cpred=(530.5,4484.8), Cdet=(546.2,4582.1), R=(11.7,-22.5), TiffROI=[(0,4877,89,120)], CisROI=[(411,4370,239,229)], expanded=True, h0Fallback=False | R4: Texp=(6891.7,4937.0), Tdet=(6891.0,4934.0), Cpred=(7481.5,4484.8), Cdet=(7480.3,4586.6), R=(-2.6,-22.7), TiffROI=[(6832,4877,89,120)], CisROI=[(7362,4370,239,229)], expanded=True, h0Fallback=False | L5: Texp=(29.5,6023.6), Tdet=(29.0,6021.0), Cpred=(526.6,5533.2), Cdet=(542.4,5611.2), R=(11.8,-23.6), TiffROI=[(0,5964,89,119)], CisROI=[(407,5419,240,229)], expanded=True, h0Fallback=False | R5: Texp=(6891.7,6023.6), Tdet=(6891.0,6021.0), Cpred=(7475.9,5533.2), Cdet=(7475.8,5627.8), R=(-1.4,-12.9), TiffROI=[(6832,5964,89,119)], CisROI=[(7356,5419,240,229)], expanded=True, h0Fallback=False | L6: Texp=(29.5,7110.2), Tdet=(29.0,7108.0), Cpred=(522.7,6581.5), Cdet=(534.9,6628.2), R=(8.2,-36.4), TiffROI=[(0,7051,89,119)], CisROI=[(462,6524,121,115)], expanded=False, h0Fallback=False | R6: Texp=(6891.7,7110.2), Tdet=(6891.0,7108.0), Cpred=(7470.3,6581.5), Cdet=(7469.7,6662.6), R=(-2.0,-9.1), TiffROI=[(6832,7051,89,119)], CisROI=[(7350,6467,240,229)], expanded=True, h0Fallback=False | L7: Texp=(29.5,8196.9), Tdet=(29.0,8194.0), Cpred=(518.7,7629.9), Cdet=(526.6,7665.7), R=(3.9,-28.1), TiffROI=[(0,8137,89,119)], CisROI=[(458,7572,121,115)], expanded=False, h0Fallback=False | R7: Texp=(6891.7,8196.9), Tdet=(6891.0,8194.0), Cpred=(7464.8,7629.9), Cdet=(7463.1,7696.1), R=(-3.0,-5.9), TiffROI=[(6832,8137,89,119)], CisROI=[(7345,7515,240,229)], expanded=True, h0Fallback=False | L8: Texp=(29.5,9283.5), Tdet=(29.0,9281.0), Cpred=(514.8,8678.3), Cdet=(519.6,8697.4), R=(0.8,-25.2), TiffROI=[(0,9224,89,119)], CisROI=[(455,8621,120,115)], expanded=False, h0Fallback=False | R8: Texp=(6891.7,9283.5), Tdet=(6891.0,9281.0), Cpred=(7459.2,8678.3), Cdet=(7456.6,8722.0), R=(-3.9,-10.0), TiffROI=[(6832,9224,89,119)], CisROI=[(7399,8621,120,115)], expanded=False, h0Fallback=False | L9: Texp=(29.5,10370.1), Tdet=(29.0,10368.0), Cpred=(510.9,9726.6), Cdet=(513.1,9732.2), R=(-1.8,-18.6), TiffROI=[(0,10311,89,119)], CisROI=[(451,9669,120,115)], expanded=False, h0Fallback=False | R9: Texp=(6891.7,10370.1), Tdet=(6891.0,10368.0), Cpred=(7453.6,9726.6), Cdet=(7451.1,9762.0), R=(-3.8,0.5), TiffROI=[(6832,10311,89,119)], CisROI=[(7393,9669,121,115)], expanded=False, h0Fallback=False | Final: L1:Detected, C=(550.4,1504.0), R=(4.1,-7.0) | R1:Detected, C=(7497.4,1503.9), R=(-2.3,-8.2) | L2:Detected, C=(551.1,2529.6), R=(8.7,-13.1) | R2:Detected, C=(7490.4,2531.7), R=(-3.6,-13.3) | L3:Detected, C=(549.7,3555.4), R=(11.2,-18.4) | R3:Detected, C=(7485.4,3563.2), R=(-3.0,-14.2) | L4:Detected, C=(546.2,4582.1), R=(11.7,-22.5) | R4:Detected, C=(7480.3,4586.6), R=(-2.6,-22.7) | L5:Detected, C=(542.4,5611.2), R=(11.8,-23.6) | R5:Detected, C=(7475.8,5627.8), R=(-1.4,-12.9) | L6:Detected, C=(534.9,6628.2), R=(8.2,-36.4) | R6:Detected, C=(7469.7,6662.6), R=(-2.0,-9.1) | L7:Detected, C=(526.6,7665.7), R=(3.9,-28.1) | R7:Detected, C=(7463.1,7696.1), R=(-3.0,-5.9) | L8:Detected, C=(519.6,8697.4), R=(0.8,-25.2) | R8:Detected, C=(7456.6,8722.0), R=(-3.9,-10.0) | L9:Detected, C=(513.1,9732.2), R=(-1.8,-18.6) | R9:Detected, C=(7451.1,9762.0), R=(-3.8,0.5)",
+      "NewDiagnostic": "QR(globalY=11983, segmentStart=1208, localY=10775.0, height=683.7, cisPxPerMmY=11.3952, cisPxPerMmX=11.9468) | Top: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,295,6921,591), CIS-ROI=(0,0,7803,799), SinglePass=True, Tilt=-0.07deg, YDrift=-8.9px, LineResidual=0.22px, MatchResidual=3.49px, Coverage=52.2% | Bottom: TIFF=7, CIS=7, Matched=7, TIFF-ROI=(0,11161,6921,591), CIS-ROI=(0,10376,7803,798), SinglePass=True, Tilt=0.11deg, YDrift=14.6px, LineResidual=0.27px, MatchResidual=0.07px, Coverage=52.2% | HQuality=Passed(inliers=14/14, ratio=100.0%, median=0.063mm) | Nonlinear=Enabled: SideMarks L=9/9, R=9/9, outliers L=0, R=0, LOO median=0.259mm, max=0.925mm | L1: Texp=(29.5,1677.2), Tdet=(29.0,1675.0), Cpred=(542.3,1339.7), Cdet=(550.4,1504.0), R=(4.1,-7.0), TiffROI=[(0,1618,89,119)], CisROI=[(482,1453,121,115)], expanded=False, h0Fallback=True | R1: Texp=(6891.7,1677.2), Tdet=(6891.0,1675.0), Cpred=(7498.3,1339.7), Cdet=(7497.4,1503.9), R=(-2.3,-8.2), TiffROI=[(6832,1618,89,119)], CisROI=[(7438,1455,121,115)], expanded=False, h0Fallback=True | L2: Texp=(29.5,2763.8), Tdet=(29.0,2761.0), Cpred=(538.4,2388.1), Cdet=(551.1,2529.6), R=(8.7,-13.1), TiffROI=[(0,2704,89,119)], CisROI=[(478,2485,121,115)], expanded=False, h0Fallback=True | R2: Texp=(6891.7,2763.8), Tdet=(6891.0,2761.0), Cpred=(7492.7,2388.1), Cdet=(7490.4,2531.7), R=(-3.6,-13.3), TiffROI=[(6832,2704,89,119)], CisROI=[(7432,2487,121,115)], expanded=False, h0Fallback=True | L3: Texp=(29.5,3850.4), Tdet=(29.0,3848.0), Cpred=(534.5,3436.5), Cdet=(549.7,3555.4), R=(11.2,-18.4), TiffROI=[(0,3791,89,119)], CisROI=[(474,3516,121,115)], expanded=False, h0Fallback=True | R3: Texp=(6891.7,3850.4), Tdet=(6891.0,3848.0), Cpred=(7487.1,3436.5), Cdet=(7485.4,3563.2), R=(-3.0,-14.2), TiffROI=[(6832,3791,89,119)], CisROI=[(7427,3520,120,115)], expanded=False, h0Fallback=True | L4: Texp=(29.5,4937.0), Tdet=(29.0,4934.0), Cpred=(530.5,4484.8), Cdet=(546.2,4582.1), R=(11.7,-22.5), TiffROI=[(0,4877,89,120)], CisROI=[(411,4370,239,229)], expanded=True, h0Fallback=False | R4: Texp=(6891.7,4937.0), Tdet=(6891.0,4934.0), Cpred=(7481.5,4484.8), Cdet=(7480.3,4586.6), R=(-2.6,-22.7), TiffROI=[(6832,4877,89,120)], CisROI=[(7362,4370,239,229)], expanded=True, h0Fallback=False | L5: Texp=(29.5,6023.6), Tdet=(29.0,6021.0), Cpred=(526.6,5533.2), Cdet=(542.4,5611.2), R=(11.8,-23.6), TiffROI=[(0,5964,89,119)], CisROI=[(407,5419,240,229)], expanded=True, h0Fallback=False | R5: Texp=(6891.7,6023.6), Tdet=(6891.0,6021.0), Cpred=(7475.9,5533.2), Cdet=(7475.8,5627.8), R=(-1.4,-12.9), TiffROI=[(6832,5964,89,119)], CisROI=[(7356,5419,240,229)], expanded=True, h0Fallback=False | L6: Texp=(29.5,7110.2), Tdet=(29.0,7108.0), Cpred=(522.7,6581.5), Cdet=(534.9,6628.2), R=(8.2,-36.4), TiffROI=[(0,7051,89,119)], CisROI=[(462,6524,121,115)], expanded=False, h0Fallback=False | R6: Texp=(6891.7,7110.2), Tdet=(6891.0,7108.0), Cpred=(7470.3,6581.5), Cdet=(7469.7,6662.6), R=(-2.0,-9.1), TiffROI=[(6832,7051,89,119)], CisROI=[(7350,6467,240,229)], expanded=True, h0Fallback=False | L7: Texp=(29.5,8196.9), Tdet=(29.0,8194.0), Cpred=(518.7,7629.9), Cdet=(526.6,7665.7), R=(3.9,-28.1), TiffROI=[(0,8137,89,119)], CisROI=[(458,7572,121,115)], expanded=False, h0Fallback=False | R7: Texp=(6891.7,8196.9), Tdet=(6891.0,8194.0), Cpred=(7464.8,7629.9), Cdet=(7463.1,7696.1), R=(-3.0,-5.9), TiffROI=[(6832,8137,89,119)], CisROI=[(7345,7515,240,229)], expanded=True, h0Fallback=False | L8: Texp=(29.5,9283.5), Tdet=(29.0,9281.0), Cpred=(514.8,8678.3), Cdet=(519.6,8697.4), R=(0.8,-25.2), TiffROI=[(0,9224,89,119)], CisROI=[(455,8621,120,115)], expanded=False, h0Fallback=False | R8: Texp=(6891.7,9283.5), Tdet=(6891.0,9281.0), Cpred=(7459.2,8678.3), Cdet=(7456.6,8722.0), R=(-3.9,-10.0), TiffROI=[(6832,9224,89,119)], CisROI=[(7399,8621,120,115)], expanded=False, h0Fallback=False | L9: Texp=(29.5,10370.1), Tdet=(29.0,10368.0), Cpred=(510.9,9726.6), Cdet=(513.1,9732.2), R=(-1.8,-18.6), TiffROI=[(0,10311,89,119)], CisROI=[(451,9669,120,115)], expanded=False, h0Fallback=False | R9: Texp=(6891.7,10370.1), Tdet=(6891.0,10368.0), Cpred=(7453.6,9726.6), Cdet=(7451.1,9762.0), R=(-3.8,0.5), TiffROI=[(6832,10311,89,119)], CisROI=[(7393,9669,121,115)], expanded=False, h0Fallback=False | Final:  | L1:Detected, C=(550.4,1504.0), R=(4.1,-7.0) | R1:Detected, C=(7497.4,1503.9), R=(-2.3,-8.2) | L2:Detected, C=(551.1,2529.6), R=(8.7,-13.1) | R2:Detected, C=(7490.4,2531.7), R=(-3.6,-13.3) | L3:Detected, C=(549.7,3555.4), R=(11.2,-18.4) | R3:Detected, C=(7485.4,3563.2), R=(-3.0,-14.2) | L4:Detected, C=(546.2,4582.1), R=(11.7,-22.5) | R4:Detected, C=(7480.3,4586.6), R=(-2.6,-22.7) | L5:Detected, C=(542.4,5611.2), R=(11.8,-23.6) | R5:Detected, C=(7475.8,5627.8), R=(-1.4,-12.9) | L6:Detected, C=(534.9,6628.2), R=(8.2,-36.4) | R6:Detected, C=(7469.7,6662.6), R=(-2.0,-9.1) | L7:Detected, C=(526.6,7665.7), R=(3.9,-28.1) | R7:Detected, C=(7463.1,7696.1), R=(-3.0,-5.9) | L8:Detected, C=(519.6,8697.4), R=(0.8,-25.2) | R8:Detected, C=(7456.6,8722.0), R=(-3.9,-10.0) | L9:Detected, C=(513.1,9732.2), R=(-1.8,-18.6) | R9:Detected, C=(7451.1,9762.0), R=(-3.8,0.5)",
+      "Mode": "Nonlinear",
+      "WhiteStatus": "Disabled"
+    },
+    {
+      "Name": "native_repeat",
+      "Warmup": 3,
+      "Iterations": 20,
+      "Samples": [
+        {
+          "Iteration": 1,
+          "Milliseconds": 427.2681,
+          "PrivateBytes": 1327013888
+        },
+        {
+          "Iteration": 2,
+          "Milliseconds": 423.6666,
+          "PrivateBytes": 1327026176
+        },
+        {
+          "Iteration": 3,
+          "Milliseconds": 433.9897,
+          "PrivateBytes": 1327030272
+        },
+        {
+          "Iteration": 4,
+          "Milliseconds": 448.8018,
+          "PrivateBytes": 1327022080
+        },
+        {
+          "Iteration": 5,
+          "Milliseconds": 481.8093,
+          "PrivateBytes": 1325105152
+        },
+        {
+          "Iteration": 6,
+          "Milliseconds": 501.74920000000003,
+          "PrivateBytes": 1327001600
+        },
+        {
+          "Iteration": 7,
+          "Milliseconds": 448.447,
+          "PrivateBytes": 1325514752
+        },
+        {
+          "Iteration": 8,
+          "Milliseconds": 489.8047,
+          "PrivateBytes": 1325531136
+        },
+        {
+          "Iteration": 9,
+          "Milliseconds": 478.42830000000004,
+          "PrivateBytes": 1327435776
+        },
+        {
+          "Iteration": 10,
+          "Milliseconds": 495.8732,
+          "PrivateBytes": 1327427584
+        },
+        {
+          "Iteration": 11,
+          "Milliseconds": 501.3065,
+          "PrivateBytes": 1327427584
+        },
+        {
+          "Iteration": 12,
+          "Milliseconds": 466.18550000000005,
+          "PrivateBytes": 1327415296
+        },
+        {
+          "Iteration": 13,
+          "Milliseconds": 435.87550000000005,
+          "PrivateBytes": 1327386624
+        },
+        {
+          "Iteration": 14,
+          "Milliseconds": 407.5407,
+          "PrivateBytes": 1327378432
+        },
+        {
+          "Iteration": 15,
+          "Milliseconds": 402.70300000000003,
+          "PrivateBytes": 1326739456
+        },
+        {
+          "Iteration": 16,
+          "Milliseconds": 395.62870000000004,
+          "PrivateBytes": 1324515328
+        },
+        {
+          "Iteration": 17,
+          "Milliseconds": 397.1007,
+          "PrivateBytes": 1324462080
+        },
+        {
+          "Iteration": 18,
+          "Milliseconds": 403.1301,
+          "PrivateBytes": 1327353856
+        },
+        {
+          "Iteration": 19,
+          "Milliseconds": 439.0403,
+          "PrivateBytes": 1327341568
+        },
+        {
+          "Iteration": 20,
+          "Milliseconds": 419.3473,
+          "PrivateBytes": 1326039040
+        }
+      ]
+    }
+  ]
+}

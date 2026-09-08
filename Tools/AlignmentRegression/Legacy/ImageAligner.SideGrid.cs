@@ -4,7 +4,7 @@ using System.Linq;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace AlignmentRegression.Legacy
 {
     /// <summary>
     /// 侧边 Mark 非线性残差网格：检测左右 4 mm Mark、剔除异常残差并建立三列控制网格。

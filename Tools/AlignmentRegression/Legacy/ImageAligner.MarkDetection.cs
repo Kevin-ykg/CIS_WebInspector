@@ -4,7 +4,7 @@ using System.Linq;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace AlignmentRegression.Legacy
 {
     /// <summary>
     /// Mark ROI 与候选检测，统一处理坐标换算、条带搜索、轮廓评分、行匹配和全局矩阵求解。

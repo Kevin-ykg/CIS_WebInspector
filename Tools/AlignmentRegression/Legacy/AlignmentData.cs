@@ -1,9 +1,10 @@
 using System;
+using AppConfig = CIS_WebInspector.Models.AppConfig;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Models
+namespace AlignmentRegression.Legacy
 {
     /// <summary>最终矫正方式：仅全局 H0，或在 H0 上叠加侧边残差网格。</summary>
     public enum AlignmentMode
@@ -145,14 +146,11 @@ namespace CIS_WebInspector.Models
 
     /// <summary>
     /// CIS 到 TIFF 的完整对准结果。GlobalTransform 表示 CIS→TIFF；逆矩阵供 Remap
-    /// 从目标 TIFF 像素反查源 CIS 像素。对象拥有两份诊断 Mat 和原生结果句柄，调用方必须 Dispose。
+    /// 从目标 TIFF 像素反查源 CIS 像素。对象拥有这两个 Mat，调用方必须 Dispose。
     /// </summary>
     public sealed class AlignmentResult : IDisposable
     {
         private bool _disposed;
-        // 用 IDisposable 表达所有权，不让公共数据模型依赖具体 P/Invoke 接口。
-        // 只由 ImageAligner 交接 SafeHandle；与两份诊断矩阵一同释放。
-        internal IDisposable NativeResource { get; set; }
 
         internal AlignmentResult(
             Mat globalTransform,
@@ -180,7 +178,7 @@ namespace CIS_WebInspector.Models
             StripeRows = Math.Max(1, stripeRows);
         }
 
-        /// <summary>CIS→TIFF 的 3×3 H0 诊断副本。只读使用；修改它不会改写原生 Warp 的矩阵。</summary>
+        /// <summary>CIS 源坐标到 TIFF 目标坐标的 3×3 H0。</summary>
         public Mat GlobalTransform { get; private set; }
         /// <summary>TIFF 目标坐标到 CIS 源坐标的 H0 逆矩阵，仅供内部逆向采样。</summary>
         internal Mat InverseGlobalTransform { get; private set; }
@@ -213,8 +211,6 @@ namespace CIS_WebInspector.Models
             if (_disposed)
                 return;
 
-            NativeResource?.Dispose();
-            NativeResource = null;
             InverseGlobalTransform?.Dispose();
             InverseGlobalTransform = null;
             GlobalTransform?.Dispose();

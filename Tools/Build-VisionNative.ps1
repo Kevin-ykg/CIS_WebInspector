@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-构建二维码、零件局部配准与三类缺陷检测 C++ DLL。首次构建下载固定版本的 OpenCV/contrib；后续复用 obj/VisionNative。
+构建二维码、全局/局部对准、白墨与三类缺陷检测 C++ DLL。首次构建下载固定版本的 OpenCV/contrib；后续复用 obj/VisionNative。
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File Tools/Build-VisionNative.ps1 -Configuration Release
 #>
