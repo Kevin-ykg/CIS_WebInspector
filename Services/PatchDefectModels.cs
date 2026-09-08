@@ -1,10 +1,6 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Threading;
 using OpenCvSharp;
-using OpenCvSharp.Features2D;
 
 namespace CIS_WebInspector.Services
 {
@@ -78,216 +74,54 @@ namespace CIS_WebInspector.Services
     }
 
     /// <summary>
-    /// 单次裁切批次内复用的 TIFF/Alpha 模板特征缓存。
-    /// 缓存只在一批零件处理期间存在，避免跨批次持有 Mat。快速签名只负责分桶，
-    /// 命中前仍做逐像素精确比较，因此哈希碰撞不会串用不同模板的 SIFT 特征。
+    /// 批次内原生模板缓存。快速签名分桶 + 像素精确比较全部由 C++ 实现。
+    /// worker 通过 shared_ptr 保持原生缓存有效；正常流程先释放 worker，再释放批次缓存。
     /// </summary>
     internal sealed class PatchSiftTemplateCache : IDisposable
     {
-        private const int QuickKeySignatureSize = 16;
-
-        private sealed class TemplateEntry : IDisposable
+        internal PatchNativeInterop.CacheHandle Handle { get; }
+        private readonly byte[] _error = new byte[4096];
+        private readonly object _sync = new object();
+        internal PatchSiftTemplateCache()
         {
-            public Mat Representative { get; }
-            public PatchSiftTemplateFeatures Features { get; }
-
-            public TemplateEntry(Mat representative, PatchSiftTemplateFeatures features)
-            {
-                Representative = representative;
-                Features = features;
-            }
-
-            public void Dispose()
-            {
-                Features.Dispose();
-                Representative.Dispose();
-            }
+            PatchNativeInterop.ValidateAbi();
+            PatchNativeInterop.Check(PatchNativeInterop.cis_patch_cache_create(out IntPtr pointer, _error, (uint)_error.Length), _error);
+            Handle = new PatchNativeInterop.CacheHandle(pointer);
         }
-
-        private sealed class TemplateBucket : IDisposable
+        private PatchNativeInterop.CacheStats Snapshot()
         {
-            public object SyncRoot { get; } = new object();
-            public List<TemplateEntry> Entries { get; } = new List<TemplateEntry>();
-
-            public void Dispose()
+            lock (_sync)
             {
-                lock (SyncRoot)
-                {
-                    foreach (TemplateEntry entry in Entries)
-                        entry.Dispose();
-                    Entries.Clear();
-                }
+                var stats = new PatchNativeInterop.CacheStats { Size = 48 };
+                PatchNativeInterop.Check(PatchNativeInterop.cis_patch_cache_stats(Handle, ref stats, _error, (uint)_error.Length), _error);
+                return stats;
             }
         }
-
-        private readonly ConcurrentDictionary<string, TemplateBucket> _buckets =
-            new ConcurrentDictionary<string, TemplateBucket>();
-        private int _entryCount;
-        private long _hitCount;
-        private long _missCount;
-        private long _exactComparisonCount;
-        private long _exactComparisonTicks;
-        private long _quickKeyTicks;
-
-        public int Count => Volatile.Read(ref _entryCount);
-        public long HitCount => Interlocked.Read(ref _hitCount);
-        public long MissCount => Interlocked.Read(ref _missCount);
-        public long ExactComparisonCount => Interlocked.Read(ref _exactComparisonCount);
-        public double ExactComparisonElapsedMilliseconds =>
-            Interlocked.Read(ref _exactComparisonTicks) * 1000.0 / Stopwatch.Frequency;
-        public double QuickKeyElapsedMilliseconds =>
-            Interlocked.Read(ref _quickKeyTicks) * 1000.0 / Stopwatch.Frequency;
-
-        /// <summary>按图像内容复用模板 SIFT 特征；新条目持有模板副本和描述子，随批次缓存释放。</summary>
-        public PatchSiftTemplateFeatures GetOrCreate(Mat templateFeatureImage, SIFT sift)
-        {
-            if (templateFeatureImage == null || templateFeatureImage.Empty())
-                throw new ArgumentException("模板特征图不能为空。", nameof(templateFeatureImage));
-            if (sift == null)
-                throw new ArgumentNullException(nameof(sift));
-
-            long keyStart = Stopwatch.GetTimestamp();
-            string quickKey = ComputeQuickKey(templateFeatureImage);
-            Interlocked.Add(ref _quickKeyTicks, Stopwatch.GetTimestamp() - keyStart);
-
-            // 16×16 二维网格签名只用于快速分桶；命中缓存前仍进行原生像素级精确比较，
-            // 因此签名碰撞不会导致不同模板复用同一组 SIFT 特征。
-            TemplateBucket bucket = _buckets.GetOrAdd(quickKey, _ => new TemplateBucket());
-            lock (bucket.SyncRoot)
-            {
-                foreach (TemplateEntry entry in bucket.Entries)
-                {
-                    Interlocked.Increment(ref _exactComparisonCount);
-                    long compareStart = Stopwatch.GetTimestamp();
-                    bool exactMatch = AreExactlyEqual(templateFeatureImage, entry.Representative);
-                    Interlocked.Add(ref _exactComparisonTicks, Stopwatch.GetTimestamp() - compareStart);
-                    if (exactMatch)
-                    {
-                        Interlocked.Increment(ref _hitCount);
-                        return entry.Features;
-                    }
-                }
-
-                Mat representative = templateFeatureImage.Clone();
-                try
-                {
-                    PatchSiftTemplateFeatures features = PatchSiftTemplateFeatures.Create(templateFeatureImage, sift);
-                    bucket.Entries.Add(new TemplateEntry(representative, features));
-                    representative = null;
-                    Interlocked.Increment(ref _entryCount);
-                    Interlocked.Increment(ref _missCount);
-                    return features;
-                }
-                finally
-                {
-                    representative?.Dispose();
-                }
-            }
-        }
-
-        private static bool AreExactlyEqual(Mat first, Mat second)
-        {
-            return first.Rows == second.Rows &&
-                   first.Cols == second.Cols &&
-                   first.Type() == second.Type() &&
-                   Cv2.Norm(first, second, NormTypes.L1) == 0.0;
-        }
-
-        /// <summary>对规则采样的 16×16 像素生成快速分桶键，不把该键当作最终相等判据。</summary>
-        private static unsafe string ComputeQuickKey(Mat image)
-        {
-            const ulong offsetBasis = 1469598103934665603UL;
-            const ulong prime = 1099511628211UL;
-            int pixelBytes = checked((int)image.ElemSize());
-            byte* data = image.DataPointer;
-            long step = (long)image.Step();
-            ulong hash = offsetBasis;
-
-            for (int gridY = 0; gridY < QuickKeySignatureSize; gridY++)
-            {
-                int row = Math.Min(
-                    image.Rows - 1,
-                    (int)(((2L * gridY + 1) * image.Rows) / (2L * QuickKeySignatureSize)));
-                for (int gridX = 0; gridX < QuickKeySignatureSize; gridX++)
-                {
-                    int column = Math.Min(
-                        image.Cols - 1,
-                        (int)(((2L * gridX + 1) * image.Cols) / (2L * QuickKeySignatureSize)));
-                    byte* pixel = data + row * step + column * pixelBytes;
-                    for (int channelByte = 0; channelByte < pixelBytes; channelByte++)
-                    {
-                        hash ^= *(pixel + channelByte);
-                        hash *= prime;
-                    }
-                }
-            }
-
-            return $"{image.Rows}x{image.Cols}:{image.Type()}:{hash:X16}";
-        }
-
-        public void Dispose()
-        {
-            foreach (TemplateBucket bucket in _buckets.Values)
-                bucket.Dispose();
-            _buckets.Clear();
-            Volatile.Write(ref _entryCount, 0);
-        }
+        public int Count => checked((int)Snapshot().Entries);
+        public long HitCount => checked((long)Snapshot().Hits);
+        public long MissCount => checked((long)Snapshot().Misses);
+        public long ExactComparisonCount => checked((long)Snapshot().Comparisons);
+        public double ExactComparisonElapsedMilliseconds => Snapshot().ComparisonMs;
+        public double QuickKeyElapsedMilliseconds => Snapshot().QuickKeyMs;
+        public void Dispose() { lock (_sync) Handle.Dispose(); }
     }
 
-    internal sealed class PatchSiftTemplateFeatures : IDisposable
-    {
-        public KeyPoint[] KeyPoints { get; private set; }
-        public Mat Descriptors { get; private set; }
-
-        private PatchSiftTemplateFeatures(KeyPoint[] keyPoints, Mat descriptors)
-        {
-            KeyPoints = keyPoints;
-            Descriptors = descriptors;
-        }
-
-        /// <summary>提取模板关键点和描述子；返回对象拥有 descriptors Mat。</summary>
-        public static PatchSiftTemplateFeatures Create(Mat featureImage, SIFT sift)
-        {
-            var descriptors = new Mat();
-            try
-            {
-                sift.DetectAndCompute(featureImage, null, out KeyPoint[] keyPoints, descriptors);
-                return new PatchSiftTemplateFeatures(keyPoints, descriptors);
-            }
-            catch
-            {
-                descriptors.Dispose();
-                throw;
-            }
-        }
-
-        public void Dispose()
-        {
-            Descriptors?.Dispose();
-            Descriptors = null;
-            KeyPoints = Array.Empty<KeyPoint>();
-        }
-    }
-
-    /// <summary>Parallel.ForEach 每个 worker 独占的非线程安全 OpenCV 对象。</summary>
+    /// <summary>
+    /// Parallel.ForEach 每个 worker 独占一个原生上下文。SIFT/BFMatcher 按需创建并复用；
+    /// 普通差分也使用该上下文，但关闭局部配准不会创建 SIFT 对象。
+    /// </summary>
     internal sealed class PatchSiftWorker : IDisposable
     {
-        public SIFT Sift { get; }
-        public BFMatcher Matcher { get; }
-        public PatchSiftTemplateCache TemplateCache { get; }
-
-        public PatchSiftWorker(PatchSiftTemplateCache templateCache)
+        internal PatchNativeInterop.WorkerHandle Handle { get; }
+        internal byte[] Error { get; } = new byte[4096];
+        internal object SyncRoot { get; } = new object();
+        internal PatchSiftWorker(PatchSiftTemplateCache cache)
         {
-            TemplateCache = templateCache ?? throw new ArgumentNullException(nameof(templateCache));
-            // 与原始二次配准保持一致；worker 只负责复用对象，不改变算法参数。
-            Sift = SIFT.Create(100);
-            Matcher = new BFMatcher(NormTypes.L2);
+            if (cache == null) throw new ArgumentNullException(nameof(cache));
+            PatchNativeInterop.Check(PatchNativeInterop.cis_patch_worker_create(cache.Handle, out IntPtr pointer,
+                Error, (uint)Error.Length), Error);
+            Handle = new PatchNativeInterop.WorkerHandle(pointer);
         }
-
-        public void Dispose()
-        {
-            Matcher.Dispose();
-            Sift.Dispose();
-        }
+        public void Dispose() { lock (SyncRoot) Handle.Dispose(); }
     }
 }

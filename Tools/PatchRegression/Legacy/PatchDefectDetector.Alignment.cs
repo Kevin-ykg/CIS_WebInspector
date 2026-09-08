@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using OpenCvSharp;
 
-namespace CIS_WebInspector.Services
+namespace PatchRegression.Legacy
 {
     /// <summary>
     /// 零件级局部配准。包含轮廓平移、SIFT 匹配、RANSAC、距离场评分与最终单次 Warp。

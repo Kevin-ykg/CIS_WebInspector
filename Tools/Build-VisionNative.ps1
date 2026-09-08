@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-构建二维码 C++ DLL。首次构建下载固定版本的 OpenCV/contrib；后续复用 obj/VisionNative。
+构建二维码、零件局部配准与三类缺陷检测 C++ DLL。首次构建下载固定版本的 OpenCV/contrib；后续复用 obj/VisionNative。
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File Tools/Build-VisionNative.ps1 -Configuration Release
 #>
@@ -46,7 +46,7 @@ $contrib = Get-Source 'opencv_contrib' '15B1DECFA4D2EAF3B39148EFF4F311739FDB32F0
 # 不关闭 IPP：插值/卷积的浮点差异可能影响模糊二维码的临界识别与几何坐标。
 Invoke-CMake @('-S', $opencv, '-B', $opencvBuild, '-A', 'x64',
     '-DCMAKE_POLICY_VERSION_MINIMUM=3.5', '-DCMAKE_CXX_FLAGS=/utf-8', '-DCMAKE_C_FLAGS=/utf-8',
-    "-DOPENCV_EXTRA_MODULES_PATH=$contrib/modules", '-DBUILD_LIST=core,imgproc,dnn,wechat_qrcode',
+    "-DOPENCV_EXTRA_MODULES_PATH=$contrib/modules", '-DBUILD_LIST=core,imgproc,dnn,wechat_qrcode,features2d,calib3d,ximgproc',
     '-DBUILD_SHARED_LIBS=OFF', '-DBUILD_WITH_STATIC_CRT=OFF', '-DBUILD_TESTS=OFF', '-DBUILD_PERF_TESTS=OFF',
     '-DBUILD_EXAMPLES=OFF', '-DBUILD_opencv_apps=OFF', '-DBUILD_JAVA=OFF', '-DENABLE_PRECOMPILED_HEADERS=OFF',
     '-DWITH_EIGEN=OFF', '-DBUILD_opencv_python2=OFF', '-DBUILD_opencv_python3=OFF',

@@ -36,6 +36,10 @@
 
   <ItemGroup>
     <Compile Remove="Tools\QrRegression\**\*.cs" />
+    <Compile Remove="Tools\PatchRegression\**\*.cs" />
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>PatchRegression</_Parameter1>
+    </AssemblyAttribute>
     <Resource Include="logo.png" />
     <None Update="Assets\WeChatQRCode\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -50,7 +54,7 @@
   <!-- Post-build: copy all native DLLs to output directory -->
   <Target Name="CopyNativeDlls" AfterTargets="Build">
     <Error Condition="!Exists('obj\VisionNative\core-build\$(VisionNativeConfiguration)\CISVisionCore.dll')"
-           Text="缺少 CISVisionCore.dll，请先运行 Tools\Build-VisionNative.ps1 构建 C++ 二维码算法库。" />
+           Text="缺少 CISVisionCore.dll，请先运行 Tools\Build-VisionNative.ps1 构建 C++ 视觉算法库。" />
     <Copy SourceFiles="obj\VisionNative\core-build\$(VisionNativeConfiguration)\CISVisionCore.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="..\..\lib\x64\VolansGrabberCL.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="TLC_SDK_C++_64位\tlc.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />

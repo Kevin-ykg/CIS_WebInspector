@@ -5,7 +5,7 @@ using OpenCvSharp;
 using OpenCvSharp.XImgProc;
 using CIS_WebInspector.Models;
 
-namespace CIS_WebInspector.Services
+namespace PatchRegression.Legacy
 {
     /// <summary>
     /// 细线断裂检测通道。包含细线前景证据、骨架长度、端点锚定及抗错位门控。

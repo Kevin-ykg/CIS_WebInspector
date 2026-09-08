@@ -1,0 +1,326 @@
+{
+  "Name": "actual-12-16",
+  "Rows": [
+    {
+      "Name": "blank_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 97.10050000000001,
+      "NativeMs": 55.991,
+      "LegacyAlignment": "[LocalAlign] blank_v3 skipped: 模板特征为空, time=60ms",
+      "NativeAlignment": "[LocalAlign] blank_v3 skipped: 模板特征为空, time=7ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "three_defects_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 73.9687,
+      "NativeMs": 43.7612,
+      "LegacyAlignment": "[LocalAlign] three_defects_v3 NotNeeded: edge=0.257workPx/0.40origPx, bestShift=0.00px, improve=0.0%, time=56ms",
+      "NativeAlignment": "[LocalAlign] three_defects_v3 NotNeeded: edge=0.257->0.257, refine=(0.00,0.00)workPx, localWorst=infpx/0, time=25ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 12.266004938271605,
+        "MaxAreaOuterMm2": 14.097940740740741,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "shift_rotation_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 219.35600000000002,
+      "NativeMs": 166.2252,
+      "LegacyAlignment": "[LocalAlign] shift_rotation_v3 Applied/Similarity: workScale=0.636, defectScale=0.300, kp=88/100, mutual=24, inliers=24(100%), coverage=27.3%, rms=1.14px, move=(-0.45,-0.35)px, refine=(0.00,0.00)workPx, edge=1.880->0.288, localWorst=-0.243px/9, time=198ms",
+      "NativeAlignment": "[LocalAlign] shift_rotation_v3 Applied/Similarity: workScale=0.636, kp=88/100, mutual=24, inliers=24, ratio=1.000, coverage=0.273, rms=1.139, move=(-0.45,-0.35)px, edge=1.880->0.288, refine=(0.00,0.00)workPx, localWorst=-0.243px/9, time=94ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 10.35441975308642,
+        "MaxAreaOuterMm2": 14.735135802469136,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "strided_bgr_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 79.4362,
+      "NativeMs": 38.5018,
+      "LegacyAlignment": "[LocalAlign] strided_bgr_v3 NotNeeded: edge=0.257workPx/0.40origPx, bestShift=0.00px, improve=0.0%, time=63ms",
+      "NativeAlignment": "[LocalAlign] strided_bgr_v3 NotNeeded: edge=0.257->0.257, refine=(0.00,0.00)workPx, localWorst=infpx/0, time=25ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 12.266004938271605,
+        "MaxAreaOuterMm2": 14.097940740740741,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "01065d72aa6d4e9d88de1b65285252dd_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 373.6082,
+      "NativeMs": 312.8329,
+      "LegacyAlignment": "[LocalAlign] 01065d72aa6d4e9d88de1b65285252dd_v3 Applied/SimilarityConditional: workScale=0.206, defectScale=0.300, kp=100/101, mutual=42, inliers=18(43%), coverage=30.8%, rms=1.82px, move=(-5.23,-9.34)px, refine=(0.00,0.00)workPx, edge=1.471->1.275, localWorst=+0.007px/9, time=214ms",
+      "NativeAlignment": "[LocalAlign] 01065d72aa6d4e9d88de1b65285252dd_v3 Applied/SimilarityConditional: workScale=0.206, kp=100/101, mutual=42, inliers=18, ratio=0.429, coverage=0.308, rms=1.818, move=(-5.23,-9.34)px, edge=1.471->1.275, refine=(0.00,0.00)workPx, localWorst=0.007px/9, time=88ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 5,
+        "OuterDefectCount": 18,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 4433.842187654321,
+        "MaxAreaOuterMm2": 146.3159160493827,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "a801bb9e780c41ec8ceafb5178b18ab1_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 338.2619,
+      "NativeMs": 305.1615,
+      "LegacyAlignment": "[LocalAlign] a801bb9e780c41ec8ceafb5178b18ab1_v3 Applied/Similarity: workScale=0.206, defectScale=0.300, kp=100/100, mutual=46, inliers=29(63%), coverage=66.3%, rms=1.31px, move=(-21.21,-3.03)px, refine=(0.00,0.00)workPx, edge=1.468->1.120, localWorst=-0.093px/9, time=195ms",
+      "NativeAlignment": "[LocalAlign] a801bb9e780c41ec8ceafb5178b18ab1_v3 Applied/Similarity: workScale=0.206, kp=100/100, mutual=46, inliers=29, ratio=0.630, coverage=0.663, rms=1.312, move=(-21.21,-3.03)px, edge=1.468->1.120, refine=(0.00,0.00)workPx, localWorst=-0.093px/9, time=87ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 4,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 84.1893975308642,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "b2b6d040018b4acd8c8c506dd6228fad_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 280.9082,
+      "NativeMs": 265.1492,
+      "LegacyAlignment": "[LocalAlign] b2b6d040018b4acd8c8c506dd6228fad_v3 skipped: Similarity 内点置信度不足(14/57, 25%, coverage=29.4%, rms=1.87px), time=147ms",
+      "NativeAlignment": "[LocalAlign] b2b6d040018b4acd8c8c506dd6228fad_v3 skipped: Similarity 内点置信度不足, time=78ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0.5575456790123456,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "ebf62026a5374732ac4dcb898e0d65a3_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 377.0027,
+      "NativeMs": 322.15930000000003,
+      "LegacyAlignment": "[LocalAlign] ebf62026a5374732ac4dcb898e0d65a3_v3 Applied/Similarity: workScale=0.213, defectScale=0.300, kp=100/100, mutual=62, inliers=35(56%), coverage=50.7%, rms=1.57px, move=(-11.34,-11.01)px, refine=(0.00,0.00)workPx, edge=1.301->0.834, localWorst=-0.366px/9, time=219ms",
+      "NativeAlignment": "[LocalAlign] ebf62026a5374732ac4dcb898e0d65a3_v3 Applied/Similarity: workScale=0.213, kp=100/100, mutual=62, inliers=35, ratio=0.565, coverage=0.507, rms=1.573, move=(-11.34,-11.01)px, edge=1.301->0.834, refine=(0.00,0.00)workPx, localWorst=-0.366px/9, time=100ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "ed6e4b4420344568954db7ffeacb6735_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 308.8921,
+      "NativeMs": 250.4053,
+      "LegacyAlignment": "[LocalAlign] ed6e4b4420344568954db7ffeacb6735_v3 skipped: 相似变换与纯平移均未通过轮廓质量门控：similarity(global=1.296->0.851, improve=34.3%, localWorst=+1.329px, cells=9), translation(global=1.296->0.851, improve=34.3%, localWorst=+1.329px, cells=9, P80=5.40px, move=(,)px), time=182ms",
+      "NativeAlignment": "[LocalAlign] ed6e4b4420344568954db7ffeacb6735_v3 skipped: 相似变换与纯平移均未通过轮廓质量门控: similarity(edge=1.296->0.851, refine=(0.00,0.25)workPx, localWorst=1.329px/9), translation(edge=1.296->0.851, refine=(0.00,0.25)workPx, localWorst=1.329px/9), P80=5.397, time=90ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 2,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 19.912345679012347,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "ff11e72effdf472699781f9d2b0e9046_v3",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 331.1444,
+      "NativeMs": 318.57230000000004,
+      "LegacyAlignment": "[LocalAlign] ff11e72effdf472699781f9d2b0e9046_v3 Applied/SimilarityConditional: workScale=0.206, defectScale=0.300, kp=100/100, mutual=73, inliers=30(41%), coverage=62.4%, rms=1.83px, move=(-11.85,6.15)px, refine=(0.00,0.00)workPx, edge=1.236->0.596, localWorst=-0.140px/9, time=189ms",
+      "NativeAlignment": "[LocalAlign] ff11e72effdf472699781f9d2b0e9046_v3 Applied/SimilarityConditional: workScale=0.206, kp=100/100, mutual=73, inliers=30, ratio=0.411, coverage=0.624, rms=1.830, move=(-11.85,6.15)px, edge=1.236->0.596, refine=(0.00,0.00)workPx, localWorst=-0.140px/9, time=94ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    }
+  ],
+  "Performance": {
+    "sample": "ff11e72effdf472699781f9d2b0e9046",
+    "note": "warm, sequential, no image saves; six interleaved calls each; not production takt",
+    "legacyMs": [
+      1085.233,
+      1061.0534,
+      1060.4857,
+      1051.1085,
+      1066.3925000000002,
+      1146.5491
+    ],
+    "nativeMs": [
+      969.5909,
+      992.2945000000001,
+      941.4746,
+      983.7633000000001,
+      1041.4742,
+      1032.3059
+    ]
+  },
+  "Repeat": [
+    {
+      "batch": 0,
+      "before": 987418624,
+      "after": 987660288
+    },
+    {
+      "batch": 1,
+      "before": 987660288,
+      "after": 990457856
+    },
+    {
+      "batch": 2,
+      "before": 990457856,
+      "after": 991318016
+    },
+    {
+      "batch": 3,
+      "before": 991318016,
+      "after": 991449088
+    },
+    {
+      "batch": 4,
+      "before": 991449088,
+      "after": 989343744
+    }
+  ],
+  "Contract": [
+    "image layout rejected without result",
+    "short input rejected without result",
+    "stride rejected without result",
+    "channels rejected without result",
+    "null pixels rejected without result",
+    "config layout rejected without result",
+    "nonfinite scale rejected without result",
+    "worker survives disposed cache",
+    "summary layout rejected",
+    "short defect output rejected",
+    "log size query",
+    "short image output rejected without writing"
+  ],
+  "Config": {
+    "DownscaleFactor": 1,
+    "BufferCount": 8,
+    "MaxFramesWithoutQr": 10,
+    "FrameProcessingQueueCapacity": 3,
+    "FrameProcessingEnqueueTimeoutMs": 50,
+    "ImageSaveQueueCapacity": 4,
+    "EnableAutoSave": false,
+    "AutoSaveDirectory": "D:\\Mock",
+    "BaseQrOffsetRows": 450,
+    "BaseOverlapRows": 950,
+    "BaseRoiX": 125,
+    "BaseRoiWidth": 1500,
+    "QrInvertPolarity": true,
+    "QrScaleYCandidates": [
+      1,
+      0.899999976,
+      1.20000005
+    ],
+    "DebugLogPath": "E:\\南京爱速智\\CIS\\Defect batch test\\2026-08-16\\Debug.log",
+    "TiffImageDir": "E:\\南京爱速智\\CIS\\Defect batch test\\TIFF",
+    "CroppedOutputDir": "裁切结果",
+    "SaveCroppedImages": true,
+    "LayoutDpi": 300,
+    "LayoutOriginXmm": 5,
+    "LayoutOriginYmm": 65,
+    "MarkTiffHeightMm": 1100,
+    "MarkTiffTopCenterYmm": 50,
+    "MarkTiffBottomOffsetMm": 30,
+    "MarkDiameterMm": 20,
+    "MarkCisRowSpacingMm": 1020,
+    "MarkQrPhysicalHeightMm": 60,
+    "MarkQrPhysicalWidthMm": 60,
+    "MarkInitialSearchMarginMm": 15,
+    "MarkExpandedSearchMarginMm": 40,
+    "MinCircularityTiff": 0.85,
+    "MinCircularityCis": 0.85,
+    "EnableWhiteInkInspection": true,
+    "WhiteInkNormalGray": 165,
+    "WhiteInkStreakStdDevThreshold": 3,
+    "EnableSideMarkNonlinearAlignment": false,
+    "SideMarkPairCount": 9,
+    "SideMarkDiameterMm": 4,
+    "MarkSheetWidthMm": 586,
+    "TiffSideMarkEdgeOffsetMm": 2.5,
+    "CisQrToLeftMarkMm": 36.5,
+    "CisSideMarkSpanMm": 581,
+    "SideMarkInitialSearchMarginMm": 3,
+    "SideMarkExpandedSearchMarginMm": 8,
+    "SideMarkMinValidPerColumn": 7,
+    "NonlinearRemapStripeRows": 256,
+    "EnableSiftLocalAlign": true,
+    "DefectMaxParallelism": 8,
+    "DefectDetectScale": 0.3,
+    "DefectMinScaledWidth": 200,
+    "DefectAlphaBinaryThresh": 60,
+    "DefectCisThreshOffset": -20,
+    "DefectAreaThreshInner": 4,
+    "DefectAreaThreshOuter": 4,
+    "DefectAreaThresholdUnit": "mm2",
+    "DefectToleranceInner": 2,
+    "DefectToleranceOuter": 3,
+    "DefectEdgeExclusionThick": 2,
+    "DefectEdgeExclusionSmall": 2,
+    "DefectLengthThresholdUnit": "mm",
+    "EnableFineLineBreakDetection": false,
+    "FineLineMinBreakLengthMm": 3,
+    "FineLineMaxWidthMm": 15,
+    "SaveDefectResultImages": true
+  }
+}

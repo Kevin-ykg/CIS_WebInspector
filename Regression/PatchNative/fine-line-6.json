@@ -1,0 +1,877 @@
+{
+  "Name": "fine-line-6",
+  "Rows": [
+    {
+      "Name": "blank_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 108.8828,
+      "NativeMs": 65.1449,
+      "LegacyAlignment": "[LocalAlign] blank_v0 skipped: 模板特征为空, time=71ms",
+      "NativeAlignment": "[LocalAlign] blank_v0 skipped: 模板特征为空, time=9ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "blank_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 32.0553,
+      "NativeMs": 22.1784,
+      "LegacyAlignment": "[LocalAlign] blank_v1 skipped: 模板特征为空, time=11ms",
+      "NativeAlignment": "[LocalAlign] blank_v1 skipped: 模板特征为空, time=9ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "blank_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 8.0289,
+      "NativeMs": 5.8406,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "three_defects_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 124.52000000000001,
+      "NativeMs": 68.5921,
+      "LegacyAlignment": "[LocalAlign] three_defects_v0 NotNeeded: edge=0.257workPx/0.40origPx, bestShift=0.00px, improve=0.0%, time=68ms",
+      "NativeAlignment": "[LocalAlign] three_defects_v0 NotNeeded: edge=0.257->0.257, refine=(0.00,0.00)workPx, localWorst=infpx/0, time=28ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 12.266004938271605,
+        "MaxAreaOuterMm2": 14.097940740740741,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "three_defects_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 115.33420000000001,
+      "NativeMs": 71.8254,
+      "LegacyAlignment": "[LocalAlign] three_defects_v1 NotNeeded: edge=0.257workPx/0.40origPx, bestShift=0.00px, improve=0.0%, time=63ms",
+      "NativeAlignment": "[LocalAlign] three_defects_v1 NotNeeded: edge=0.257->0.257, refine=(0.00,0.00)workPx, localWorst=infpx/0, time=25ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 10.723992888888889,
+        "MaxAreaOuterMm2": 14.021477333333333,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "three_defects_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 37.1751,
+      "NativeMs": 34.7918,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 12.266004938271605,
+        "MaxAreaOuterMm2": 14.097940740740741,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "shift_rotation_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 258.0812,
+      "NativeMs": 194.5319,
+      "LegacyAlignment": "[LocalAlign] shift_rotation_v0 Applied/Similarity: workScale=0.636, defectScale=0.300, kp=88/100, mutual=24, inliers=24(100%), coverage=27.3%, rms=1.14px, move=(-0.45,-0.35)px, refine=(0.00,0.00)workPx, edge=1.880->0.288, localWorst=-0.243px/9, time=217ms",
+      "NativeAlignment": "[LocalAlign] shift_rotation_v0 Applied/Similarity: workScale=0.636, kp=88/100, mutual=24, inliers=24, ratio=1.000, coverage=0.273, rms=1.139, move=(-0.45,-0.35)px, edge=1.880->0.288, refine=(0.00,0.00)workPx, localWorst=-0.243px/9, time=108ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 10.35441975308642,
+        "MaxAreaOuterMm2": 14.735135802469136,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "shift_rotation_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 225.4487,
+      "NativeMs": 161.7884,
+      "LegacyAlignment": "[LocalAlign] shift_rotation_v1 Applied/Similarity: workScale=0.636, defectScale=0.500, kp=88/100, mutual=24, inliers=24(100%), coverage=27.3%, rms=1.14px, move=(-0.45,-0.35)px, refine=(0.00,0.00)workPx, edge=1.880->0.288, localWorst=-0.243px/9, time=169ms",
+      "NativeAlignment": "[LocalAlign] shift_rotation_v1 Applied/Similarity: workScale=0.636, kp=88/100, mutual=24, inliers=24, ratio=1.000, coverage=0.273, rms=1.139, move=(-0.45,-0.35)px, edge=1.880->0.288, refine=(0.00,0.00)workPx, localWorst=-0.243px/9, time=110ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 9.634389333333333,
+        "MaxAreaOuterMm2": 14.365562666666666,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "shift_rotation_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 54.5275,
+      "NativeMs": 50.7013,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 10.35441975308642,
+        "MaxAreaOuterMm2": 14.416538271604939,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "strided_bgr_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 120.15990000000001,
+      "NativeMs": 72.8208,
+      "LegacyAlignment": "[LocalAlign] strided_bgr_v0 NotNeeded: edge=0.257workPx/0.40origPx, bestShift=0.00px, improve=0.0%, time=75ms",
+      "NativeAlignment": "[LocalAlign] strided_bgr_v0 NotNeeded: edge=0.257->0.257, refine=(0.00,0.00)workPx, localWorst=infpx/0, time=29ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 12.266004938271605,
+        "MaxAreaOuterMm2": 14.097940740740741,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "strided_bgr_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 121.91170000000001,
+      "NativeMs": 75.70620000000001,
+      "LegacyAlignment": "[LocalAlign] strided_bgr_v1 NotNeeded: edge=0.257workPx/0.40origPx, bestShift=0.00px, improve=0.0%, time=66ms",
+      "NativeAlignment": "[LocalAlign] strided_bgr_v1 NotNeeded: edge=0.257->0.257, refine=(0.00,0.00)workPx, localWorst=infpx/0, time=28ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 10.723992888888889,
+        "MaxAreaOuterMm2": 14.021477333333333,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "strided_bgr_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 39.667300000000004,
+      "NativeMs": 37.5691,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 12.266004938271605,
+        "MaxAreaOuterMm2": 14.097940740740741,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "03aa1de6b2a64667a8ffed2bfc3786e1_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 730.9624,
+      "NativeMs": 704.7723000000001,
+      "LegacyAlignment": "[LocalAlign] 03aa1de6b2a64667a8ffed2bfc3786e1_v0 Applied/Similarity: workScale=0.315, defectScale=0.300, kp=100/100, mutual=40, inliers=31(78%), coverage=52.6%, rms=1.26px, move=(-2.88,10.53)px, refine=(0.00,0.00)workPx, edge=1.948->1.180, localWorst=-0.147px/9, time=277ms",
+      "NativeAlignment": "[LocalAlign] 03aa1de6b2a64667a8ffed2bfc3786e1_v0 Applied/Similarity: workScale=0.315, kp=100/100, mutual=40, inliers=31, ratio=0.775, coverage=0.526, rms=1.255, move=(-2.88,10.53)px, edge=1.948->1.180, refine=(0.00,0.00)workPx, localWorst=-0.147px/9, time=149ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0.07964938271604938,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "03aa1de6b2a64667a8ffed2bfc3786e1_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 776.8946000000001,
+      "NativeMs": 688.0065000000001,
+      "LegacyAlignment": "[LocalAlign] 03aa1de6b2a64667a8ffed2bfc3786e1_v1 Applied/Similarity: workScale=0.315, defectScale=0.500, kp=100/100, mutual=40, inliers=31(78%), coverage=52.6%, rms=1.26px, move=(-2.88,10.53)px, refine=(0.00,0.00)workPx, edge=1.948->1.180, localWorst=-0.147px/9, time=222ms",
+      "NativeAlignment": "[LocalAlign] 03aa1de6b2a64667a8ffed2bfc3786e1_v1 Applied/Similarity: workScale=0.315, kp=100/100, mutual=40, inliers=31, ratio=0.775, coverage=0.526, rms=1.255, move=(-2.88,10.53)px, edge=1.948->1.180, refine=(0.00,0.00)workPx, localWorst=-0.147px/9, time=145ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "03aa1de6b2a64667a8ffed2bfc3786e1_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 495.14250000000004,
+      "NativeMs": 455.0024,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 4,
+        "MaxAreaInnerMm2": 0.07964938271604938,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 20.510481657987366,
+        "MaxFineLineBreakWidthMm": 0.970280003229777
+      }
+    },
+    {
+      "Name": "1dd8b82107474c0190d7ca94342231c8_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 850.0545000000001,
+      "NativeMs": 777.8481,
+      "LegacyAlignment": "[LocalAlign] 1dd8b82107474c0190d7ca94342231c8_v0 Applied/Similarity: workScale=0.314, defectScale=0.300, kp=100/100, mutual=48, inliers=33(69%), coverage=54.9%, rms=1.20px, move=(0.62,6.89)px, refine=(0.00,0.00)workPx, edge=1.218->0.781, localWorst=+0.036px/9, time=335ms",
+      "NativeAlignment": "[LocalAlign] 1dd8b82107474c0190d7ca94342231c8_v0 Applied/Similarity: workScale=0.314, kp=100/100, mutual=48, inliers=33, ratio=0.688, coverage=0.549, rms=1.199, move=(0.62,6.89)px, edge=1.218->0.781, refine=(0.00,0.00)workPx, localWorst=0.036px/9, time=159ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 76.3041086419753,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "1dd8b82107474c0190d7ca94342231c8_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 851.092,
+      "NativeMs": 777.2952,
+      "LegacyAlignment": "[LocalAlign] 1dd8b82107474c0190d7ca94342231c8_v1 Applied/Similarity: workScale=0.314, defectScale=0.500, kp=100/100, mutual=48, inliers=33(69%), coverage=54.9%, rms=1.20px, move=(0.62,6.89)px, refine=(0.00,0.00)workPx, edge=1.218->0.781, localWorst=+0.036px/9, time=224ms",
+      "NativeAlignment": "[LocalAlign] 1dd8b82107474c0190d7ca94342231c8_v1 Applied/Similarity: workScale=0.314, kp=100/100, mutual=48, inliers=33, ratio=0.688, coverage=0.549, rms=1.199, move=(0.62,6.89)px, edge=1.218->0.781, refine=(0.00,0.00)workPx, localWorst=0.036px/9, time=145ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 74.55182222222221,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "1dd8b82107474c0190d7ca94342231c8_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 496.6562,
+      "NativeMs": 482.5835,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 1,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 73.75532839506172,
+        "MaxFineLineBreakLengthMm": 14.037647809266241,
+        "MaxFineLineBreakWidthMm": 0.970280003229777
+      }
+    },
+    {
+      "Name": "21a32c321b5c452593df000a636335d6_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 676.1756,
+      "NativeMs": 581.8794,
+      "LegacyAlignment": "[LocalAlign] 21a32c321b5c452593df000a636335d6_v0 Applied/Similarity: workScale=0.314, defectScale=0.300, kp=100/100, mutual=50, inliers=39(78%), coverage=22.7%, rms=1.38px, move=(-2.01,4.30)px, refine=(0.00,0.00)workPx, edge=1.139->0.987, localWorst=-0.008px/9, time=234ms",
+      "NativeAlignment": "[LocalAlign] 21a32c321b5c452593df000a636335d6_v0 Applied/Similarity: workScale=0.314, kp=100/100, mutual=50, inliers=39, ratio=0.780, coverage=0.227, rms=1.376, move=(-2.01,4.30)px, edge=1.139->0.987, refine=(0.00,0.00)workPx, localWorst=-0.008px/9, time=138ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "21a32c321b5c452593df000a636335d6_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 738.7356000000001,
+      "NativeMs": 626.0375,
+      "LegacyAlignment": "[LocalAlign] 21a32c321b5c452593df000a636335d6_v1 Applied/Similarity: workScale=0.314, defectScale=0.500, kp=100/100, mutual=50, inliers=39(78%), coverage=22.7%, rms=1.38px, move=(-2.01,4.30)px, refine=(0.00,0.00)workPx, edge=1.139->0.987, localWorst=-0.008px/9, time=211ms",
+      "NativeAlignment": "[LocalAlign] 21a32c321b5c452593df000a636335d6_v1 Applied/Similarity: workScale=0.314, kp=100/100, mutual=50, inliers=39, ratio=0.780, coverage=0.227, rms=1.376, move=(-2.01,4.30)px, edge=1.139->0.987, refine=(0.00,0.00)workPx, localWorst=-0.008px/9, time=136ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "21a32c321b5c452593df000a636335d6_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 447.1417,
+      "NativeMs": 433.48040000000003,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "291c1994cb7048d0a3ff72fffc3c15c4_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 698.1596000000001,
+      "NativeMs": 638.5491000000001,
+      "LegacyAlignment": "[LocalAlign] 291c1994cb7048d0a3ff72fffc3c15c4_v0 Applied/FastTranslation: workScale=0.315, defectScale=0.300, move=(0.00,6.34)px, refine=(0.00,2.00)workPx, edge=1.100->0.717, localWorst=-0.114px/9, time=114ms",
+      "NativeAlignment": "[LocalAlign] 291c1994cb7048d0a3ff72fffc3c15c4_v0 Applied/FastTranslation: workScale=0.315, , move=(0.00,6.34)px, edge=1.100->0.717, refine=(0.00,2.00)workPx, localWorst=-0.114px/9, time=49ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "291c1994cb7048d0a3ff72fffc3c15c4_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 818.1959,
+      "NativeMs": 690.0893,
+      "LegacyAlignment": "[LocalAlign] 291c1994cb7048d0a3ff72fffc3c15c4_v1 Applied/FastTranslation: workScale=0.315, defectScale=0.500, move=(0.00,6.34)px, refine=(0.00,2.00)workPx, edge=1.100->0.717, localWorst=-0.114px/9, time=116ms",
+      "NativeAlignment": "[LocalAlign] 291c1994cb7048d0a3ff72fffc3c15c4_v1 Applied/FastTranslation: workScale=0.315, , move=(0.00,6.34)px, edge=1.100->0.717, refine=(0.00,2.00)workPx, localWorst=-0.114px/9, time=45ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "291c1994cb7048d0a3ff72fffc3c15c4_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 498.16650000000004,
+      "NativeMs": 483.4409,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "3c5cf1e394334448a44cdf661c817865_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 813.0435,
+      "NativeMs": 734.1082,
+      "LegacyAlignment": "[LocalAlign] 3c5cf1e394334448a44cdf661c817865_v0 Applied/Similarity: workScale=0.315, defectScale=0.300, kp=100/101, mutual=52, inliers=39(75%), coverage=52.6%, rms=1.56px, move=(2.71,7.76)px, refine=(0.00,0.00)workPx, edge=1.754->0.706, localWorst=-0.399px/9, time=238ms",
+      "NativeAlignment": "[LocalAlign] 3c5cf1e394334448a44cdf661c817865_v0 Applied/Similarity: workScale=0.315, kp=100/101, mutual=52, inliers=39, ratio=0.750, coverage=0.526, rms=1.562, move=(2.71,7.76)px, edge=1.754->0.706, refine=(0.00,0.00)workPx, localWorst=-0.399px/9, time=152ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "3c5cf1e394334448a44cdf661c817865_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 910.6483000000001,
+      "NativeMs": 781.6269000000001,
+      "LegacyAlignment": "[LocalAlign] 3c5cf1e394334448a44cdf661c817865_v1 Applied/Similarity: workScale=0.315, defectScale=0.500, kp=100/101, mutual=52, inliers=39(75%), coverage=52.6%, rms=1.56px, move=(2.71,7.76)px, refine=(0.00,0.00)workPx, edge=1.754->0.706, localWorst=-0.399px/9, time=232ms",
+      "NativeAlignment": "[LocalAlign] 3c5cf1e394334448a44cdf661c817865_v1 Applied/Similarity: workScale=0.315, kp=100/101, mutual=52, inliers=39, ratio=0.750, coverage=0.526, rms=1.562, move=(2.71,7.76)px, edge=1.754->0.706, refine=(0.00,0.00)workPx, localWorst=-0.399px/9, time=144ms",
+      "Result": {
+        "IsPass": true,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "3c5cf1e394334448a44cdf661c817865_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 522.9923,
+      "NativeMs": 515.5361,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 7,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 1.27439012345679,
+        "MaxFineLineBreakLengthMm": 26.717708977568083,
+        "MaxFineLineBreakWidthMm": 0.970280003229777
+      }
+    },
+    {
+      "Name": "488fcba0637a4473adce15598e84a1ba_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 693.6138000000001,
+      "NativeMs": 593.8889,
+      "LegacyAlignment": "[LocalAlign] 488fcba0637a4473adce15598e84a1ba_v0 skipped: 相似变换与纯平移均未通过轮廓质量门控：similarity(global=0.866->0.821, improve=5.2%/10%), translation(global=0.866->0.825, improve=4.8%/10%, P80=1.50px, move=(-1.92,0.65)px), time=231ms",
+      "NativeAlignment": "[LocalAlign] 488fcba0637a4473adce15598e84a1ba_v0 skipped: 相似变换与纯平移均未通过轮廓质量门控: similarity(edge=0.866->0.821, refine=(0.00,0.25)workPx, localWorst=infpx/0), translation(edge=0.866->0.825, refine=(0.00,0.25)workPx, localWorst=infpx/0), P80=1.504, time=151ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 146.79381234567902,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "488fcba0637a4473adce15598e84a1ba_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 761.1222,
+      "NativeMs": 655.4242,
+      "LegacyAlignment": "[LocalAlign] 488fcba0637a4473adce15598e84a1ba_v1 skipped: 相似变换与纯平移均未通过轮廓质量门控：similarity(global=0.866->0.821, improve=5.2%/10%), translation(global=0.866->0.825, improve=4.8%/10%, P80=1.50px, move=(-1.92,0.65)px), time=207ms",
+      "NativeAlignment": "[LocalAlign] 488fcba0637a4473adce15598e84a1ba_v1 skipped: 相似变换与纯平移均未通过轮廓质量门控: similarity(edge=0.866->0.821, refine=(0.00,0.25)workPx, localWorst=infpx/0), translation(edge=0.866->0.825, refine=(0.00,0.25)workPx, localWorst=infpx/0), P80=1.504, time=142ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 145.08931555555554,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "488fcba0637a4473adce15598e84a1ba_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 457.8417,
+      "NativeMs": 479.7235,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 146.79381234567902,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "520970926c1e4c8aa2202bdf0aa0a4b4_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 783.6496000000001,
+      "NativeMs": 702.7485,
+      "LegacyAlignment": "[LocalAlign] 520970926c1e4c8aa2202bdf0aa0a4b4_v0 Applied/Similarity: workScale=0.314, defectScale=0.300, kp=100/100, mutual=52, inliers=36(69%), coverage=8.3%, rms=1.28px, move=(-1.06,4.40)px, refine=(0.00,0.25)workPx, edge=0.929->0.778, localWorst=+0.174px/9, time=232ms",
+      "NativeAlignment": "[LocalAlign] 520970926c1e4c8aa2202bdf0aa0a4b4_v0 Applied/Similarity: workScale=0.314, kp=100/100, mutual=52, inliers=36, ratio=0.692, coverage=0.083, rms=1.284, move=(-1.06,4.40)px, edge=0.929->0.778, refine=(0.00,0.25)workPx, localWorst=0.174px/9, time=147ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 1,
+        "MaxAreaInnerMm2": 76.54305679012346,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0.9168068298951774,
+        "MaxFineLineBreakWidthMm": 0.9274725386301677
+      }
+    },
+    {
+      "Name": "520970926c1e4c8aa2202bdf0aa0a4b4_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 907.5218000000001,
+      "NativeMs": 759.5862000000001,
+      "LegacyAlignment": "[LocalAlign] 520970926c1e4c8aa2202bdf0aa0a4b4_v1 Applied/Similarity: workScale=0.314, defectScale=0.500, kp=100/100, mutual=52, inliers=36(69%), coverage=8.3%, rms=1.28px, move=(-1.06,4.40)px, refine=(0.00,0.25)workPx, edge=0.929->0.778, localWorst=+0.174px/9, time=228ms",
+      "NativeAlignment": "[LocalAlign] 520970926c1e4c8aa2202bdf0aa0a4b4_v1 Applied/Similarity: workScale=0.314, kp=100/100, mutual=52, inliers=36, ratio=0.692, coverage=0.083, rms=1.284, move=(-1.06,4.40)px, edge=0.929->0.778, refine=(0.00,0.25)workPx, localWorst=0.174px/9, time=135ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 1,
+        "MaxAreaInnerMm2": 76.32959644444443,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 0.9168068298951774,
+        "MaxFineLineBreakWidthMm": 0.9274725386301677
+      }
+    },
+    {
+      "Name": "520970926c1e4c8aa2202bdf0aa0a4b4_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 523.6503,
+      "NativeMs": 486.6048,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 3,
+        "MaxAreaInnerMm2": 76.54305679012346,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 17.438413359035593,
+        "MaxFineLineBreakWidthMm": 0.970280003229777
+      }
+    },
+    {
+      "Name": "a78f46a924624688b2a439507189a159_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 716.5391000000001,
+      "NativeMs": 635.6155,
+      "LegacyAlignment": "[LocalAlign] a78f46a924624688b2a439507189a159_v0 Applied/Similarity: workScale=0.314, defectScale=0.300, kp=100/100, mutual=54, inliers=36(67%), coverage=22.6%, rms=1.26px, move=(-1.80,13.91)px, refine=(0.00,0.00)workPx, edge=1.563->1.064, localWorst=-0.037px/9, time=232ms",
+      "NativeAlignment": "[LocalAlign] a78f46a924624688b2a439507189a159_v0 Applied/Similarity: workScale=0.314, kp=100/100, mutual=54, inliers=36, ratio=0.667, coverage=0.226, rms=1.260, move=(-1.80,13.91)px, edge=1.563->1.064, refine=(0.00,0.00)workPx, localWorst=-0.037px/9, time=147ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 58.2236987654321,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "a78f46a924624688b2a439507189a159_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 823.4795,
+      "NativeMs": 684.1204,
+      "LegacyAlignment": "[LocalAlign] a78f46a924624688b2a439507189a159_v1 Applied/Similarity: workScale=0.314, defectScale=0.500, kp=100/100, mutual=54, inliers=36(67%), coverage=22.6%, rms=1.26px, move=(-1.80,13.91)px, refine=(0.00,0.00)workPx, edge=1.563->1.064, localWorst=-0.037px/9, time=222ms",
+      "NativeAlignment": "[LocalAlign] a78f46a924624688b2a439507189a159_v1 Applied/Similarity: workScale=0.314, kp=100/100, mutual=54, inliers=36, ratio=0.667, coverage=0.226, rms=1.260, move=(-1.80,13.91)px, edge=1.563->1.064, refine=(0.00,0.00)workPx, localWorst=-0.037px/9, time=143ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 0,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 58.379811555555555,
+        "MaxFineLineBreakLengthMm": 0,
+        "MaxFineLineBreakWidthMm": 0
+      }
+    },
+    {
+      "Name": "a78f46a924624688b2a439507189a159_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 467.41380000000004,
+      "NativeMs": 429.8317,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 1,
+        "FineLineBreakCount": 1,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 56.23246419753087,
+        "MaxFineLineBreakLengthMm": 13.798174312704395,
+        "MaxFineLineBreakWidthMm": 0.970280003229777
+      }
+    },
+    {
+      "Name": "c7d5d1c7e9af4890b69d99b06b558d2b_v0",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 771.8454,
+      "NativeMs": 745.0325,
+      "LegacyAlignment": "[LocalAlign] c7d5d1c7e9af4890b69d99b06b558d2b_v0 Applied/Similarity: workScale=0.315, defectScale=0.300, kp=100/100, mutual=47, inliers=34(72%), coverage=23.5%, rms=1.11px, move=(-2.78,10.28)px, refine=(0.00,0.00)workPx, edge=1.510->0.791, localWorst=-0.147px/9, time=216ms",
+      "NativeAlignment": "[LocalAlign] c7d5d1c7e9af4890b69d99b06b558d2b_v0 Applied/Similarity: workScale=0.315, kp=100/100, mutual=47, inliers=34, ratio=0.723, coverage=0.235, rms=1.114, move=(-2.78,10.28)px, edge=1.510->0.791, refine=(0.00,0.00)workPx, localWorst=-0.147px/9, time=154ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 1,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 4.6952614690565975,
+        "MaxFineLineBreakWidthMm": 0.9274725386301677
+      }
+    },
+    {
+      "Name": "c7d5d1c7e9af4890b69d99b06b558d2b_v1",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 982.1899000000001,
+      "NativeMs": 814.4144,
+      "LegacyAlignment": "[LocalAlign] c7d5d1c7e9af4890b69d99b06b558d2b_v1 Applied/Similarity: workScale=0.315, defectScale=0.500, kp=100/100, mutual=47, inliers=34(72%), coverage=23.5%, rms=1.11px, move=(-2.78,10.28)px, refine=(0.00,0.00)workPx, edge=1.510->0.791, localWorst=-0.147px/9, time=240ms",
+      "NativeAlignment": "[LocalAlign] c7d5d1c7e9af4890b69d99b06b558d2b_v1 Applied/Similarity: workScale=0.315, kp=100/100, mutual=47, inliers=34, ratio=0.723, coverage=0.235, rms=1.114, move=(-2.78,10.28)px, edge=1.510->0.791, refine=(0.00,0.00)workPx, localWorst=-0.147px/9, time=148ms",
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 1,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 1,
+        "MaxAreaInnerMm2": 4.501783111111111,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 4.6952614690565975,
+        "MaxFineLineBreakWidthMm": 0.9274725386301677
+      }
+    },
+    {
+      "Name": "c7d5d1c7e9af4890b69d99b06b558d2b_v2",
+      "Equal": true,
+      "Error": null,
+      "LegacyMs": 525.408,
+      "NativeMs": 485.4315,
+      "LegacyAlignment": null,
+      "NativeAlignment": null,
+      "Result": {
+        "IsPass": false,
+        "InnerDefectCount": 0,
+        "OuterDefectCount": 0,
+        "FineLineBreakCount": 7,
+        "MaxAreaInnerMm2": 0,
+        "MaxAreaOuterMm2": 0,
+        "MaxFineLineBreakLengthMm": 22.2449021476729,
+        "MaxFineLineBreakWidthMm": 0.970280003229777
+      }
+    }
+  ],
+  "Performance": {
+    "sample": "c7d5d1c7e9af4890b69d99b06b558d2b",
+    "note": "warm, sequential, no image saves; six interleaved calls each; not production takt",
+    "legacyMs": [
+      797.0257,
+      763.8649,
+      783.7227,
+      948.2281,
+      983.4337,
+      789.6719
+    ],
+    "nativeMs": [
+      703.0657,
+      710.6178,
+      727.4976,
+      704.8760000000001,
+      768.0332000000001,
+      721.6689
+    ]
+  },
+  "Repeat": [
+    {
+      "batch": 0,
+      "before": 396431360,
+      "after": 396300288
+    },
+    {
+      "batch": 1,
+      "before": 396300288,
+      "after": 397881344
+    },
+    {
+      "batch": 2,
+      "before": 397881344,
+      "after": 397213696
+    },
+    {
+      "batch": 3,
+      "before": 397213696,
+      "after": 396279808
+    },
+    {
+      "batch": 4,
+      "before": 396279808,
+      "after": 396820480
+    }
+  ],
+  "Contract": [
+    "image layout rejected without result",
+    "short input rejected without result",
+    "stride rejected without result",
+    "channels rejected without result",
+    "null pixels rejected without result",
+    "config layout rejected without result",
+    "nonfinite scale rejected without result",
+    "worker survives disposed cache",
+    "summary layout rejected",
+    "short defect output rejected",
+    "log size query",
+    "short image output rejected without writing"
+  ],
+  "Config": {
+    "DownscaleFactor": 1,
+    "BufferCount": 8,
+    "MaxFramesWithoutQr": 10,
+    "FrameProcessingQueueCapacity": 3,
+    "FrameProcessingEnqueueTimeoutMs": 50,
+    "ImageSaveQueueCapacity": 4,
+    "EnableAutoSave": false,
+    "AutoSaveDirectory": "D:\\Mock",
+    "BaseQrOffsetRows": 450,
+    "BaseOverlapRows": 950,
+    "BaseRoiX": 125,
+    "BaseRoiWidth": 1500,
+    "QrInvertPolarity": true,
+    "QrScaleYCandidates": [
+      1,
+      0.899999976,
+      1.20000005
+    ],
+    "DebugLogPath": "E:/南京爱速智/CIS/moreMarks/log/2026-06-24/Debug.log",
+    "TiffImageDir": "E:/南京爱速智/CIS/moreMarks/tiff",
+    "CroppedOutputDir": "裁切结果",
+    "SaveCroppedImages": true,
+    "LayoutDpi": 300,
+    "LayoutOriginXmm": 5,
+    "LayoutOriginYmm": 65,
+    "MarkTiffHeightMm": 1000,
+    "MarkTiffTopCenterYmm": 50,
+    "MarkTiffBottomOffsetMm": 30,
+    "MarkDiameterMm": 20,
+    "MarkCisRowSpacingMm": 920,
+    "MarkQrPhysicalHeightMm": 60,
+    "MarkQrPhysicalWidthMm": 60,
+    "MarkInitialSearchMarginMm": 15,
+    "MarkExpandedSearchMarginMm": 40,
+    "MinCircularityTiff": 0.85,
+    "MinCircularityCis": 0.85,
+    "EnableWhiteInkInspection": true,
+    "WhiteInkNormalGray": 165,
+    "WhiteInkStreakStdDevThreshold": 3,
+    "EnableSideMarkNonlinearAlignment": false,
+    "SideMarkPairCount": 9,
+    "SideMarkDiameterMm": 4,
+    "MarkSheetWidthMm": 586,
+    "TiffSideMarkEdgeOffsetMm": 2.5,
+    "CisQrToLeftMarkMm": 36.5,
+    "CisSideMarkSpanMm": 581,
+    "SideMarkInitialSearchMarginMm": 3,
+    "SideMarkExpandedSearchMarginMm": 8,
+    "SideMarkMinValidPerColumn": 7,
+    "NonlinearRemapStripeRows": 256,
+    "EnableSiftLocalAlign": true,
+    "DefectMaxParallelism": 8,
+    "DefectDetectScale": 0.3,
+    "DefectMinScaledWidth": 200,
+    "DefectAlphaBinaryThresh": 60,
+    "DefectCisThreshOffset": -20,
+    "DefectAreaThreshInner": 4,
+    "DefectAreaThreshOuter": 4,
+    "DefectAreaThresholdUnit": "mm2",
+    "DefectToleranceInner": 2,
+    "DefectToleranceOuter": 3,
+    "DefectEdgeExclusionThick": 2,
+    "DefectEdgeExclusionSmall": 2,
+    "DefectLengthThresholdUnit": "mm",
+    "EnableFineLineBreakDetection": false,
+    "FineLineMinBreakLengthMm": 3,
+    "FineLineMaxWidthMm": 15,
+    "SaveDefectResultImages": true
+  }
+}

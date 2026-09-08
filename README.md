@@ -35,8 +35,8 @@ CIS_WebInspector 是面向连续烫画膜/CIS 线扫图像的 WPF 工业视觉�
 | 白墨墨量与拉丝 | `InspectionJobRunner` | `ImageAligner.WhiteInk.cs` | `WhiteInkInspectionResult` |
 | 全局/侧边 Mark 对准 | `InspectionJobRunner` | `ImageAligner.*.cs` | `AlignmentResult`、Mark 诊断图 |
 | 排版解析与零件裁切 | `InspectionJobRunner` | `DebugLogParser`、`PatchCropper` | `LayoutInfo`、零件 ROI |
-| 零件局部配准 | `PatchDefectDetector` | `PatchDefectDetector.Alignment.cs` | 最终局部变换或安全回退 |
-| 三类缺陷与尺寸日志 | `PatchCropper` | `PatchDefectDetector*.cs`、`InspectionJobRunner` | `PatchDefectResult`、`DefectGeometryMeasurement` |
+| 零件局部配准 | `PatchDefectDetector`（P/Invoke） | `Native/src/patch_alignment.cpp` | 最终局部变换或安全回退 |
+| 三类缺陷与尺寸日志 | `PatchCropper` | `Native/src/patch_detector.cpp`、`patch_fine_line.cpp`；C# 汇总/保存 | `PatchDefectResult`、`DefectGeometryMeasurement` |
 | 作业取消与串行 | `MainViewModel.Inspection` | `InspectionJobCoordinator`、`InspectionJobRunner` | 最新作业结果、异常原因码 |
 | 日志与 UI 追溯 | `AppLogger` | `MainViewModel.Logging/Preview` | 每日日志、冻结后的预览图 |
 
@@ -50,7 +50,7 @@ CIS_WebInspector 是面向连续烫画膜/CIS 线扫图像的 WPF 工业视觉�
 
 ## 构建
 
-二维码完整处理链已迁入 C++。C# 保留配置快照、同步借用像素和结果转换；C++ 通过稳定 C 接口封装模型与临时图像资源。其他视觉模块仍为原实现。接口、源码分工和部署要求见 [Native/README.md](Native/README.md)。
+二维码、零件局部配准与三类缺陷检测已迁入 C++。C# 保留配置快照、同步借用像素、结果转换、批次调度和图像保存；C++ 通过稳定 C 接口封装模型、SIFT/模板缓存、临时图像与结果资源。拼接、白墨检查、全局/侧边对准仍沿用当前实现。接口、源码分工和部署要求见 [Native/README.md](Native/README.md)。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File Tools/Build-VisionNative.ps1 -Configuration Release
@@ -62,6 +62,8 @@ dotnet build CIS_WebInspector.sln --no-restore -c Release -p:Platform=x64
 项目目标为 .NET Framework 4.8、WPF、x64，依赖 OpenCvSharp 4.10、CISVisionCore.dll、WeChatQRCode 模型、Volans CameraLink SDK 和 TLC 原生组件。C++ 首次构建需要 Visual Studio C++ 工作负载、CMake 和网络；之后复用 `obj/VisionNative` 的 OpenCV 4.10.0 + IPP 静态构建缓存。C# Debug/Release 默认都使用 Release 算法库，保证正常测试不受原生 Debug 性能影响。源码可编译不代表现场硬件和输入数据均已具备。
 
 二维码新旧实现的独立验证入口为 `Tools/QrRegression`；迁移前快照只供离线比较，不编译进正式程序。测试口径和记录见 [Regression/QrNative/README.md](Regression/QrNative/README.md)。
+
+零件配准与缺陷检测的独立验证入口为 `Tools/PatchRegression`。它用同一份原始零件图分别执行迁移前 C# 快照与正式 C++，核对三类结果、物理尺寸和保存图像；不是生产程序的备用算法。方法与记录见 [Regression/PatchNative/README.md](Regression/PatchNative/README.md)。
 
 ## 修改前后的最低动作
 

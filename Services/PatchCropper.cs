@@ -89,9 +89,8 @@ namespace CIS_WebInspector.Services
             {
                 MaxDegreeOfParallelism = maxParallelism
             };
-            PatchSiftTemplateCache templateCache = config.EnableSiftLocalAlign
-                ? new PatchSiftTemplateCache()
-                : null;
+            // 所有零件算法均由原生 worker 执行；关闭局部配准时缓存为空且不会创建 SIFT。
+            PatchSiftTemplateCache templateCache = new PatchSiftTemplateCache();
             long managedBytesBefore = GC.GetTotalMemory(false);
             long privateBytesBefore = GetPrivateBytes();
             var patchStopwatch = Stopwatch.StartNew();
@@ -102,7 +101,7 @@ namespace CIS_WebInspector.Services
                     parts,
                     parallelOptions,
                     // SIFT/Matcher 不是跨线程共享对象；每个并行 worker 独占一组，只共享只读模板特征缓存。
-                    () => templateCache != null ? new PatchSiftWorker(templateCache) : null,
+                    () => new PatchSiftWorker(templateCache),
                     (part, _, worker) =>
                     {
                         if (part.HotInkTaskID != null && part.HotInkTaskID.Contains("QRCode"))
