@@ -28,13 +28,21 @@ CIS_WebInspector 是面向连续烫画膜/CIS 线扫图像的 WPF 工业视觉�
 
 | 业务域 | C# 入口与保留职责 | C++ 正式实现 | C ABI |
 |---|---|---|---|
-| 二维码识别 | `QrCodeDetector`：配置快照、固定输入、结果转换、SafeHandle | `Native/src/qr_*`：预处理、定位框、自适应尺度、透视/黑码/模糊恢复、WeChatQRCode | `cis_qr_api.h` v2 |
+| 二维码识别 | `QrCodeDetector`：配置快照、固定输入、结果转换、SafeHandle | `cis_qr_adapter`：安装 ROI/保护带；`qr_*`：通用识别、定位框、尺度与恢复 | `cis_qr_api.h` v2 |
 | 全局/侧边对准 | `ImageAligner.GlobalTransform/Warp`：参数映射、诊断结果、预览保存 | `alignment_global.cpp`、`alignment_marks.cpp`、`alignment_side_grid.cpp`、`alignment_warp.cpp`：Mark 检测、RANSAC Homography、残差网格、Warp/Remap | `cis_alignment_api.h` v1 |
 | 白墨检查 | `ImageAligner.WhiteInk`：开关、结果模型、日志/告警/预览 | `Native/src/alignment_white_ink.cpp`：底排 Mark、灰度/背景/对比度、墨量分档与拉丝判断 | `cis_alignment_api.h` v1 |
 | 零件局部配准与缺陷 | `PatchCropper/PatchDefectDetector`：ROI、并行调度、结果汇总和图像保存 | `patch_alignment.cpp`、`patch_detector.cpp`、`patch_fine_line.cpp`：局部配准、内部/外部/细线断裂检测和物理测量 | `cis_patch_api.h` v1 |
 | 帧拼接与应用流程 | `ImageStitcher`、`InspectionJobRunner`、`MainViewModel` | 不迁移：仍由 C# 负责状态机、作业编排和 WPF 线程边界 | — |
 
 跨语言边界只传固定宽度 POD、像素地址/stride 和调用方分配的输出缓冲区，不传递 `cv::Mat`、STL 或 C++ 异常。输入像素只在同步调用期间借用；C++ 资源由 RAII 管理，C# 句柄由 `SafeHandle` 确定性释放。详细契约见 [Native/README.md](Native/README.md)。
+
+### 二维码独立复用（2026-09-22）
+
+`qr::QrDetector::detect(image)` 默认处理整张输入图，不再包含 CIS 横向 ROI、保护带或帧坐标取整；这些规则移至 `cis::CisQrAdapter`，旧 C ABI v2 与 C# 接口不变。两个入口链接同一份 `QrRecognition` 静态核心，不维护两套识别算法。
+
+对外使用独立 `QrReader.dll / qr_reader_* v1`；C++ 源码和 DLL 两种例程、内存/坐标约定及构建交付方式见 [通用二维码接入指南](Native/QR_READER_README.md)。构建脚本为 `Tools/Build-QrReader.ps1`。本次 54 张输入及跨帧组合共 95 次调用与重构前结果一致，用户提供的 `20260921-175708.jpg` 整图成功解码；详见 [通用化验证记录](Regression/QrReusable/README.md)。
+
+随后针对 `test1.png/test2.png` 增加了**失败后、三定位框门控的局部恢复**：先裁出自动确认的码区用红通道解码；仍失败时根据定位框外边界校正局部非一致形变，再交给 WeChat 解码。新增分支最多 4 次解码，接口与 CIS ROI 配置不变，既有成功分支优先。两张原图已成功解码，验证范围与限制见 [模糊码恢复记录](Regression/QrReusable/BlurRecovery.md)。
 
 ## 接手代码时先看什么
 

@@ -6,22 +6,29 @@
 ImageStitcher（单帧 / 跨帧组合，仍为 C#）
   → QrCodeDetector.Detect（C#：参数快照 / 固定像素数组 / SafeHandle）
     → cis_qr_detect（稳定 C ABI，单次同步调用）
-      → cis::QrDetector::detect（完整 C++ 识别流程）
+      → cis::CisQrAdapter::detect（CIS ROI / 保护带 / 坐标映射）
+        → qr::QrDetector::detect（通用完整 C++ 识别流程）
         → cv::wechat_qrcode::WeChatQRCode::detectAndDecode
-    ← 文本、输入图中的中心 / X、Y 投影宽高、尝试次数、策略、错误
+    ← 文本、输入图中的中心 / 既有宽高、尝试次数、策略、错误
   ← QrDetectionResult（原数据模型，拼接和 Mark 尺度计算无须改动）
 ```
 
-灰度转换、ROI 与保护带、极性处理、定位框证据、自适应尺度、局部静区、透视展开、低对比度和模糊恢复均在 C++ 内。候选顺序、阈值、坐标还原和取整规则沿用迁移前实现。局部配准/缺陷、全局/侧边对准和白墨算法也已迁入同一 DLL；拼接状态机、界面、告警调度和可视化仍在 C#。
+灰度转换、ROI 与保护带、极性处理、定位框证据、自适应尺度、局部静区、透视展开、低对比度和模糊恢复均在 C++ 内。原有候选顺序、阈值、坐标还原和取整规则沿用迁移前实现；2026-09-22 在旧恢复全部失败之后新增了三定位框门控的局部模糊/形变恢复，见 `qr_blur_local.cpp`。局部配准/缺陷、全局/侧边对准和白墨算法也已迁入同一 DLL；拼接状态机、界面、告警调度和可视化仍在 C#。
+
+2026-09-22 拆分：通用核心默认整图、黑色前景优先；CIS 适配层仍使用原固定 ROI/保护带、配置极性及预热尺寸。可选 `DetectHints.evidence_region` 仅用于保留原 core 与工作图的统计边界，默认整图，不是隐藏的裁图规则。`CISVisionCore` 和独立 `QrReader` 链接同一个静态核心；正式程序不依赖 `QrReader.dll`。对外使用说明见 [QR_READER_README.md](QR_READER_README.md)。
 
 | 文件 | 职责 |
 |---|---|
 | `include/cis_qr_api.h` | 二维码 C 接口，固定宽度字段、状态码、调用约定 |
 | `src/qr_api.cpp` | 参数/长度检查、上下文锁、输出缓冲区、异常屏障 |
+| `src/cis_qr_adapter.*` | CIS 横向 ROI/保护带、配置映射、帧坐标还原与最终取整 |
+| `include/qr/qr_detector.h` | 通用 C++ 源码/静态链接接口，浮点输入图坐标 |
+| `include/qr_reader_api.h`、`src/qr_reader_api.cpp` | 对外独立通用 C ABI v1，不带 CIS ROI 字段 |
 | `src/qr_detector.h` | 内部模型实例、候选数据结构、坐标计算约定 |
 | `src/qr_detector.cpp` | 主流程、模型加载与复用、WeChatQRCode 调用、成功结果恢复 |
 | `src/qr_geometry.cpp` | 嵌套定位框、几何证据、自适应尺度、局部/透视候选 |
 | `src/qr_recovery.cpp` | 透视、低对比度、黑码原极性、模糊模板与模块结构校验 |
+| `src/qr_blur_local.cpp` | 原路径失败后的局部红通道解码、三定位框外边界几何恢复；至多 4 次额外解码 |
 | `../Services/QrCodeDetector.cs` | C# 唯一入口；没有第二套算法或静默回退 |
 
 ## 二维码：内存与接口契约
@@ -30,7 +37,7 @@ ImageStitcher（单帧 / 跨帧组合，仍为 C#）
 - `create → configure → initialize → detect（多次）→ destroy`。模型按实例持有；初始化/预热可以重复调用。改变配置时复制尺度数组，外部数组不长期借用。
 - 输入为 Gray8 / BGR24 / BGRA32，正 stride 可包含行填充；缓冲区同步只读借用。C# 在检测期间固定 byte[]，返回后立即解除。DLL 不保留像素指针，不跨 DLL 传递 `cv::Mat`。
 - C++ 的 `cv::Mat` 和容器作用域结束自动释放，模型由 `unique_ptr` 持有；C# 通过 `SafeHandle` 释放原生上下文，调用/配置/Dispose 串行化。直接 C 调用者不得与正在执行的调用并发 destroy，也不得使用已经销毁的句柄。
-- 坐标相对传入图像；跨帧组合仍由 ImageStitcher 加回全局坐标。宽高是 X/Y 方向投影，不是旋转边长。保留 .NET 的 midpoint-to-even 取整以及原先 float/double 运算边界。
+- 坐标相对传入图像；跨帧组合仍由 ImageStitcher 加回全局坐标。常规路径宽高为 X/Y 投影，透视恢复路径为原四角平均对边长度，这是既有分支差异，本轮不更改。通用结果用 `dimensions_are_side_lengths/size_kind` 标明；旧 CIS ABI 保持原字段和数值。适配层先加回 ROI 偏移，再按 .NET midpoint-to-even 取整，保留原先 float/double 运算边界。
 - 输出文本为 UTF-8，模型目录参数为 Windows UTF-16；OpenCV 模型文件打开仍要求目录可由 Windows 系统代码页表示，不支持的路径明确失败。部署到同一中文 Windows 代码页或纯英文目录最稳妥。
 - 调用方分配结果及字符缓冲区，不导出 STL、不要求跨运行库释放内存。缓冲区不足返回 `-3` 和需要的字节数（含 NUL），不会把截断文本作为成功结果。重新调用需要重新检测，当前没有结果缓存句柄。
 - 状态：`0` 成功，`1` 正常未检出，`-1` 参数错误，`-2` 模型/算法异常，`-3` 输出空间不足。C++ 异常不越过 C 边界；原生非法指针属于调用方违反契约，不能靠异常屏障保证安全。
