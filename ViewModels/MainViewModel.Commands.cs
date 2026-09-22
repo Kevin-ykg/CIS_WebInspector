@@ -79,7 +79,7 @@ namespace CIS_WebInspector.ViewModels
             }
             else
             {
-                System.Windows.MessageBox.Show("当前不在在线采集卡模式，无法配置底层硬件参数！", 
+                System.Windows.MessageBox.Show("当前不在在线采集卡模式，无法配置底层硬件参数！",
                     "不可用", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
             }
         }
@@ -98,7 +98,7 @@ namespace CIS_WebInspector.ViewModels
             var win = new Views.AppSettingsWindow();
             var vm = new AppSettingsViewModel(win, this);
             win.DataContext = vm;
-            
+
             if (win.ShowDialog() == true)
             {
                 AddLog(

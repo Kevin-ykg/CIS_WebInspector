@@ -1,4 +1,8 @@
 #pragma once
+// 算法内部的公共包含入口：对外类声明来自 qr/qr_detector.h，
+// 下方 OpenCV/STL 头文件提供各实现文件使用的图像类型和容器。
+// Finder、Scale、Region 等内部辅助结构也在本文件定义。
+#include "qr/qr_detector.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect.hpp>
@@ -13,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace cis
+namespace qr
 {
 // WeChatQRCode 返回的一个有效文本及其几何信息。
 // x/y/width/height 所属坐标系由调用阶段决定，离开阶段前必须恢复到输入帧坐标系。
@@ -22,13 +26,6 @@ struct Hit
 {
     std::string text;
     double x = 0, y = 0, width = 0, height = 0, scale_y = 1;
-};
-struct Result
-{
-    bool found = false;
-    int x = 0, y = 0;
-    double width = 0, height = 0;
-    std::string text, strategy;
 };
 
 // 从轮廓树中提取的二维码定位框证据。它只用于几何门控，不代表已经识别成功。
@@ -115,8 +112,8 @@ inline cv::Point2f add(cv::Point2f p, cv::Point2f a, cv::Point2f b)
 // 都只能服务于解码，最终 Result 必须回到原始输入帧的像素坐标系。
 Quad ordered(const Quad &points);
 Result from_hit(const Hit &, double x, double y, double sx = 1, double sy = 1, bool clamp_zero = false);
-Result from_corners(const Hit &, const Quad &, int offset_x, bool float_sum);
-Result from_region(const Hit &, int offset_x, const Region &, double sx = 1, double sy = 1);
+Result from_corners(const Hit &, const Quad &, bool float_sum);
+Result from_region(const Hit &, const Region &, double sx = 1, double sy = 1);
 bool candidate_region(const cv::Mat &, Region &, bool low_contrast = false);
 std::vector<Finder> finder_evidence(const cv::Mat &);
 bool adaptive_scales(const std::vector<Finder> &, std::vector<Scale> &, int &coherent, double &side,
@@ -127,36 +124,5 @@ std::vector<BlurFinder> blurred_evidence(const cv::Mat &);
 std::vector<BlurTriple> blurred_triples(const std::vector<BlurFinder> &);
 bool module_structure(const cv::Mat &, int, double &);
 
-// 面向 CIS 线扫图像的 WeChatQRCode 检测器。
-// 每个候选最终只使用同一个 CNN 检测/增强/解码后端，不依赖其他解码器回退。
-// 所有视觉策略均在 C++ 内完成：C# 每帧只调用 detect 一次，不回调托管图像算子。
-// 同一实例复用 WeChat 模型；临时 Mat 依靠 RAII 按作用域释放，不保留借用的帧像素。
-class QrDetector
-{
-  public:
-    explicit QrDetector(std::string directory) : directory_(std::move(directory)) {}
-    void configure(int x, int width, bool invert, const float *scales, uint32_t count);
-    void initialize();
-    Result detect(const cv::Mat &source);
-    uint32_t attempts() const
-    {
-        return attempts_;
-    }
-    std::mutex mutex;
-
-  private:
-    std::string directory_;
-    std::unique_ptr<cv::wechat_qrcode::WeChatQRCode> detector_;
-    int roi_x_ = 0, roi_width_ = 0;
-    bool inverted_ = true, warmed_ = false;
-    std::vector<double> scales_{1.0};
-    uint32_t attempts_ = 0;
-    void ensure_detector();
-    bool decode(const cv::Mat &, double, Hit &);
-    bool decode_xy(const cv::Mat &, double, double, Hit &);
-    bool perspective(const cv::Mat &, cv::Rect, int, Result &);
-    bool low_contrast(const cv::Mat &, int, int, Result &);
-    bool blurred(const cv::Mat &, cv::Rect, int, Result &);
-    bool blurred_rectified(const cv::Mat &, const Quad &, int, bool, int &, Hit &, std::string &);
-};
-} // namespace cis
+// 本文件仅声明算法内部辅助结构。对外 C++ 使用 include/qr/qr_detector.h。
+} // namespace qr

@@ -6,7 +6,9 @@ namespace alignment
 void warp(const cv::Mat &source, cv::Mat &destination, Result &result)
 {
     if (result.H.empty())
+    {
         throw std::invalid_argument("无有效全局矩阵，不能 Warp。");
+    }
     result.MapMs = 0;
     result.RemapMs = 0;
     if (result.Mode == 0 || result.GridY.empty() || result.Residuals.empty())
@@ -23,13 +25,21 @@ void warp(const cv::Mat &source, cv::Mat &destination, Result &result)
     for (int x = 0; x < width; ++x)
     {
         if (x <= result.GridX[0])
+        {
             left[x] = 1;
+        }
         else if (x < result.GridX[1])
+        {
             left[x] = static_cast<float>((result.GridX[1] - x) / std::max(result.GridX[1] - result.GridX[0], 1e-6));
+        }
         if (x >= result.GridX[2])
+        {
             right[x] = 1;
+        }
         else if (x > result.GridX[1])
+        {
             right[x] = static_cast<float>((x - result.GridX[1]) / std::max(result.GridX[2] - result.GridX[1], 1e-6));
+        }
     }
     cv::Mat mapX(maxRows, width, CV_32FC1), mapY(maxRows, width, CV_32FC1), stripe;
     const cv::Mat &h = result.Inverse;
@@ -56,13 +66,17 @@ void warp(const cv::Mat &source, cv::Mat &destination, Result &result)
                     t = 1;
                 }
                 else
+                {
                     for (size_t i = 0; i + 1 < result.GridY.size(); ++i)
+                    {
                         if (y >= result.GridY[i] && y < result.GridY[i + 1])
                         {
                             interval = static_cast<int>(i);
                             t = (y - result.GridY[i]) / std::max(result.GridY[i + 1] - result.GridY[i], 1e-6);
                             break;
                         }
+                    }
+                }
             }
             cv::Point2d l{0, 0}, r{0, 0};
             if (interval >= 0)

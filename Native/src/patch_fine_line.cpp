@@ -15,18 +15,28 @@ cv::Mat boundary_band(const cv::Mat &binary, int thickness)
 {
     cv::Mat band = cv::Mat::zeros(binary.size(), CV_8U);
     if (thickness <= 0)
+    {
         return band;
+    }
     // 总宽度拆到轮廓内外；奇数多出的像素置于内侧，1 px 仍覆盖真实结构轮廓。
     int outside = thickness / 2, inside = thickness - outside;
     cv::Mat dilated, eroded;
     if (outside > 0)
+    {
         cv::dilate(binary, dilated, ellipse(outside * 2 + 1));
+    }
     else
+    {
         binary.copyTo(dilated);
+    }
     if (inside > 0)
+    {
         cv::erode(binary, eroded, ellipse(inside * 2 + 1));
+    }
     else
+    {
         binary.copyTo(eroded);
+    }
     cv::subtract(dilated, eroded, band);
     return band;
 }
@@ -46,7 +56,9 @@ cv::Mat foreground_evidence(const cv::Mat &image, int threshold, int diameter)
     cv::threshold(image, foreground, threshold, 255, cv::THRESH_BINARY);
     diameter = std::max(3, diameter);
     if ((diameter & 1) == 0)
+    {
         ++diameter;
+    }
     // 白顶帽补回偏灰但相对局部背景仍清晰的线条，减少绝对阈值造成的假断线。
     cv::morphologyEx(image, opened, cv::MORPH_OPEN, ellipse(diameter));
     cv::subtract(image, opened, top_hat);
@@ -66,7 +78,9 @@ double cross_section_missing(const cv::Mat &pattern, const cv::Mat &foreground, 
     cv::bitwise_and(pattern, expanded, section);
     int count = cv::countNonZero(section);
     if (count <= 0)
+    {
         return 0;
+    }
     cv::bitwise_not(foreground, inverse);
     cv::bitwise_and(section, inverse, missing);
     return cv::countNonZero(missing) / static_cast<double>(count);
@@ -91,7 +105,9 @@ bool background_consistent(const cv::Mat &image, const cv::Mat &pattern, const c
     cv::bitwise_not(pattern, inverse_pattern);
     cv::bitwise_and(ring, inverse_pattern, background);
     if (cv::countNonZero(sample) < 3 || cv::countNonZero(background) < 8)
+    {
         return false;
+    }
     return cv::mean(image, sample)[0] <= cv::mean(image, background)[0] + brightness_excess;
 }
 
@@ -102,9 +118,15 @@ std::vector<cv::Point> mask_points(const cv::Mat &mask)
     std::vector<cv::Point> result;
     // 显式按行扫描以支持非连续 ROI，并保持原 C# 的行优先候选顺序。
     for (int y = 0; y < mask.rows; ++y)
+    {
         for (int x = 0; x < mask.cols; ++x)
+        {
             if (mask.ptr<uint8_t>(y)[x])
+            {
                 result.emplace_back(x, y);
+            }
+        }
+    }
     return result;
 }
 
@@ -122,39 +144,55 @@ double farthest(int start, const std::vector<cv::Point> &points, const cv::Mat &
         int current = -1;
         double best = infinity;
         for (int i = 0; i < static_cast<int>(points.size()); ++i)
+        {
             if (!visited[i] && distances[i] < best)
             {
                 current = i;
                 best = distances[i];
             }
+        }
         if (current < 0)
+        {
             break;
+        }
         visited[current] = true;
         auto point = points[current];
         for (int dy = -1; dy <= 1; ++dy)
+        {
             for (int dx = -1; dx <= 1; ++dx)
             {
                 if (dx == 0 && dy == 0)
+                {
                     continue;
+                }
                 int x = point.x + dx, y = point.y + dy;
                 if (x < 0 || y < 0 || x >= index_map.cols || y >= index_map.rows)
+                {
                     continue;
+                }
                 int neighbor = index_map.at<int>(y, x);
                 if (neighbor < 0 || visited[neighbor])
+                {
                     continue;
+                }
                 double candidate = best + (dx == 0 || dy == 0 ? 1. : std::sqrt(2.));
                 if (candidate < distances[neighbor])
+                {
                     distances[neighbor] = candidate;
+                }
             }
+        }
     }
     end = start;
     double result = 0;
     for (int i = 0; i < static_cast<int>(points.size()); ++i)
+    {
         if (std::isfinite(distances[i]) && distances[i] > result)
         {
             result = distances[i];
             end = i;
         }
+    }
     return result;
 }
 
@@ -166,12 +204,18 @@ double skeleton_length(const cv::Mat &mask)
 {
     auto points = mask_points(mask);
     if (points.empty())
+    {
         return 0;
+    }
     if (points.size() == 1)
+    {
         return 1;
+    }
     cv::Mat index_map(mask.size(), CV_32S, cv::Scalar(-1));
     for (int i = 0; i < static_cast<int>(points.size()); ++i)
+    {
         index_map.at<int>(points[i]) = i;
+    }
     int end = 0, ignored = 0;
     farthest(0, points, index_map, end);
     // 两次最远点搜索得到主路径，不把 T 形分支全部累加；补 1 px 恢复可见跨度。
@@ -184,11 +228,19 @@ double median_distance(const cv::Mat &distance, const cv::Mat &mask)
 {
     std::vector<float> selected;
     for (int y = 0; y < mask.rows; ++y)
+    {
         for (int x = 0; x < mask.cols; ++x)
+        {
             if (mask.ptr<uint8_t>(y)[x])
+            {
                 selected.push_back(distance.ptr<float>(y)[x]);
+            }
+        }
+    }
     if (selected.empty())
+    {
         return infinity;
+    }
     std::sort(selected.begin(), selected.end());
     size_t middle = selected.size() / 2;
     // 保留 float 加法后提升 double 的计算顺序，避免临界线宽变化。
@@ -209,13 +261,21 @@ bool endpoint_anchors(const cv::Mat &skeleton, const cv::Mat &gap, int removal, 
     int count = cv::connectedComponentsWithStats(pixels, labels, stats, centroids);
     std::vector<int> candidates;
     for (int label = 1; label < count; ++label)
+    {
         if (stats.at<int>(label, 4) >= 2)
+        {
             candidates.push_back(label);
+        }
+    }
     if (candidates.size() < 2)
+    {
         return false;
+    }
     auto moments = cv::moments(gap, true);
     if (moments.m00 <= 0)
+    {
         return false;
+    }
     double cx = moments.m10 / moments.m00, cy = moments.m01 / moments.m00, best = infinity;
     int best_first = -1, best_second = -1;
     for (int a : candidates)
@@ -223,18 +283,26 @@ bool endpoint_anchors(const cv::Mat &skeleton, const cv::Mat &gap, int removal, 
         double ax = centroids.at<double>(a, 0) - cx, ay = centroids.at<double>(a, 1) - cy,
                ad = std::sqrt(ax * ax + ay * ay);
         if (ad < 1e-6)
+        {
             continue;
+        }
         for (int b : candidates)
         {
             if (b <= a)
+            {
                 continue;
+            }
             double bx = centroids.at<double>(b, 0) - cx, by = centroids.at<double>(b, 1) - cy,
                    bd = std::sqrt(bx * bx + by * by);
             if (bd < 1e-6)
+            {
                 continue;
+            }
             double cosine = (ax * bx + ay * by) / (ad * bd);
             if (cosine > -.15)
+            {
                 continue;
+            }
             double score = ad + bd + (cosine + 1.) * reach;
             if (score < best)
             {
@@ -245,7 +313,9 @@ bool endpoint_anchors(const cv::Mat &skeleton, const cv::Mat &gap, int removal, 
         }
     }
     if (best_first < 0 || best_second < 0)
+    {
         return false;
+    }
     cv::inRange(labels, cv::Scalar(best_first), cv::Scalar(best_first), first);
     cv::inRange(labels, cv::Scalar(best_second), cv::Scalar(best_second), second);
     return true;
@@ -257,7 +327,9 @@ double coverage(const cv::Mat &anchor, const cv::Mat &foreground)
 {
     int count = cv::countNonZero(anchor);
     if (count <= 0)
+    {
         return 0;
+    }
     cv::Mat covered;
     cv::bitwise_and(anchor, foreground, covered);
     return cv::countNonZero(covered) / static_cast<double>(count);
@@ -271,7 +343,9 @@ double shifted_coverage(const std::vector<cv::Point> &points, const cv::Mat &for
     {
         int x = p.x + dx, y = p.y + dy;
         if (x >= 0 && y >= 0 && x < foreground.cols && y < foreground.rows && foreground.ptr<uint8_t>(y)[x])
+        {
             ++count;
+        }
     }
     return count / static_cast<double>(points.size());
 }
@@ -283,28 +357,42 @@ bool explained_by_shift(const cv::Mat &foreground, const cv::Mat &gap, const cv:
 {
     auto gaps = mask_points(gap), a = mask_points(first), b = mask_points(second);
     if (gaps.empty() || a.empty() || b.empty())
+    {
         return false;
+    }
     auto m1 = cv::moments(first, true), m2 = cv::moments(second, true);
     if (m1.m00 <= 0 || m2.m00 <= 0)
+    {
         return false;
+    }
     double tx = m2.m10 / m2.m00 - m1.m10 / m1.m00, ty = m2.m01 / m2.m00 - m1.m01 / m1.m00;
     double length = std::sqrt(tx * tx + ty * ty);
     if (length <= 1e-6)
+    {
         return false;
+    }
     tx /= length;
     ty /= length;
     for (int dy = -radius; dy <= radius; ++dy)
+    {
         for (int dx = -radius; dx <= radius; ++dx)
         {
             // 沿线方向严格限幅，不能把断口之后的完整笔画移来“填补”真实缺陷。
             if (std::abs(dx * tx + dy * ty) > std::max(1, tangential_limit))
+            {
                 continue;
+            }
             if (shifted_coverage(gaps, foreground, dx, dy) < .60)
+            {
                 continue;
+            }
             if (shifted_coverage(a, foreground, dx, dy) < .55 || shifted_coverage(b, foreground, dx, dy) < .55)
+            {
                 continue;
+            }
             return true;
         }
+    }
     return false;
 }
 
@@ -324,7 +412,9 @@ std::vector<cv::Rect> merge_rects(const std::vector<cv::Rect> &source, int margi
                 auto existing = merged[i];
                 if (current.x > existing.br().x + margin || current.br().x + margin < existing.x ||
                     current.y > existing.br().y + margin || current.br().y + margin < existing.y)
+                {
                     continue;
+                }
                 current = current | existing;
                 merged.erase(merged.begin() + i);
                 combined = true;
@@ -342,16 +432,22 @@ cv::Mat edge_exclusion(const cv::Mat &binary, int outer, int inner)
 {
     cv::Mat mask = cv::Mat::zeros(binary.size(), CV_8U);
     if (outer <= 0 && inner <= 0)
+    {
         return mask;
+    }
     // 外轮廓先填实，避免孔洞混入外包围；内轮廓通道直接使用含孔洞的 Alpha。
     cv::Mat filled = cv::Mat::zeros(binary.size(), CV_8U);
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binary.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
     cv::drawContours(filled, contours, -1, cv::Scalar(255), -1);
     if (outer > 0)
+    {
         cv::bitwise_or(mask, boundary_band(filled, outer), mask);
+    }
     if (inner > 0)
+    {
         cv::bitwise_or(mask, boundary_band(binary, inner), mask);
+    }
     return mask;
 }
 
@@ -371,14 +467,18 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
     double pixels_per_millimeter = config.layout_dpi > 0 ? config.layout_dpi / 25.4 * scale : 0;
     if (pixels_per_millimeter <= 0 || config.fine_min_length_mm <= 0 || config.fine_max_width_mm <= 0 ||
         alpha.empty() || cis.empty())
+    {
         return result;
+    }
     int minimum_gap_pixels =
         std::max(2, static_cast<int>(std::ceil(std::max(.5, config.fine_min_length_mm) * pixels_per_millimeter)));
     double maximum_half_width_pixels = std::max(1., config.fine_max_width_mm * pixels_per_millimeter * .5 + 1.25);
     int contrast_window =
         std::max(3, static_cast<int>(std::ceil(FineLineLocalContrastWindowMm * pixels_per_millimeter)));
     if ((contrast_window & 1) == 0)
+    {
         ++contrast_window;
+    }
     double minimum_recovery_half_width = std::max(1.5, .30 * pixels_per_millimeter);
     // 局部配准后弯曲细线仍可能有少量法向漂移。法向允许吸收错位，沿线方向严格限制，
     // 防止把断口后方的正常线段移来填补真缺陷。DefectToleranceInner 不参与本通道。
@@ -400,9 +500,13 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
         stats, centroids;
     cv::threshold(alpha, template_binary, config.alpha_threshold, 255, cv::THRESH_BINARY);
     if (cis.size() == alpha.size())
+    {
         cis.copyTo(captured);
+    }
     else
+    {
         cv::resize(cis, captured, alpha.size(), 0, 0, cv::INTER_LINEAR);
+    }
     auto captured_foreground = foreground_evidence(captured, relaxed_threshold, contrast_window);
     cv::threshold(captured, absolute_foreground, relaxed_threshold, 255, cv::THRESH_BINARY);
     auto exclusion = edge_exclusion(template_binary, length_pixels(config.exclusion_outer_mm, config.layout_dpi, scale),
@@ -413,7 +517,9 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
     cv::bitwise_and(template_binary, inverse, raw);
     cv::bitwise_and(raw, exclusion, missing_candidates);
     if (cv::countNonZero(missing_candidates) == 0)
+    {
         return result;
+    }
     int count = cv::connectedComponentsWithStats(missing_candidates, labels, stats, centroids);
     std::vector<cv::Rect> expanded_boxes, tight_boxes;
     for (int label = 1; label < count; ++label)
@@ -422,13 +528,17 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
                         stats.at<int>(label, 3));
         if (std::sqrt(static_cast<double>(bounds.width * bounds.width + bounds.height * bounds.height)) <
             minimum_gap_pixels)
+        {
             continue;
+        }
         int border = endpoint_radius + 1;
         // 贴近 ROI 边界时无法证明断口两端仍有线，保留原来的保守拒绝策略。
         // 若以后要覆盖零件裁切边界，应从裁切 padding 与配准取样一起验证，不能只删此门控。
         if (bounds.x <= border || bounds.y <= border || bounds.br().x >= template_binary.cols - border ||
             bounds.br().y >= template_binary.rows - border)
+        {
             continue;
+        }
         auto roi = expand_rect(bounds, anchor_reach + endpoint_radius, template_binary.size());
         cv::Mat candidate, skeleton, distance, gaps, gap_labels, gap_stats, gap_centroids;
         cv::inRange(labels(roi), cv::Scalar(label), cv::Scalar(label), candidate);
@@ -437,7 +547,9 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
         cv::distanceTransform(template_binary(roi), distance, cv::DIST_L2, cv::DIST_MASK_3);
         cv::bitwise_and(skeleton, candidate, gaps);
         if (cv::countNonZero(gaps) == 0)
+        {
             continue;
+        }
         int gap_count = cv::connectedComponentsWithStats(gaps, gap_labels, gap_stats, gap_centroids);
         for (int gap_label = 1; gap_label < gap_count; ++gap_label)
         {
@@ -450,7 +562,9 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
             // 骨架路径不是外接框对角线；距离场给出模板中心到边缘的半宽。
             // 线宽门槛保留旧版 1.25 像素栅格余量，统计值不扣除它，不能误解为绝对硬上限。
             if (gap_length < minimum_gap_pixels || line_half_width > maximum_half_width_pixels)
+            {
                 continue;
+            }
             // 5. 横截面应缺失至少 75%；光晕恢复还需绝对缺失 90% 且亮度接近背景。
             bool use_absolute_recovery = false;
             if (cross_section_missing(template_binary(roi), captured_foreground(roi), gap, line_half_width) < .75)
@@ -461,19 +575,27 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
                                         background_consistent(captured(roi), template_binary(roi), gap, line_half_width,
                                                               ring_width, brightness_excess);
                 if (!use_absolute_recovery)
+                {
                     continue;
+                }
             }
             // 6. 缺口两侧必须都有真实线段，不能把线端、裁切边界或孤立暗点判为断口。
             // 0.40/0.75/0.90 是既有内部证据门槛，不是新增用户参数：
             // 分别用于两端存在、主要截面切断，以及光晕情况下的绝对缺失复核。
             if (!endpoint_anchors(skeleton, gap, tangential_tolerance + 1, anchor_reach, first_anchor, second_anchor))
+            {
                 continue;
+            }
             if (coverage(first_anchor, near_endpoints(roi)) < .40 || coverage(second_anchor, near_endpoints(roi)) < .40)
+            {
                 continue;
+            }
             // 7. 同一个微小位移若同时解释缺口和两个锚段，则判为配准残差。
             if (explained_by_shift(use_absolute_recovery ? absolute_foreground(roi) : captured_foreground(roi), gap,
                                    first_anchor, second_anchor, normal_tolerance, tangential_tolerance))
+            {
                 continue;
+            }
             // 8. 所有门控通过才提交；保存的断口掩膜仍为骨架像素，沿用现有面积定义。
             auto accepted = result.mask(roi);
             cv::bitwise_or(accepted, gap, accepted);
@@ -491,13 +613,17 @@ FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, do
         bool found = false;
         cv::Rect tight;
         for (size_t i = 0; i < expanded_boxes.size(); ++i)
+        {
             if ((expanded_boxes[i] & merged) == expanded_boxes[i])
             {
                 tight = found ? (tight | tight_boxes[i]) : tight_boxes[i];
                 found = true;
             }
+        }
         if (!found)
+        {
             tight = merged;
+        }
         result.tight.push_back(tight);
         result.areas.push_back(cv::countNonZero(result.mask(tight)));
     }

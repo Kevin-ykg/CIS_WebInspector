@@ -48,7 +48,9 @@ namespace CIS_WebInspector.Services
         public CisCameraEngine(AppConfig configSnapshot)
         {
             if (configSnapshot == null)
+            {
                 throw new ArgumentNullException(nameof(configSnapshot));
+            }
 
             _bufferCount = Math.Max(1, configSnapshot.BufferCount);
             _downscaleFactor = Math.Max(1, configSnapshot.DownscaleFactor);
@@ -93,7 +95,10 @@ namespace CIS_WebInspector.Services
                 if (b)
                 {
                     ulong cFrameBytes = ((ulong)cbLo & 0xFFFFFFFF) | ((ulong)cbHi << 32);
-                    if (cFrameBytes > int.MaxValue) b = false;
+                    if (cFrameBytes > int.MaxValue)
+                    {
+                        b = false;
+                    }
                 }
 
                 b = b && _device.getProperty((uint)AriPropertyType.AriProp_DataBitsWidth, ref databitsWidth);
@@ -180,7 +185,10 @@ namespace CIS_WebInspector.Services
                     {
                         // 内部缓存模式：手动拷贝数据到用户内存池
                         IntPtr ptr = _device.getInternalBufferAddress(arg0);
-                        if (ptr == IntPtr.Zero) return;
+                        if (ptr == IntPtr.Zero)
+                        {
+                            return;
+                        }
 
                         IntPtr src = ptr;
                         IntPtr dst = _imgBuffers[_imgIndex];
@@ -197,12 +205,15 @@ namespace CIS_WebInspector.Services
                     }
                     else
                     {
-                        if (arg0 >= _bufferCount) return;
+                        if (arg0 >= _bufferCount)
+                        {
+                            return;
+                        }
                     }
 
                     IntPtr originalData = _imgBuffers[(int)arg0];
                     var matType = BitsPerPixel == 8 ? OpenCvSharp.MatType.CV_8UC1 : OpenCvSharp.MatType.CV_8UC3;
-                    
+
                     // originalMat 是 SDK 非托管缓冲区的非拥有视图；不得从此作用域返回或异步保存该 Mat。
                     using (var originalMat = OpenCvSharp.Mat.FromPixelData((int)ImageHeight, (int)ImageWidth, matType, originalData, (int)LineStride))
                     using (var resizedMat = new OpenCvSharp.Mat())
@@ -210,7 +221,7 @@ namespace CIS_WebInspector.Services
                         int resizedWidth = Math.Max(1, ImageWidth / _downscaleFactor);
                         int resizedHeight = Math.Max(1, ImageHeight / _downscaleFactor);
                         OpenCvSharp.Cv2.Resize(originalMat, resizedMat, new OpenCvSharp.Size(resizedWidth, resizedHeight), 0, 0, OpenCvSharp.InterpolationFlags.Area);
-                        
+
                         int newWidth = resizedMat.Width;
                         int newHeight = resizedMat.Height;
                         int newLineBytes = BitsPerPixel == 8 ? newWidth : 3 * newWidth;
@@ -255,7 +266,11 @@ namespace CIS_WebInspector.Services
         /// <summary>清零统计并启动 SDK 非阻塞采集；重复启动直接忽略。</summary>
         public void StartGrab()
         {
-            if (_device == null || IsRunning) return;
+            if (_device == null || IsRunning)
+            {
+                return;
+            }
+
             _imgIndex = 0;
             IsRunning = true;
             _device.startGrab(0);
@@ -264,20 +279,27 @@ namespace CIS_WebInspector.Services
         /// <summary>停止 SDK 继续产生回调；已进入回调的处理仍会自然返回。</summary>
         public void StopGrab()
         {
-            if (_device == null || !IsRunning) return;
+            if (_device == null || !IsRunning)
+            {
+                return;
+            }
+
             _device.stopGrab();
             IsRunning = false;
         }
 
         // ---- 动态硬件属性配置支持 ----
-        
+
         /// <summary>
         /// 获取所有受支持的底层硬件参数
         /// </summary>
         public Dictionary<string, uint> GetAllProperties()
         {
             var dict = new Dictionary<string, uint>();
-            if (_device == null) return dict;
+            if (_device == null)
+            {
+                return dict;
+            }
 
             foreach (AriPropertyType prop in Enum.GetValues(typeof(AriPropertyType)))
             {
@@ -295,7 +317,11 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public bool SetProperty(string propName, uint value)
         {
-            if (_device == null) return false;
+            if (_device == null)
+            {
+                return false;
+            }
+
             if (Enum.TryParse<AriPropertyType>(propName, out var prop))
             {
                 return _device.setProperty((uint)prop, value);
@@ -308,21 +334,33 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public bool SaveConfiguration(string configPath)
         {
-            if (_device == null) return false;
+            if (_device == null)
+            {
+                return false;
+            }
+
             return _device.saveConfigurationFile(configPath);
         }
 
         /// <summary>按“停采 → 关闭设备 → 释放用户缓冲池”的顺序清理所有原生资源。</summary>
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
 
             // 确定性释放：先停止采集
-            try { StopGrab(); } catch { }
+            try
+            { StopGrab(); }
+            catch { }
 
             // 关闭设备句柄
-            try { _device?.closeDevice(); } catch { }
+            try
+            { _device?.closeDevice(); }
+            catch { }
             _device = null;
 
             // 释放所有非托管内存

@@ -47,7 +47,9 @@ namespace CIS_WebInspector.ViewModels
                     1000,
                     $"已自动保存拼接图像: {fileName}");
                 if (!queued)
+                {
                     AddLog("[WARN] 拼接图保存队列持续繁忙，本次拼接图未自动保存，请使用手动保存。检测结果不受影响。");
+                }
             }
 
             // 不等待 UI 预览，直接把独立的拼接缓冲区交给后台作业。
@@ -95,7 +97,9 @@ namespace CIS_WebInspector.ViewModels
             Action publish = () =>
             {
                 if (!_inspectionJobCoordinator.IsCurrent(jobId))
+                {
                     return;
+                }
 
                 if (jobResult.Succeeded &&
                     jobResult.GlobalImageBytes != null &&
@@ -112,7 +116,9 @@ namespace CIS_WebInspector.ViewModels
                 }
 
                 if (jobResult.WhiteInkInspection?.RequiresWarning == true)
+                {
                     ShowWhiteInkWarning(jobResult.WhiteInkInspection);
+                }
             };
 
             var dispatcher = Application.Current?.Dispatcher;
@@ -201,7 +207,9 @@ namespace CIS_WebInspector.ViewModels
             OfflineImageSource offlineSource = CameraSource as OfflineImageSource;
             bool isOffline = offlineSource != null;
             if (isOffline)
+            {
                 PauseOfflineAfterCurrentFrame(offlineSource, "连续无二维码告警");
+            }
 
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {

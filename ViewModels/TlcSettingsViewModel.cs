@@ -27,9 +27,9 @@ namespace CIS_WebInspector.ViewModels
         public bool IsConnected
         {
             get => _isConnected;
-            set 
-            { 
-                _isConnected = value; 
+            set
+            {
+                _isConnected = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsNotConnected));
                 ConnectCommand.RaiseCanExecuteChanged();
@@ -88,9 +88,13 @@ namespace CIS_WebInspector.ViewModels
         /// <summary>在后台打开端口，等待硬件 DTR 复位完成后再读取参数。</summary>
         private async void ExecuteConnect()
         {
-            if (string.IsNullOrEmpty(SelectedPort)) return;
+            if (string.IsNullOrEmpty(SelectedPort))
+            {
+                return;
+            }
+
             string portToOpen = SelectedPort.Trim(); // 去除可能的空白符或不可见字符
-            
+
             IsConnected = false;
             CameraParametersText = $"正在连接 {portToOpen}，请稍候...";
 
@@ -99,7 +103,7 @@ namespace CIS_WebInspector.ViewModels
             {
                 IsConnected = true;
                 CameraParametersText = "连接成功，等待设备就绪...";
-                
+
                 // 延迟 1500ms 等待串口硬件彻底初始化完成 (串口 DTR 复位可能需要较长时间)
                 await System.Threading.Tasks.Task.Delay(1500);
                 RefreshCameraParametersText();
@@ -134,8 +138,11 @@ namespace CIS_WebInspector.ViewModels
         /// <summary>根据每个参数的 MatchKeys，从 SDK 人类可读文本中提取数值。</summary>
         private void ParseAndFillValues(string rawText)
         {
-            if (string.IsNullOrEmpty(rawText)) return;
-            
+            if (string.IsNullOrEmpty(rawText))
+            {
+                return;
+            }
+
             // SDK 返回面向人的多行文本而非结构化对象：允许单位/状态后缀，只取键后的首个数值。
             var lines = rawText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var line in lines)
@@ -168,7 +175,10 @@ namespace CIS_WebInspector.ViewModels
         /// <summary>把单项参数值交给绑定的原生下发函数，失败时显示 SDK 最近错误。</summary>
         private async void ExecuteApplyParameter(object parameter)
         {
-            if (!(parameter is TlcParameterModel param)) return;
+            if (!(parameter is TlcParameterModel param))
+            {
+                return;
+            }
 
             if (!IsConnected)
             {
@@ -176,13 +186,19 @@ namespace CIS_WebInspector.ViewModels
                 return;
             }
 
-            if (param == null || string.IsNullOrEmpty(param.Value) || param.ApplyAction == null) return;
+            if (param == null || string.IsNullOrEmpty(param.Value) || param.ApplyAction == null)
+            {
+                return;
+            }
 
             string displayValue = param.Value;
             if (param.HasOptions)
             {
                 var opt = param.Options.FirstOrDefault(o => o.Value == param.Value);
-                if (opt != null) displayValue = opt.DisplayText;
+                if (opt != null)
+                {
+                    displayValue = opt.DisplayText;
+                }
             }
 
             CameraParametersText += $"\n\nUSER> 正在下发参数: {param.Name} -> {displayValue}";
@@ -233,7 +249,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "触发模式 (Ext. Trig.)",
                 Description = "0:内触发 1:外触发",
                 MatchKeys = new[] { "ext.trig." },
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "内触发 (OFF)", Value = "0" },
                     new TlcParameterOption { DisplayText = "外触发 (ON)", Value = "1" }
@@ -270,7 +286,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "平场校正模式 (FlatFieldMode)",
                 Description = "设置平场校正的模式",
                 MatchKeys = new[] { "flatfieldmode" },
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "关闭 (OFF)", Value = "0" },
                     new TlcParameterOption { DisplayText = "开启 (ON)", Value = "1" }
@@ -284,7 +300,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "平场校正算法 (FlatFieldAlgo.)",
                 Description = "设置平场校准的算法版本",
                 MatchKeys = new[] { "flatfieldalgo." },
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "Basic", Value = "0" },
                     new TlcParameterOption { DisplayText = "Vendor", Value = "1" }
@@ -305,7 +321,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "执行平场校正 (FFC Start)",
                 Description = "执行平场校准操作",
                 MatchKeys = new string[0],
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "White", Value = "0" },
                     new TlcParameterOption { DisplayText = "Black", Value = "1" }
@@ -318,7 +334,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "镜像输出 (Mirror Mode)",
                 Description = "0:关闭 1:开启",
                 MatchKeys = new[] { "mirrormode" },
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "正常 (OFF)", Value = "0" },
                     new TlcParameterOption { DisplayText = "镜像 (ON)", Value = "1" }
@@ -339,7 +355,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "测试模板 (Test Pat.)",
                 Description = "选择硬件测试图案",
                 MatchKeys = new[] { "testpat." },
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "Sensor", Value = "0" },
                     new TlcParameterOption { DisplayText = "Black", Value = "1" },
@@ -355,7 +371,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "加载相机配置 (Load Config)",
                 Description = "1:USER等，从硬件加载配置",
                 MatchKeys = new string[0],
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "USER 配置 1", Value = "1" },
                     new TlcParameterOption { DisplayText = "USER 配置 2", Value = "2" },
@@ -370,7 +386,7 @@ namespace CIS_WebInspector.ViewModels
                 Name = "保存相机配置 (Save Config)",
                 Description = "保存当前参数到硬件存储",
                 MatchKeys = new string[0],
-                Options = new[] 
+                Options = new[]
                 {
                     new TlcParameterOption { DisplayText = "USER 配置 1", Value = "1" },
                     new TlcParameterOption { DisplayText = "USER 配置 2", Value = "2" },

@@ -1,0 +1,8 @@
+root = true
+
+[*.cs]
+# 即使条件或循环只有一条语句，也显式保留作用域，避免后续增加语句时改变执行范围。
+csharp_prefer_braces = true:warning
+dotnet_diagnostic.IDE0011.severity = warning
+csharp_new_line_before_open_brace = all
+csharp_preserve_single_line_statements = false

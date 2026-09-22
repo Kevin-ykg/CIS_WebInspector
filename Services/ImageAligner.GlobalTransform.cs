@@ -21,12 +21,30 @@ namespace CIS_WebInspector.Services
             MarkAlignmentOptions options, out int optimalThresh, out string diagnostic,
             out WhiteInkInspectionResult whiteInkInspection)
         {
-            optimalThresh = 127; diagnostic = null; whiteInkInspection = WhiteInkInspectionResult.Disabled();
-            if (cisMat == null || cisMat.Empty()) diagnostic = "CIS 图像为空。";
-            else if (tiffMat == null || tiffMat.Empty()) diagnostic = "TIFF 图像为空。";
-            else if (qrAnchor == null) diagnostic = "缺少第二个二维码的全局坐标锚点。";
-            else if (options == null) diagnostic = "缺少 Mark 配准参数。";
-            if (diagnostic != null) return null;
+            optimalThresh = 127;
+            diagnostic = null;
+            whiteInkInspection = WhiteInkInspectionResult.Disabled();
+            if (cisMat == null || cisMat.Empty())
+            {
+                diagnostic = "CIS 图像为空。";
+            }
+            else if (tiffMat == null || tiffMat.Empty())
+            {
+                diagnostic = "TIFF 图像为空。";
+            }
+            else if (qrAnchor == null)
+            {
+                diagnostic = "缺少第二个二维码的全局坐标锚点。";
+            }
+            else if (options == null)
+            {
+                diagnostic = "缺少 Mark 配准参数。";
+            }
+
+            if (diagnostic != null)
+            {
+                return null;
+            }
 
             AlignmentNativeInterop.ResultHandle handle = null;
             AlignmentResult result = null;
@@ -37,7 +55,10 @@ namespace CIS_WebInspector.Services
                 optimalThresh = summary.Threshold;
                 diagnostic = AlignmentNativeInterop.ReadLog(handle);
                 whiteInkInspection = AlignmentNativeInterop.ReadWhite(handle, summary);
-                if (summary.HasTransform == 0) return null; // 明确失败原因，不重新调用旧 C# 算法。
+                if (summary.HasTransform == 0)
+                {
+                    return null; // 明确失败原因，不重新调用旧 C# 算法。
+                }
 
                 result = AlignmentNativeInterop.ReadAlignment(handle, summary);
                 result.Diagnostic = diagnostic;
@@ -65,7 +86,13 @@ namespace CIS_WebInspector.Services
 
         private static long GetPeakWorkingSetBytes()
         {
-            try { using (Process process = Process.GetCurrentProcess()) return process.PeakWorkingSet64; }
+            try
+            {
+                using (Process process = Process.GetCurrentProcess())
+                {
+                    return process.PeakWorkingSet64;
+                }
+            }
             catch { return 0; }
         }
     }

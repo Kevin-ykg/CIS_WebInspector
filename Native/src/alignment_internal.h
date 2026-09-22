@@ -95,7 +95,9 @@ inline int round_even(double x)
 inline double median(std::vector<double> v)
 {
     if (v.empty())
+    {
         return 0;
+    }
     std::stable_sort(v.begin(), v.end());
     size_t m = v.size() / 2;
     return v.size() % 2 ? v[m] : (v[m - 1] + v[m]) * .5;
@@ -104,7 +106,9 @@ template <class F> double median_of(const std::vector<MarkerPoint> &v, F f)
 {
     std::vector<double> a;
     for (auto &p : v)
+    {
         a.push_back(f(p));
+    }
     return median(a);
 }
 inline bool finite(cv::Point2d p)
@@ -119,7 +123,9 @@ inline cv::Point2d project(const cv::Mat &h, cv::Point2d p)
 {
     double d = h.at<double>(2, 0) * p.x + h.at<double>(2, 1) * p.y + h.at<double>(2, 2);
     if (std::abs(d) < 1e-12)
+    {
         return {NAN, NAN};
+    }
     return {(h.at<double>(0, 0) * p.x + h.at<double>(0, 1) * p.y + h.at<double>(0, 2)) / d,
             (h.at<double>(1, 0) * p.x + h.at<double>(1, 1) * p.y + h.at<double>(1, 2)) / d};
 }

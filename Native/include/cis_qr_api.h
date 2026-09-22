@@ -27,28 +27,28 @@ extern "C"
     // struct_size 用于发现 C#/C++ 结构体布局不一致；新增字段时必须同步提升 ABI 版本。
     typedef struct CisQrConfig
     {
-        uint32_t struct_size;       ///< 调用方填写 sizeof(CisQrConfig)。
-        int32_t roi_x;              ///< 横向检测 ROI 起点；纵向始终覆盖完整帧。
-        int32_t roi_width;          ///< 横向检测 ROI 宽度；小于等于 0 表示使用剩余全宽。
-        int32_t invert_polarity;    ///< 非 0 时先反色，适配正常生产中的白色前景二维码。
-        const float *scales_y;      ///< 仅在 configure 期间借用；内部立即复制、校验并去重。
-        uint32_t scale_count;       ///< scales_y 的元素数量。
-        uint32_t reserved;          ///< 保留字段，当前必须按 0 传入。
+        uint32_t struct_size;    ///< 调用方填写 sizeof(CisQrConfig)。
+        int32_t roi_x;           ///< 横向检测 ROI 起点；纵向始终覆盖完整帧。
+        int32_t roi_width;       ///< 横向检测 ROI 宽度；小于等于 0 表示使用剩余全宽。
+        int32_t invert_polarity; ///< 非 0 时先反色，适配正常生产中的白色前景二维码。
+        const float *scales_y;   ///< 仅在 configure 期间借用；内部立即复制、校验并去重。
+        uint32_t scale_count;    ///< scales_y 的元素数量。
+        uint32_t reserved;       ///< 保留字段，当前必须按 0 传入。
     } CisQrConfig;
 
     /// 单次检测结果。坐标和宽高均已从所有中间缩放、局部裁切和补白图还原到输入帧坐标系。
     typedef struct CisQrResult
     {
-        uint32_t struct_size;       ///< 调用方填写 sizeof(CisQrResult)。
-        uint32_t found;             ///< 1 表示已解出非空文本；0 表示未命中。
-        int32_t center_x;           ///< 二维码中心 X，输入帧像素坐标。
-        int32_t center_y;           ///< 二维码中心 Y，输入帧像素坐标。
-        double pixel_width;         ///< 四边形两组对边的 X 投影宽度，用于拼接与物理尺度换算。
-        double pixel_height;        ///< 四边形两组对边的 Y 投影高度，用于线扫方向尺度换算。
-        uint32_t attempts;          ///< 本次实际调用 WeChatQRCode 的次数，用于分析耗时长尾。
-        uint32_t text_bytes;        ///< UTF-8 文本字节数，包含末尾 NUL；空间不足时不截断。
-        uint32_t strategy_bytes;    ///< UTF-8 诊断策略字节数，包含末尾 NUL。
-        uint32_t reserved;          ///< 保留字段。
+        uint32_t struct_size;    ///< 调用方填写 sizeof(CisQrResult)。
+        uint32_t found;          ///< 1 表示已解出非空文本；0 表示未命中。
+        int32_t center_x;        ///< 二维码中心 X，输入帧像素坐标。
+        int32_t center_y;        ///< 二维码中心 Y，输入帧像素坐标。
+        double pixel_width;      ///< 四边形两组对边的 X 投影宽度，用于拼接与物理尺度换算。
+        double pixel_height;     ///< 四边形两组对边的 Y 投影高度，用于线扫方向尺度换算。
+        uint32_t attempts;       ///< 本次实际调用 WeChatQRCode 的次数，用于分析耗时长尾。
+        uint32_t text_bytes;     ///< UTF-8 文本字节数，包含末尾 NUL；空间不足时不截断。
+        uint32_t strategy_bytes; ///< UTF-8 诊断策略字节数，包含末尾 NUL。
+        uint32_t reserved;       ///< 保留字段。
     } CisQrResult;
 
     /// 返回当前 DLL 的 C ABI 版本。C# 必须在创建实例前核对该值。

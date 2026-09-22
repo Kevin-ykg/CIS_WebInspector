@@ -103,7 +103,13 @@ namespace CIS_WebInspector.Services
         public long ExactComparisonCount => checked((long)Snapshot().Comparisons);
         public double ExactComparisonElapsedMilliseconds => Snapshot().ComparisonMs;
         public double QuickKeyElapsedMilliseconds => Snapshot().QuickKeyMs;
-        public void Dispose() { lock (_sync) Handle.Dispose(); }
+        public void Dispose()
+        {
+            lock (_sync)
+            {
+                Handle.Dispose();
+            }
+        }
     }
 
     /// <summary>
@@ -117,11 +123,21 @@ namespace CIS_WebInspector.Services
         internal object SyncRoot { get; } = new object();
         internal PatchSiftWorker(PatchSiftTemplateCache cache)
         {
-            if (cache == null) throw new ArgumentNullException(nameof(cache));
+            if (cache == null)
+            {
+                throw new ArgumentNullException(nameof(cache));
+            }
+
             PatchNativeInterop.Check(PatchNativeInterop.cis_patch_worker_create(cache.Handle, out IntPtr pointer,
                 Error, (uint)Error.Length), Error);
             Handle = new PatchNativeInterop.WorkerHandle(pointer);
         }
-        public void Dispose() { lock (SyncRoot) Handle.Dispose(); }
+        public void Dispose()
+        {
+            lock (SyncRoot)
+            {
+                Handle.Dispose();
+            }
+        }
     }
 }

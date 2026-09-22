@@ -4,4 +4,5 @@ ColumnLimit: 120
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
+InsertBraces: true
 SortIncludes: Never

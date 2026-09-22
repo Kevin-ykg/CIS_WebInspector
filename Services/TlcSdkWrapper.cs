@@ -30,49 +30,49 @@ namespace CIS_WebInspector.Services
         // ---- 参数设置接口 ----
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_ffc_start(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_ffc_mode(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_lpc_selector(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_ffc_algorithm(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_mirror_mode(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_usl(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_uss(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_light_red(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_light_green(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_light_blue(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_line_rate(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_offset(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_gain(float value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_trigger_mode(int value);
-        
+
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_test_pattern(int value);
-        
+
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         public static extern int set_binarization_threshold(int value);

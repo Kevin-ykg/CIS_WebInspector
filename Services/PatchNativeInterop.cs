@@ -19,7 +19,9 @@ namespace CIS_WebInspector.Services
             if (cis_patch_abi_version() != 1 || Marshal.SizeOf(typeof(Image)) != 40 ||
                 Marshal.SizeOf(typeof(Config)) != 112 || Marshal.SizeOf(typeof(Defect)) != 64 ||
                 Marshal.SizeOf(typeof(Summary)) != 80 || Marshal.SizeOf(typeof(CacheStats)) != 48)
+            {
                 throw new InvalidOperationException("CISVisionCore.dll 零件检测接口版本/布局不匹配，请重新构建并部署 DLL。");
+            }
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
@@ -37,11 +39,21 @@ namespace CIS_WebInspector.Services
             public static Image Borrow(Mat mat)
             {
                 if (mat == null || mat.Empty() || mat.Depth() != MatType.CV_8U)
+                {
                     throw new ArgumentException("零件输入必须是非空的 8 位图像。");
+                }
+
                 ulong stride = checked((ulong)mat.Step());
-                return new Image { Size = 40, Width = mat.Width, Height = mat.Height, Channels = mat.Channels(),
-                    Stride = stride, Bytes = checked(stride * (ulong)(mat.Height - 1) + (ulong)(mat.Width * mat.Channels())),
-                    Pixels = mat.Data };
+                return new Image
+                {
+                    Size = 40,
+                    Width = mat.Width,
+                    Height = mat.Height,
+                    Channels = mat.Channels(),
+                    Stride = stride,
+                    Bytes = checked(stride * (ulong)(mat.Height - 1) + (ulong)(mat.Width * mat.Channels())),
+                    Pixels = mat.Data
+                };
             }
         }
 
@@ -54,16 +66,31 @@ namespace CIS_WebInspector.Services
             public double InnerArea, OuterArea, FineLength, FineWidth;
             public static Config From(AppConfig value, int cisThreshold, int outputs)
             {
-                if (value == null) throw new ArgumentNullException(nameof(value));
+                if (value == null)
+                {
+                    throw new ArgumentNullException(nameof(value));
+                }
                 // 配置按值复制。正在运行的检测不借用设置窗口上的可变对象。
-                return new Config { Size = 112, Alignment = value.EnableSiftLocalAlign ? 1 : 0,
-                    FineLine = value.EnableFineLineBreakDetection ? 1 : 0, MinWidth = value.DefectMinScaledWidth,
-                    AlphaThreshold = value.DefectAlphaBinaryThresh, CisThreshold = cisThreshold, Outputs = outputs,
-                    Scale = value.DefectDetectScale, Dpi = value.LayoutDpi,
-                    InnerTolerance = value.DefectToleranceInner, OuterTolerance = value.DefectToleranceOuter,
-                    OuterExclusion = value.DefectEdgeExclusionThick, InnerExclusion = value.DefectEdgeExclusionSmall,
-                    InnerArea = value.DefectAreaThreshInner, OuterArea = value.DefectAreaThreshOuter,
-                    FineLength = value.FineLineMinBreakLengthMm, FineWidth = value.FineLineMaxWidthMm };
+                return new Config
+                {
+                    Size = 112,
+                    Alignment = value.EnableSiftLocalAlign ? 1 : 0,
+                    FineLine = value.EnableFineLineBreakDetection ? 1 : 0,
+                    MinWidth = value.DefectMinScaledWidth,
+                    AlphaThreshold = value.DefectAlphaBinaryThresh,
+                    CisThreshold = cisThreshold,
+                    Outputs = outputs,
+                    Scale = value.DefectDetectScale,
+                    Dpi = value.LayoutDpi,
+                    InnerTolerance = value.DefectToleranceInner,
+                    OuterTolerance = value.DefectToleranceOuter,
+                    OuterExclusion = value.DefectEdgeExclusionThick,
+                    InnerExclusion = value.DefectEdgeExclusionSmall,
+                    InnerArea = value.DefectAreaThreshInner,
+                    OuterArea = value.DefectAreaThreshOuter,
+                    FineLength = value.FineLineMinBreakLengthMm,
+                    FineWidth = value.FineLineMaxWidthMm
+                };
             }
         }
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
@@ -74,7 +101,7 @@ namespace CIS_WebInspector.Services
             public Rect OriginalRect => new Rect(X, Y, Width, Height);
             public Rect WorkRect => new Rect(WorkX, WorkY, WorkWidth, WorkHeight);
             public DefectGeometryMeasurement Measurement => new DefectGeometryMeasurement
-                { WidthMm = WidthMm, HeightMm = HeightMm, AreaMm2 = AreaMm2 };
+            { WidthMm = WidthMm, HeightMm = HeightMm, AreaMm2 = AreaMm2 };
         }
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct Summary
@@ -109,7 +136,11 @@ namespace CIS_WebInspector.Services
         }
         internal static void Check(int status, byte[] error)
         {
-            if (status == 0) return;
+            if (status == 0)
+            {
+                return;
+            }
+
             int end = Array.IndexOf(error, (byte)0);
             throw new InvalidOperationException("C++ 零件检测 status=" + status + ": " +
                 Encoding.UTF8.GetString(error, 0, end < 0 ? error.Length : end));
@@ -117,17 +148,28 @@ namespace CIS_WebInspector.Services
         internal static string ReadLog(ResultHandle handle)
         {
             int status = cis_patch_result_log(handle, null, 0, out uint required);
-            if (status != -3 && status != 0) throw new InvalidOperationException("读取原生配准日志长度失败。");
+            if (status != -3 && status != 0)
+            {
+                throw new InvalidOperationException("读取原生配准日志长度失败。");
+            }
+
             var text = new byte[checked((int)required)];
             if (cis_patch_result_log(handle, text, required, out required) != 0)
+            {
                 throw new InvalidOperationException("读取原生配准日志失败。");
+            }
+
             return Encoding.UTF8.GetString(text, 0, checked((int)required - 1));
         }
         internal static Mat ReadImage(ResultHandle result, int kind, byte[] error)
         {
             var info = new Image { Size = 40 };
             Check(cis_patch_result_image(result, kind, ref info, error, (uint)error.Length), error);
-            if (info.Width <= 0 || info.Height <= 0) throw new InvalidOperationException("原生未生成所请求的诊断图。");
+            if (info.Width <= 0 || info.Height <= 0)
+            {
+                throw new InvalidOperationException("原生未生成所请求的诊断图。");
+            }
+
             var image = new Mat(info.Height, info.Width, MatType.CV_8UC(info.Channels));
             try
             {

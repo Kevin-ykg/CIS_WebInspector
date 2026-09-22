@@ -77,159 +77,163 @@ namespace CIS_WebInspector.Services
 
             try
             {
-            // ConcurrentBag 只用于线程安全汇总，结果顺序不参与判定；显示时依赖 PartId/GlobalRoi。
-            var resultsBag = new ConcurrentBag<PatchDefectResult>();
-            var partElapsedMilliseconds = new ConcurrentBag<long>();
-            // 自动模式最多使用 4 个 worker，显式配置仍受 CPU 数和安全上限 16 约束。
-            int automaticParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount));
-            int maxParallelism = config.DefectMaxParallelism <= 0
-                ? automaticParallelism
-                : Math.Max(1, Math.Min(Math.Min(16, Environment.ProcessorCount), config.DefectMaxParallelism));
-            var parallelOptions = new System.Threading.Tasks.ParallelOptions
-            {
-                MaxDegreeOfParallelism = maxParallelism
-            };
-            // 所有零件算法均由原生 worker 执行；关闭局部配准时缓存为空且不会创建 SIFT。
-            PatchSiftTemplateCache templateCache = new PatchSiftTemplateCache();
-            long managedBytesBefore = GC.GetTotalMemory(false);
-            long privateBytesBefore = GetPrivateBytes();
-            var patchStopwatch = Stopwatch.StartNew();
+                // ConcurrentBag 只用于线程安全汇总，结果顺序不参与判定；显示时依赖 PartId/GlobalRoi。
+                var resultsBag = new ConcurrentBag<PatchDefectResult>();
+                var partElapsedMilliseconds = new ConcurrentBag<long>();
+                // 自动模式最多使用 4 个 worker，显式配置仍受 CPU 数和安全上限 16 约束。
+                int automaticParallelism = Math.Max(1, Math.Min(4, Environment.ProcessorCount));
+                int maxParallelism = config.DefectMaxParallelism <= 0
+                    ? automaticParallelism
+                    : Math.Max(1, Math.Min(Math.Min(16, Environment.ProcessorCount), config.DefectMaxParallelism));
+                var parallelOptions = new System.Threading.Tasks.ParallelOptions
+                {
+                    MaxDegreeOfParallelism = maxParallelism
+                };
+                // 所有零件算法均由原生 worker 执行；关闭局部配准时缓存为空且不会创建 SIFT。
+                PatchSiftTemplateCache templateCache = new PatchSiftTemplateCache();
+                long managedBytesBefore = GC.GetTotalMemory(false);
+                long privateBytesBefore = GetPrivateBytes();
+                var patchStopwatch = Stopwatch.StartNew();
 
-            try
-            {
-                System.Threading.Tasks.Parallel.ForEach<PartLocation, PatchSiftWorker>(
-                    parts,
-                    parallelOptions,
-                    // SIFT/Matcher 不是跨线程共享对象；每个并行 worker 独占一组，只共享只读模板特征缓存。
-                    () => new PatchSiftWorker(templateCache),
-                    (part, _, worker) =>
-                    {
-                        if (part.HotInkTaskID != null && part.HotInkTaskID.Contains("QRCode"))
-                            // 排版日志中的二维码区域是定位基准，不属于需要判定的产品零件。
-                            return worker;
-
-                        int x = (int)(originX + part.RelativeTopLeftX * scale);
-                        int y = (int)(originY + part.RelativeTopLeftY * scale);
-                        int w = (int)((part.RelativeBottomRightX - part.RelativeTopLeftX) * scale);
-                        int h = (int)((part.RelativeBottomRightY - part.RelativeTopLeftY) * scale);
-
-                        // 边界零件允许 ROI 被图像边界裁剪；裁剪后为空则跳过，防止 OpenCV Rect 异常。
-                        x = Math.Max(0, x);
-                        y = Math.Max(0, y);
-                        w = Math.Min(w, imgWidth - x);
-                        h = Math.Min(h, imgHeight - y);
-
-                        if (w <= 0 || h <= 0)
-                            return worker;
-
-                        Rect roi = new Rect(x, y, w, h);
-                        var partStopwatch = Stopwatch.StartNew();
-                        try
+                try
+                {
+                    System.Threading.Tasks.Parallel.ForEach<PartLocation, PatchSiftWorker>(
+                        parts,
+                        parallelOptions,
+                        // SIFT/Matcher 不是跨线程共享对象；每个并行 worker 独占一组，只共享只读模板特征缓存。
+                        () => new PatchSiftWorker(templateCache),
+                        (part, _, worker) =>
                         {
-                            // 子 Mat 仅引用翻转后大图的 ROI，不复制像素；using 限定其生命周期，避免悬空引用。
-                            using (Mat cisPatch = new Mat(flippedCis, roi))
-                            using (Mat tiffPatch = new Mat(flippedTiff, roi))
+                            if (part.HotInkTaskID != null && part.HotInkTaskID.Contains("QRCode"))
                             {
-                                string cisName = null;
-                                if (config.SaveCroppedImages)
-                                {
-                                    cisName = Path.Combine(outputDir, $"{part.HotInkTaskID}_cis.jpg");
-                                    string tiffName = Path.Combine(outputDir, $"{part.HotInkTaskID}_tiff.jpg");
-                                    Cv2.ImWrite(tiffName, tiffPatch, PatchJpegParameters);
-                                }
-
-                                // 缺陷模板以 TIFF Alpha 为准；没有 Alpha 时仅能保存裁图，不能产生可靠差分结果。
-                                if (flippedAlpha != null)
-                                {
-                                    using (Mat alphaPatch = new Mat(flippedAlpha, roi))
-                                    {
-                                        if (config.SaveCroppedImages)
-                                        {
-                                            string alphaName = Path.Combine(outputDir, $"{part.HotInkTaskID}_alpha.png");
-                                            // “裁切结果”中的 Alpha 图用于核对缺陷模板，应直接展示实际参与
-                                            // 缺陷判断的二值语义。这里在原始裁切尺寸上应用同一个阈值；
-                                            // 使用独立 Mat，不能原地修改共享的 flippedAlpha ROI，否则会污染
-                                            // 后续并行零件检测所读取的 Alpha 模板。
-                                            using (var alphaBinaryForSave = new Mat())
-                                            {
-                                                Cv2.Threshold(
-                                                    alphaPatch,
-                                                    alphaBinaryForSave,
-                                                    config.DefectAlphaBinaryThresh,
-                                                    255,
-                                                    ThresholdTypes.Binary);
-                                                Cv2.ImWrite(alphaName, alphaBinaryForSave);
-                                            }
-                                        }
-
-                                        string defectPath = config.SaveCroppedImages && config.SaveDefectResultImages
-                                            ? Path.Combine(outputDir, $"{part.HotInkTaskID}_defect.jpg")
-                                            : null;
-                                        string edgeExclusionPath = config.SaveCroppedImages
-                                            ? Path.Combine(outputDir, $"{part.HotInkTaskID}_edge_exclusion.png")
-                                            : null;
-
-                                        PatchDefectResult defectResult = PatchDefectDetector.Detect(
-                                            alphaPatch,
-                                            cisPatch,
-                                            cisBaseThresh,
-                                            config,
-                                            defectPath,
-                                            cisName,
-                                            edgeExclusionPath,
-                                            worker,
-                                            part.HotInkTaskID,
-                                            logger);
-                                        defectResult.PartId = part.HotInkTaskID;
-                                        defectResult.GlobalRoi = roi;
-                                        resultsBag.Add(defectResult);
-                                    }
-                                }
-
-                                System.Threading.Interlocked.Increment(ref count);
+                                // 排版日志中的二维码区域是定位基准，不属于需要判定的产品零件。
+                                return worker;
                             }
-                        }
-                        catch (Exception ex)
-                        {
-                            // 工程异常不能从并行结果中静默消失，也不能冒充产品缺陷。
-                            // 返回独立状态后，批次汇总会把它列为“处理异常”，等待复检或排障。
-                            resultsBag.Add(new PatchDefectResult
+
+                            int x = (int)(originX + part.RelativeTopLeftX * scale);
+                            int y = (int)(originY + part.RelativeTopLeftY * scale);
+                            int w = (int)((part.RelativeBottomRightX - part.RelativeTopLeftX) * scale);
+                            int h = (int)((part.RelativeBottomRightY - part.RelativeTopLeftY) * scale);
+
+                            // 边界零件允许 ROI 被图像边界裁剪；裁剪后为空则跳过，防止 OpenCV Rect 异常。
+                            x = Math.Max(0, x);
+                            y = Math.Max(0, y);
+                            w = Math.Min(w, imgWidth - x);
+                            h = Math.Min(h, imgHeight - y);
+
+                            if (w <= 0 || h <= 0)
                             {
-                                PartId = part.HotInkTaskID,
-                                GlobalRoi = roi,
-                                ProcessingStatus = PatchProcessingStatus.ProcessingError,
-                                ProcessingError = ex.Message,
-                                IsPass = false
-                            });
-                            AppLog.Write(
-                                logger,
-                                $"[零件处理][ERROR] {part.HotInkTaskID} 裁切/检测异常: {ex.Message}");
-                        }
-                        finally
-                        {
-                            partStopwatch.Stop();
-                            partElapsedMilliseconds.Add(partStopwatch.ElapsedMilliseconds);
-                        }
+                                return worker;
+                            }
 
-                        return worker;
-                    },
-                    worker => worker?.Dispose());
+                            Rect roi = new Rect(x, y, w, h);
+                            var partStopwatch = Stopwatch.StartNew();
+                            try
+                            {
+                                // 子 Mat 仅引用翻转后大图的 ROI，不复制像素；using 限定其生命周期，避免悬空引用。
+                                using (Mat cisPatch = new Mat(flippedCis, roi))
+                                using (Mat tiffPatch = new Mat(flippedTiff, roi))
+                                {
+                                    string cisName = null;
+                                    if (config.SaveCroppedImages)
+                                    {
+                                        cisName = Path.Combine(outputDir, $"{part.HotInkTaskID}_cis.jpg");
+                                        string tiffName = Path.Combine(outputDir, $"{part.HotInkTaskID}_tiff.jpg");
+                                        Cv2.ImWrite(tiffName, tiffPatch, PatchJpegParameters);
+                                    }
 
-                patchStopwatch.Stop();
-                long[] durations = partElapsedMilliseconds.OrderBy(value => value).ToArray();
-                long managedBytesAfter = GC.GetTotalMemory(false);
-                long privateBytesAfter = GetPrivateBytes();
-                long cacheHits = templateCache?.HitCount ?? 0;
-                long cacheMisses = templateCache?.MissCount ?? 0;
-                long cacheRequests = cacheHits + cacheMisses;
-                double cacheHitRate = cacheRequests == 0 ? 0.0 : (double)cacheHits / cacheRequests;
-                string summary =
-                    $"[性能基线] 零件 {durations.Length}，总耗时 {patchStopwatch.ElapsedMilliseconds}ms，" +
-                    $"并行度 {maxParallelism}，P50/P95/最大 {Percentile(durations, 0.50)}/" +
-                    $"{Percentile(durations, 0.95)}/{Percentile(durations, 1.00)}ms，" +
-                    $"模板 {templateCache?.Count ?? 0}，缓存命中 {cacheHits}/{cacheRequests} ({cacheHitRate:P0})。";
+                                    // 缺陷模板以 TIFF Alpha 为准；没有 Alpha 时仅能保存裁图，不能产生可靠差分结果。
+                                    if (flippedAlpha != null)
+                                    {
+                                        using (Mat alphaPatch = new Mat(flippedAlpha, roi))
+                                        {
+                                            if (config.SaveCroppedImages)
+                                            {
+                                                string alphaName = Path.Combine(outputDir, $"{part.HotInkTaskID}_alpha.png");
+                                                // “裁切结果”中的 Alpha 图用于核对缺陷模板，应直接展示实际参与
+                                                // 缺陷判断的二值语义。这里在原始裁切尺寸上应用同一个阈值；
+                                                // 使用独立 Mat，不能原地修改共享的 flippedAlpha ROI，否则会污染
+                                                // 后续并行零件检测所读取的 Alpha 模板。
+                                                using (var alphaBinaryForSave = new Mat())
+                                                {
+                                                    Cv2.Threshold(
+                                                        alphaPatch,
+                                                        alphaBinaryForSave,
+                                                        config.DefectAlphaBinaryThresh,
+                                                        255,
+                                                        ThresholdTypes.Binary);
+                                                    Cv2.ImWrite(alphaName, alphaBinaryForSave);
+                                                }
+                                            }
 
-                AppLog.Write(logger, summary);
+                                            string defectPath = config.SaveCroppedImages && config.SaveDefectResultImages
+                                                ? Path.Combine(outputDir, $"{part.HotInkTaskID}_defect.jpg")
+                                                : null;
+                                            string edgeExclusionPath = config.SaveCroppedImages
+                                                ? Path.Combine(outputDir, $"{part.HotInkTaskID}_edge_exclusion.png")
+                                                : null;
+
+                                            PatchDefectResult defectResult = PatchDefectDetector.Detect(
+                                                alphaPatch,
+                                                cisPatch,
+                                                cisBaseThresh,
+                                                config,
+                                                defectPath,
+                                                cisName,
+                                                edgeExclusionPath,
+                                                worker,
+                                                part.HotInkTaskID,
+                                                logger);
+                                            defectResult.PartId = part.HotInkTaskID;
+                                            defectResult.GlobalRoi = roi;
+                                            resultsBag.Add(defectResult);
+                                        }
+                                    }
+
+                                    System.Threading.Interlocked.Increment(ref count);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                // 工程异常不能从并行结果中静默消失，也不能冒充产品缺陷。
+                                // 返回独立状态后，批次汇总会把它列为“处理异常”，等待复检或排障。
+                                resultsBag.Add(new PatchDefectResult
+                                {
+                                    PartId = part.HotInkTaskID,
+                                    GlobalRoi = roi,
+                                    ProcessingStatus = PatchProcessingStatus.ProcessingError,
+                                    ProcessingError = ex.Message,
+                                    IsPass = false
+                                });
+                                AppLog.Write(
+                                    logger,
+                                    $"[零件处理][ERROR] {part.HotInkTaskID} 裁切/检测异常: {ex.Message}");
+                            }
+                            finally
+                            {
+                                partStopwatch.Stop();
+                                partElapsedMilliseconds.Add(partStopwatch.ElapsedMilliseconds);
+                            }
+
+                            return worker;
+                        },
+                        worker => worker?.Dispose());
+
+                    patchStopwatch.Stop();
+                    long[] durations = partElapsedMilliseconds.OrderBy(value => value).ToArray();
+                    long managedBytesAfter = GC.GetTotalMemory(false);
+                    long privateBytesAfter = GetPrivateBytes();
+                    long cacheHits = templateCache?.HitCount ?? 0;
+                    long cacheMisses = templateCache?.MissCount ?? 0;
+                    long cacheRequests = cacheHits + cacheMisses;
+                    double cacheHitRate = cacheRequests == 0 ? 0.0 : (double)cacheHits / cacheRequests;
+                    string summary =
+                        $"[性能基线] 零件 {durations.Length}，总耗时 {patchStopwatch.ElapsedMilliseconds}ms，" +
+                        $"并行度 {maxParallelism}，P50/P95/最大 {Percentile(durations, 0.50)}/" +
+                        $"{Percentile(durations, 0.95)}/{Percentile(durations, 1.00)}ms，" +
+                        $"模板 {templateCache?.Count ?? 0}，缓存命中 {cacheHits}/{cacheRequests} ({cacheHitRate:P0})。";
+
+                    AppLog.Write(logger, summary);
 
                     // 性能 CSV 用于比较同一设备/数据集上的趋势，不参与 Pass/Fail，也不是验收阈值。
                     TryAppendPerformanceBaseline(
@@ -244,141 +248,159 @@ namespace CIS_WebInspector.Services
                         privateBytesAfter - privateBytesBefore,
                         logger);
                 }
-            finally
-            {
-                templateCache?.Dispose();
-            }
-
-            // 并行汇总顺序不稳定，但每个结果都带 PartId 和 GlobalRoi，不依赖列表下标关联零件。
-            var results = new List<PatchDefectResult>(resultsBag);
-            int processingErrors = results.Count(result => result.HasProcessingError);
-            AppLog.Write(
-                logger,
-                $"[PatchCropper] 共成功处理 {count} 个零件，返回 {results.Count} 个结果，" +
-                $"其中工程异常 {processingErrors} 个。");
-
-            // --- 全局缺陷可视化保存与显示 ---
-            // 下列缩放和绘框仅服务于 UI/报告，不回流到检测算法，避免预览分辨率影响判定。
-            // UI 仍使用 TIFF + CIS 的左右对照图；磁盘则分别保存 TIFF 基准图和带标注 CIS 图，
-            // 方便直接打开、核对或用于报告，不必再从横向合成图中人工裁切。
-            byte[] globalImageBytes = null;
-            string combinedPath = null;
-            try
-            {
-                // 动态计算显示缩放比例，限制最大高度以降低内存消耗和处理耗时
-                double displayScale = 1.0;
-                int maxDisplayHeight = 3000;
-                if (flippedCis.Height > maxDisplayHeight)
+                finally
                 {
-                    displayScale = (double)maxDisplayHeight / flippedCis.Height;
+                    templateCache?.Dispose();
                 }
 
-                using (var cisSmall = new Mat())
-                using (var cisCanvas = new Mat())
-                using (var tiffSmall = new Mat())
-                using (var tiffCanvas = new Mat())
+                // 并行汇总顺序不稳定，但每个结果都带 PartId 和 GlobalRoi，不依赖列表下标关联零件。
+                var results = new List<PatchDefectResult>(resultsBag);
+                int processingErrors = results.Count(result => result.HasProcessingError);
+                AppLog.Write(
+                    logger,
+                    $"[PatchCropper] 共成功处理 {count} 个零件，返回 {results.Count} 个结果，" +
+                    $"其中工程异常 {processingErrors} 个。");
+
+                // --- 全局缺陷可视化保存与显示 ---
+                // 下列缩放和绘框仅服务于 UI/报告，不回流到检测算法，避免预览分辨率影响判定。
+                // UI 仍使用 TIFF + CIS 的左右对照图；磁盘则分别保存 TIFF 基准图和带标注 CIS 图，
+                // 方便直接打开、核对或用于报告，不必再从横向合成图中人工裁切。
+                byte[] globalImageBytes = null;
+                string combinedPath = null;
+                try
                 {
-                    if (displayScale < 1.0)
-                        Cv2.Resize(flippedCis, cisSmall, new Size(), displayScale, displayScale, InterpolationFlags.Nearest);
-                    else
-                        flippedCis.CopyTo(cisSmall);
-
-                    if (cisSmall.Channels() == 1)
-                        Cv2.CvtColor(cisSmall, cisCanvas, ColorConversionCodes.GRAY2BGR);
-                    else
-                        cisSmall.CopyTo(cisCanvas);
-
-                    int partThick = Math.Max(2, (int)(5 * displayScale));
-                    int defectThick = Math.Max(2, (int)(9 * displayScale));
-                    foreach (PatchDefectResult res in results)
+                    // 动态计算显示缩放比例，限制最大高度以降低内存消耗和处理耗时
+                    double displayScale = 1.0;
+                    int maxDisplayHeight = 3000;
+                    if (flippedCis.Height > maxDisplayHeight)
                     {
-                        Rect scaledRoi = new Rect(
-                            (int)(res.GlobalRoi.X * displayScale),
-                            (int)(res.GlobalRoi.Y * displayScale),
-                            (int)(res.GlobalRoi.Width * displayScale),
-                            (int)(res.GlobalRoi.Height * displayScale));
-                        // 工程异常使用黄色，与产品 NG 的红色分开，避免全局图把算法失败误报成缺陷。
-                        Scalar partColor = res.HasProcessingError
-                            ? new Scalar(0, 255, 255)
-                            : (res.IsPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255));
-                        Cv2.Rectangle(cisCanvas, scaledRoi, partColor, partThick);
-
-                        foreach (Rect rect in res.InnerRects)
-                        {
-                            Rect scaledDefectRect = new Rect(
-                                (int)((res.GlobalRoi.X + rect.X) * displayScale),
-                                (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
-                                (int)(rect.Width * displayScale),
-                                (int)(rect.Height * displayScale));
-                            Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 165, 255), defectThick);
-                        }
-
-                        foreach (Rect rect in res.OuterRects)
-                        {
-                            Rect scaledDefectRect = new Rect(
-                                (int)((res.GlobalRoi.X + rect.X) * displayScale),
-                                (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
-                                (int)(rect.Width * displayScale),
-                                (int)(rect.Height * displayScale));
-                            Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 0, 255), defectThick);
-                        }
-
-                        // 与零件级缺陷图保持同一颜色约定：细线断裂使用洋红色，
-                        // 不再借用内部缺陷的橙色矩形，便于从全局图直接判断缺陷类型。
-                        foreach (Rect rect in res.FineLineBreakRects)
-                        {
-                            Rect scaledDefectRect = new Rect(
-                                (int)((res.GlobalRoi.X + rect.X) * displayScale),
-                                (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
-                                (int)(rect.Width * displayScale),
-                                (int)(rect.Height * displayScale));
-                            Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(255, 0, 255), defectThick);
-                        }
+                        displayScale = (double)maxDisplayHeight / flippedCis.Height;
                     }
 
-                    if (displayScale < 1.0)
-                        Cv2.Resize(flippedTiff, tiffSmall, new Size(), displayScale, displayScale, InterpolationFlags.Nearest);
-                    else
-                        flippedTiff.CopyTo(tiffSmall);
-
-                    if (tiffSmall.Channels() == 1)
-                        Cv2.CvtColor(tiffSmall, tiffCanvas, ColorConversionCodes.GRAY2BGR);
-                    else if (tiffSmall.Channels() == 4)
-                        Cv2.CvtColor(tiffSmall, tiffCanvas, ColorConversionCodes.BGRA2BGR);
-                    else
-                        tiffSmall.CopyTo(tiffCanvas);
-
-                    if (tiffCanvas.Channels() == 3 && cisCanvas.Channels() == 3)
+                    using (var cisSmall = new Mat())
+                    using (var cisCanvas = new Mat())
+                    using (var tiffSmall = new Mat())
+                    using (var tiffCanvas = new Mat())
                     {
-                        if (config.SaveCroppedImages && config.SaveDefectResultImages)
+                        if (displayScale < 1.0)
                         {
-                            string tiffReferencePath = Path.Combine(outputDir, "GlobalTiffReference.jpg");
-                            string cisDefectPath = Path.Combine(outputDir, "GlobalCisDefectResult.jpg");
-
-                            Cv2.ImWrite(tiffReferencePath, tiffCanvas, GlobalPreviewJpegParameters);
-                            Cv2.ImWrite(cisDefectPath, cisCanvas, GlobalPreviewJpegParameters);
-
-                            // 兼容现有返回值：全局结果路径指向最有诊断价值的带标注 CIS 图。
-                            combinedPath = cisDefectPath;
-                            AppLog.Write(
-                                logger,
-                                $"[PatchCropper] 全局结果已分开保存：TIFF={tiffReferencePath}；CIS={cisDefectPath}");
+                            Cv2.Resize(flippedCis, cisSmall, new Size(), displayScale, displayScale, InterpolationFlags.Nearest);
+                        }
+                        else
+                        {
+                            flippedCis.CopyTo(cisSmall);
                         }
 
-                        // 左右合成图只编码到内存，继续供主界面“全局缺陷图”页签对照显示，
-                        // 不再写入 GlobalDefectResult.jpg，避免磁盘结果含义不清。
-                        using (var combined = new Mat())
+                        if (cisSmall.Channels() == 1)
                         {
-                            Cv2.HConcat(new[] { tiffCanvas, cisCanvas }, combined);
-                            Cv2.ImEncode(".jpg", combined, out globalImageBytes, GlobalPreviewJpegParameters);
+                            Cv2.CvtColor(cisSmall, cisCanvas, ColorConversionCodes.GRAY2BGR);
+                        }
+                        else
+                        {
+                            cisSmall.CopyTo(cisCanvas);
+                        }
+
+                        int partThick = Math.Max(2, (int)(5 * displayScale));
+                        int defectThick = Math.Max(2, (int)(9 * displayScale));
+                        foreach (PatchDefectResult res in results)
+                        {
+                            Rect scaledRoi = new Rect(
+                                (int)(res.GlobalRoi.X * displayScale),
+                                (int)(res.GlobalRoi.Y * displayScale),
+                                (int)(res.GlobalRoi.Width * displayScale),
+                                (int)(res.GlobalRoi.Height * displayScale));
+                            // 工程异常使用黄色，与产品 NG 的红色分开，避免全局图把算法失败误报成缺陷。
+                            Scalar partColor = res.HasProcessingError
+                                ? new Scalar(0, 255, 255)
+                                : (res.IsPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255));
+                            Cv2.Rectangle(cisCanvas, scaledRoi, partColor, partThick);
+
+                            foreach (Rect rect in res.InnerRects)
+                            {
+                                Rect scaledDefectRect = new Rect(
+                                    (int)((res.GlobalRoi.X + rect.X) * displayScale),
+                                    (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
+                                    (int)(rect.Width * displayScale),
+                                    (int)(rect.Height * displayScale));
+                                Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 165, 255), defectThick);
+                            }
+
+                            foreach (Rect rect in res.OuterRects)
+                            {
+                                Rect scaledDefectRect = new Rect(
+                                    (int)((res.GlobalRoi.X + rect.X) * displayScale),
+                                    (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
+                                    (int)(rect.Width * displayScale),
+                                    (int)(rect.Height * displayScale));
+                                Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 0, 255), defectThick);
+                            }
+
+                            // 与零件级缺陷图保持同一颜色约定：细线断裂使用洋红色，
+                            // 不再借用内部缺陷的橙色矩形，便于从全局图直接判断缺陷类型。
+                            foreach (Rect rect in res.FineLineBreakRects)
+                            {
+                                Rect scaledDefectRect = new Rect(
+                                    (int)((res.GlobalRoi.X + rect.X) * displayScale),
+                                    (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
+                                    (int)(rect.Width * displayScale),
+                                    (int)(rect.Height * displayScale));
+                                Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(255, 0, 255), defectThick);
+                            }
+                        }
+
+                        if (displayScale < 1.0)
+                        {
+                            Cv2.Resize(flippedTiff, tiffSmall, new Size(), displayScale, displayScale, InterpolationFlags.Nearest);
+                        }
+                        else
+                        {
+                            flippedTiff.CopyTo(tiffSmall);
+                        }
+
+                        if (tiffSmall.Channels() == 1)
+                        {
+                            Cv2.CvtColor(tiffSmall, tiffCanvas, ColorConversionCodes.GRAY2BGR);
+                        }
+                        else if (tiffSmall.Channels() == 4)
+                        {
+                            Cv2.CvtColor(tiffSmall, tiffCanvas, ColorConversionCodes.BGRA2BGR);
+                        }
+                        else
+                        {
+                            tiffSmall.CopyTo(tiffCanvas);
+                        }
+
+                        if (tiffCanvas.Channels() == 3 && cisCanvas.Channels() == 3)
+                        {
+                            if (config.SaveCroppedImages && config.SaveDefectResultImages)
+                            {
+                                string tiffReferencePath = Path.Combine(outputDir, "GlobalTiffReference.jpg");
+                                string cisDefectPath = Path.Combine(outputDir, "GlobalCisDefectResult.jpg");
+
+                                Cv2.ImWrite(tiffReferencePath, tiffCanvas, GlobalPreviewJpegParameters);
+                                Cv2.ImWrite(cisDefectPath, cisCanvas, GlobalPreviewJpegParameters);
+
+                                // 兼容现有返回值：全局结果路径指向最有诊断价值的带标注 CIS 图。
+                                combinedPath = cisDefectPath;
+                                AppLog.Write(
+                                    logger,
+                                    $"[PatchCropper] 全局结果已分开保存：TIFF={tiffReferencePath}；CIS={cisDefectPath}");
+                            }
+
+                            // 左右合成图只编码到内存，继续供主界面“全局缺陷图”页签对照显示，
+                            // 不再写入 GlobalDefectResult.jpg，避免磁盘结果含义不清。
+                            using (var combined = new Mat())
+                            {
+                                Cv2.HConcat(new[] { tiffCanvas, cisCanvas }, combined);
+                                Cv2.ImEncode(".jpg", combined, out globalImageBytes, GlobalPreviewJpegParameters);
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                AppLog.Write(logger, $"[PatchCropper][ERROR] 生成全局缺陷图异常: {ex.Message}");
-            }
+                catch (Exception ex)
+                {
+                    AppLog.Write(logger, $"[PatchCropper][ERROR] 生成全局缺陷图异常: {ex.Message}");
+                }
 
                 return (results, combinedPath, globalImageBytes);
             }
@@ -394,7 +416,9 @@ namespace CIS_WebInspector.Services
         private static long Percentile(long[] sortedValues, double percentile)
         {
             if (sortedValues == null || sortedValues.Length == 0)
+            {
                 return 0;
+            }
 
             int index = (int)Math.Ceiling(percentile * sortedValues.Length) - 1;
             index = Math.Max(0, Math.Min(sortedValues.Length - 1, index));
@@ -407,7 +431,9 @@ namespace CIS_WebInspector.Services
             try
             {
                 using (Process process = Process.GetCurrentProcess())
+                {
                     return process.PrivateMemorySize64;
+                }
             }
             catch
             {
@@ -438,7 +464,9 @@ namespace CIS_WebInspector.Services
                     ? null
                     : Path.Combine(parentDirectory, "PerformanceBaselines.csv");
                 if (string.IsNullOrWhiteSpace(aggregatePath))
+                {
                     return;
+                }
 
                 Directory.CreateDirectory(parentDirectory);
                 string header =

@@ -29,7 +29,9 @@ namespace CIS_WebInspector.ViewModels
         {
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher == null)
+            {
                 return;
+            }
 
             _pendingUiLogs.Enqueue(message);
             ScheduleUiLogDispatch();
@@ -41,7 +43,9 @@ namespace CIS_WebInspector.ViewModels
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher == null ||
                 Interlocked.CompareExchange(ref _logDispatchPending, 1, 0) != 0)
+            {
                 return;
+            }
 
             dispatcher.InvokeAsync(() =>
             {
@@ -52,14 +56,18 @@ namespace CIS_WebInspector.ViewModels
                         LogMessages.Insert(0, pending);
                         // 在批量排空过程中就维持上限，避免 UI 长时间阻塞后先增长到数千项再统一裁剪。
                         if (LogMessages.Count > 500)
+                        {
                             LogMessages.RemoveAt(LogMessages.Count - 1);
+                        }
                     }
                 }
                 finally
                 {
                     Interlocked.Exchange(ref _logDispatchPending, 0);
                     if (!_pendingUiLogs.IsEmpty)
+                    {
                         ScheduleUiLogDispatch();
+                    }
                 }
             }, System.Windows.Threading.DispatcherPriority.Background);
         }

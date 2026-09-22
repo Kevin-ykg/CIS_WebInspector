@@ -30,21 +30,33 @@ namespace CIS_WebInspector.Views
         private void Image_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
         {
             var grid = sender as System.Windows.Controls.Grid;
-            if (grid == null || grid.Children.Count == 0) return;
+            if (grid == null || grid.Children.Count == 0)
+            {
+                return;
+            }
 
             var image = grid.Children[0] as System.Windows.Controls.Image;
-            if (image == null || image.RenderTransform == null) return;
+            if (image == null || image.RenderTransform == null)
+            {
+                return;
+            }
 
             var transformGroup = image.RenderTransform as System.Windows.Media.TransformGroup;
-            if (transformGroup == null || transformGroup.Children.Count < 2) return;
+            if (transformGroup == null || transformGroup.Children.Count < 2)
+            {
+                return;
+            }
 
             var scaleTransform = transformGroup.Children[0] as System.Windows.Media.ScaleTransform;
             var translateTransform = transformGroup.Children[1] as System.Windows.Media.TranslateTransform;
 
-            if (scaleTransform == null || translateTransform == null) return;
+            if (scaleTransform == null || translateTransform == null)
+            {
+                return;
+            }
 
             double zoom = e.Delta > 0 ? 1.2 : 1 / 1.2;
-            
+
             // 获取鼠标相对于图片的坐标
             Point relativePos = e.GetPosition(image);
 
@@ -74,7 +86,10 @@ namespace CIS_WebInspector.Views
         private void Image_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             var grid = sender as System.Windows.Controls.Grid;
-            if (grid == null) return;
+            if (grid == null)
+            {
+                return;
+            }
 
             _isDragging = true;
             _lastMousePosition = e.GetPosition(grid);
@@ -84,7 +99,10 @@ namespace CIS_WebInspector.Views
         private void Image_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             var grid = sender as System.Windows.Controls.Grid;
-            if (grid == null) return;
+            if (grid == null)
+            {
+                return;
+            }
 
             _isDragging = false;
             grid.ReleaseMouseCapture();
@@ -92,19 +110,34 @@ namespace CIS_WebInspector.Views
 
         private void Image_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
         {
-            if (!_isDragging) return;
+            if (!_isDragging)
+            {
+                return;
+            }
 
             var grid = sender as System.Windows.Controls.Grid;
-            if (grid == null || grid.Children.Count == 0) return;
+            if (grid == null || grid.Children.Count == 0)
+            {
+                return;
+            }
 
             var image = grid.Children[0] as System.Windows.Controls.Image;
-            if (image == null || image.RenderTransform == null) return;
+            if (image == null || image.RenderTransform == null)
+            {
+                return;
+            }
 
             var transformGroup = image.RenderTransform as System.Windows.Media.TransformGroup;
-            if (transformGroup == null || transformGroup.Children.Count < 2) return;
+            if (transformGroup == null || transformGroup.Children.Count < 2)
+            {
+                return;
+            }
 
             var translateTransform = transformGroup.Children[1] as System.Windows.Media.TranslateTransform;
-            if (translateTransform == null) return;
+            if (translateTransform == null)
+            {
+                return;
+            }
 
             Point currentPosition = e.GetPosition(grid);
             double deltaX = currentPosition.X - _lastMousePosition.X;

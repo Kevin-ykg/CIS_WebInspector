@@ -38,7 +38,9 @@ namespace CIS_WebInspector.Services
             CancellationToken cancellationToken)
         {
             if (stitchedResult == null)
+            {
                 throw new ArgumentNullException(nameof(stitchedResult));
+            }
 
             Mat tiffMat = null;
             Mat alphaMask = null;
@@ -56,20 +58,24 @@ namespace CIS_WebInspector.Services
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (config == null)
+                {
                     return CreateEarlyResult(
                         log,
                         InspectionJobStatus.Failed,
                         InspectionJobIssueCode.InvalidConfiguration,
                         "[缺陷流水线] 未加载有效配置，终止流水线。");
+                }
 
                 // 结束二维码是排版日志的业务主键，也是底部 Mark 的几何锚点。
                 string qrCode = stitchedResult.EndQrText;
                 if (string.IsNullOrEmpty(qrCode))
+                {
                     return CreateEarlyResult(
                         log,
                         InspectionJobStatus.Failed,
                         InspectionJobIssueCode.MissingEndQrCode,
                         "[缺陷流水线] 未找到有效的结束二维码，终止流水线。");
+                }
 
                 // 白墨检查只依赖拼接图和结束二维码锚点，必须先于 Debug.log/TIFF 流水线执行。
                 // 这样即使当前图库没有排版日志或 TIFF，供墨异常仍会产生日志、预览和 UI 告警。
@@ -131,7 +137,9 @@ namespace CIS_WebInspector.Services
                     }
 
                     if (!string.IsNullOrWhiteSpace(whiteInkDiagnostic))
+                    {
                         Log(log, $"[白墨检测] 诊断：{whiteInkDiagnostic}");
+                    }
                 }
 
                 // 在线生产可能尚未配置排版资料。缺少 Debug.log 或 TIFF 目录属于可预期状态：
@@ -424,9 +432,13 @@ namespace CIS_WebInspector.Services
                             }
 
                             if (defectResult.IsPass)
+                            {
                                 passCount++;
+                            }
                             else
+                            {
                                 failCount++;
+                            }
 
                             string status = defectResult.IsPass ? "✓ Pass" : "✗ FAIL";
                             string fineLineSummary = defectResult.FineLineBreakCount > 0
@@ -448,7 +460,10 @@ namespace CIS_WebInspector.Services
                                 defectResult,
                                 out int partDetailCount);
                             if (!string.IsNullOrEmpty(defectDetail))
+                            {
                                 Log(log, defectDetail);
+                            }
+
                             defectDetailLogTicks += Stopwatch.GetTimestamp() - detailStartTicks;
                             loggedDefectDetailCount += partDetailCount;
                         }
@@ -532,7 +547,10 @@ namespace CIS_WebInspector.Services
                 // TIFF、Alpha 等本作业创建的 Mat 则由本方法完整拥有。
                 cisMat?.Dispose();
                 if (cisDataPinned)
+                {
                     cisDataHandle.Free();
+                }
+
                 alphaMask?.Dispose();
                 tiffMat?.Dispose();
             }
@@ -565,7 +583,9 @@ namespace CIS_WebInspector.Services
                 ref defectCount);
 
             if (defectCount == 0)
+            {
                 return string.Empty;
+            }
 
             return $"  [缺陷尺寸] {result.PartId}（外接矩形尺寸 + 缺陷实际面积）{Environment.NewLine}" +
                    builder.ToString().TrimEnd();
@@ -578,7 +598,9 @@ namespace CIS_WebInspector.Services
             ref int totalCount)
         {
             if (measurements == null)
+            {
                 return;
+            }
 
             for (int index = 0; index < measurements.Count; index++)
             {

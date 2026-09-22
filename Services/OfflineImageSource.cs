@@ -34,7 +34,9 @@ namespace CIS_WebInspector.Services
         public OfflineImageSource(AppConfig configSnapshot)
         {
             if (configSnapshot == null)
+            {
                 throw new ArgumentNullException(nameof(configSnapshot));
+            }
 
             // 同一轮离线回放始终使用同一处理尺度，确保恢复采集前后帧几何一致。
             _downscaleFactor = Math.Max(1, configSnapshot.DownscaleFactor);
@@ -98,7 +100,10 @@ namespace CIS_WebInspector.Services
         /// <summary>从第一张图重新开始定时播放；每次 Start 都重置当前文件索引。</summary>
         public void StartGrab()
         {
-            if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning) return;
+            if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning)
+            {
+                return;
+            }
 
             _currentIndex = 0;
             Interlocked.Exchange(ref _resumeFromIndex, -1);
@@ -115,7 +120,10 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public bool ResumeGrab()
         {
-            if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning) return false;
+            if (_imageFiles == null || _imageFiles.Count == 0 || IsRunning)
+            {
+                return false;
+            }
 
             int resumeIndex = Volatile.Read(ref _resumeFromIndex);
             int nextIndex = resumeIndex >= 0 ? resumeIndex : _currentIndex;
@@ -137,7 +145,9 @@ namespace CIS_WebInspector.Services
         {
             // 防重入只跳过计时器 Tick，不跳过图像：_currentIndex 仅在当前处理成功后递增。
             if (System.Threading.Interlocked.CompareExchange(ref _isProcessing, 1, 0) != 0)
+            {
                 return;
+            }
 
             try
             {
@@ -145,7 +155,9 @@ namespace CIS_WebInspector.Services
                 // 它随后修改了 _currentIndex，下一次有效 Tick 仍会以该检查点为准。
                 int resumeIndex = Interlocked.Exchange(ref _resumeFromIndex, -1);
                 if (resumeIndex >= 0)
+                {
                     _currentIndex = Math.Max(0, Math.Min(resumeIndex, _imageFiles.Count));
+                }
 
                 if (!IsRunning || _currentIndex >= _imageFiles.Count)
                 {
@@ -228,7 +240,9 @@ namespace CIS_WebInspector.Services
         internal void SetResumeFromFrame(int nextFrameIndex)
         {
             if (_imageFiles == null)
+            {
                 return;
+            }
 
             int safeIndex = Math.Max(0, Math.Min(nextFrameIndex, _imageFiles.Count));
             Interlocked.Exchange(ref _resumeFromIndex, safeIndex);

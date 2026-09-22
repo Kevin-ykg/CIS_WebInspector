@@ -15,10 +15,24 @@ namespace CIS_WebInspector.Services
             MarkAlignmentOptions options, out string diagnostic)
         {
             diagnostic = null;
-            if (options == null || !options.EnableWhiteInkInspection) return WhiteInkInspectionResult.Disabled();
-            if (cisMat == null || cisMat.Empty()) diagnostic = "CIS 拼接图为空。";
-            else if (qrAnchor == null) diagnostic = "第二个二维码高度无效，无法定位 Bottom 条带。";
-            if (diagnostic != null) return Unable(diagnostic);
+            if (options == null || !options.EnableWhiteInkInspection)
+            {
+                return WhiteInkInspectionResult.Disabled();
+            }
+
+            if (cisMat == null || cisMat.Empty())
+            {
+                diagnostic = "CIS 拼接图为空。";
+            }
+            else if (qrAnchor == null)
+            {
+                diagnostic = "第二个二维码高度无效，无法定位 Bottom 条带。";
+            }
+
+            if (diagnostic != null)
+            {
+                return Unable(diagnostic);
+            }
 
             try
             {

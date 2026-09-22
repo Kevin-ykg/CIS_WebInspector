@@ -21,10 +21,10 @@ namespace CIS_WebInspector.Models
         public string Name { get; set; }
         public string Description { get; set; }
         public string[] MatchKeys { get; set; }
-        
+
         public TlcParameterOption[] Options { get; set; }
         public bool HasOptions => Options != null && Options.Length > 0;
-        
+
         public string Value
         {
             get => _value;

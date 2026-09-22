@@ -8,7 +8,9 @@ namespace cis::patch
 cv::Mat gray(const cv::Mat &source)
 {
     if (source.channels() == 1)
+    {
         return source;
+    }
     cv::Mat converted;
     cv::cvtColor(source, converted, source.channels() == 4 ? cv::COLOR_BGRA2GRAY : cv::COLOR_BGR2GRAY);
     return converted;
@@ -24,7 +26,9 @@ double pixels_per_mm(double dpi)
 int length_pixels(double mm, double dpi, double scale)
 {
     if (mm <= 0 || !std::isfinite(mm))
+    {
         return 0;
+    }
     double value = mm * pixels_per_mm(dpi) * (scale > 0 && std::isfinite(scale) ? scale : 1.);
     // 配置物理长度转换沿用 AwayFromZero；与几何坐标的 midpoint-to-even 不同。
     return value >= INT_MAX ? INT_MAX : std::max(1, static_cast<int>(std::round(value)));
@@ -75,20 +79,27 @@ Components components(cv::Mat &difference, const cv::Mat &exclusion, int thresho
     // 屏蔽用于整块放行：先标记有没有像素越过屏蔽带，再按原标签恢复完整连通域。
     // 如果先做 difference &= ~mask，缺陷会被切碎，面积阈值和数量都会改变。
     for (int y = 0; y < labels.rows; ++y)
+    {
         for (int x = 0; x < labels.cols; ++x)
         {
             int label = labels.ptr<int>(y)[x];
             if (label > 0 && !exclusion.ptr<uint8_t>(y)[x])
+            {
                 outside[label] = true;
+            }
         }
+    }
     for (int y = 0; y < labels.rows; ++y)
+    {
         for (int x = 0; x < labels.cols; ++x)
         {
             int label = labels.ptr<int>(y)[x];
             difference.ptr<uint8_t>(y)[x] = label > 0 && outside[label] ? 255 : 0;
         }
+    }
     Components result;
     for (int label = 1; label < count; ++label)
+    {
         if (outside[label])
         {
             int area = stats.at<int>(label, cv::CC_STAT_AREA);
@@ -101,6 +112,7 @@ Components components(cv::Mat &difference, const cv::Mat &exclusion, int thresho
                 result.areas.push_back(area);
             }
         }
+    }
     return result;
 }
 void append_defect(PatchResult &result, int kind, cv::Rect original, cv::Rect work, cv::Rect tight, int pixels,
@@ -121,10 +133,14 @@ PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfi
     cv::Mat alpha_gray = gray(alpha), cis_gray = gray(cis);
     double scale = config.detection_scale;
     if (scale <= 0 || !std::isfinite(scale))
+    {
         throw std::invalid_argument("DefectDetectScale must be positive and finite");
+    }
     int scaled_width = static_cast<int>(alpha_gray.cols * scale);
     if (scaled_width < config.minimum_scaled_width && alpha_gray.cols > config.minimum_scaled_width)
+    {
         scale = static_cast<double>(config.minimum_scaled_width) / alpha_gray.cols;
+    }
     result.summary.detection_scale = scale;
 
     // 普通差分使用 Nearest；细线和配准各有独立尺度，不将所有缩放合并成一种插值。
@@ -185,7 +201,9 @@ PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfi
     auto exclusion = edge_exclusion(alpha_binary, length_pixels(config.exclusion_outer_mm, config.layout_dpi, scale),
                                     length_pixels(config.exclusion_inner_mm, config.layout_dpi, scale));
     if (config.output_flags & CIS_PATCH_EDGE_MASK)
+    {
         cv::resize(exclusion, result.images[CIS_PATCH_EDGE], alpha_gray.size(), 0, 0, cv::INTER_NEAREST);
+    }
     // 内部：模板有、实拍没有；外部：实拍有、模板没有。膨胀提供原有的物理错位容差。
     cv::dilate(cis_binary, inner_dilated, ellipse(inner_kernel_size));
     cv::subtract(alpha_binary, inner_dilated, difference_inner);

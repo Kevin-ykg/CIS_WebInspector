@@ -211,7 +211,9 @@ namespace CIS_WebInspector.Models
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
 
             NativeResource?.Dispose();
             NativeResource = null;
@@ -280,7 +282,9 @@ namespace CIS_WebInspector.Models
         public static MarkAlignmentOptions FromConfig(AppConfig config)
         {
             if (config == null)
+            {
                 throw new ArgumentNullException(nameof(config));
+            }
 
             // 生成作业级参数快照，避免 ImageAligner 在计算中反复读取可变的全局配置单例。
             return new MarkAlignmentOptions

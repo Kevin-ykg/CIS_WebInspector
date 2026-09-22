@@ -29,13 +29,24 @@ namespace CIS_WebInspector.Services
             string outputDirectory)
         {
             if (cisMat == null || cisMat.Empty())
+            {
                 throw new ArgumentException("CIS 图像为空。", nameof(cisMat));
+            }
+
             if (tiffMat == null || tiffMat.Empty())
+            {
                 throw new ArgumentException("TIFF 图像为空。", nameof(tiffMat));
+            }
+
             if (alignment == null)
+            {
                 throw new ArgumentNullException(nameof(alignment));
+            }
+
             if (string.IsNullOrWhiteSpace(outputDirectory))
+            {
                 throw new ArgumentException("对准诊断图输出目录为空。", nameof(outputDirectory));
+            }
 
             Directory.CreateDirectory(outputDirectory);
             var savedPaths = new List<string>(2);
@@ -45,7 +56,9 @@ namespace CIS_WebInspector.Services
             using (Mat cisPreview = CreateAlignmentMarkPreview(cisMat, alignment, false))
             {
                 if (!Cv2.ImWrite(cisPath, cisPreview, PreviewJpegParameters))
+                {
                     throw new IOException("OpenCV 保存 CIS Mark 标注图失败：" + cisPath);
+                }
             }
             savedPaths.Add(Path.GetFullPath(cisPath));
 
@@ -53,7 +66,9 @@ namespace CIS_WebInspector.Services
             using (Mat tiffPreview = CreateAlignmentMarkPreview(tiffMat, alignment, true))
             {
                 if (!Cv2.ImWrite(tiffPath, tiffPreview, PreviewJpegParameters))
+                {
                     throw new IOException("OpenCV 保存 TIFF Mark 标注图失败：" + tiffPath);
+                }
             }
             savedPaths.Add(Path.GetFullPath(tiffPath));
 
@@ -79,18 +94,28 @@ namespace CIS_WebInspector.Services
             using (var resized = new Mat())
             {
                 if (scale < 1.0)
+                {
                     Cv2.Resize(source, resized, new Size(), scale, scale, InterpolationFlags.Area);
+                }
                 else
+                {
                     source.CopyTo(resized);
+                }
 
                 using (var imageCanvas = new Mat())
                 {
                     if (resized.Channels() == 1)
+                    {
                         Cv2.CvtColor(resized, imageCanvas, ColorConversionCodes.GRAY2BGR);
+                    }
                     else if (resized.Channels() == 4)
+                    {
                         Cv2.CvtColor(resized, imageCanvas, ColorConversionCodes.BGRA2BGR);
+                    }
                     else
+                    {
                         resized.CopyTo(imageCanvas);
+                    }
 
                     // Mark 坐标仍以缩放后的源图左上角为原点。先在源图画标记，随后整体拼到
                     // 标题栏下方，避免额外引入 Y 偏移并保证任何顶部 Mark 都不会被标题遮住。
@@ -133,13 +158,17 @@ namespace CIS_WebInspector.Services
             bool useTiffCoordinates)
         {
             if (points == null)
+            {
                 return;
+            }
 
             foreach (AlignmentGlobalMarkPoint mark in points)
             {
                 Point2d sourcePoint = useTiffCoordinates ? mark.TiffPoint : mark.CisPoint;
                 if (!TryScaleDiagnosticPoint(sourcePoint, scale, canvas.Size(), out Point center))
+                {
                     continue;
+                }
 
                 var color = new Scalar(40, 220, 40);
                 Cv2.Circle(canvas, center, 11, color, 3, LineTypes.AntiAlias);
@@ -160,7 +189,9 @@ namespace CIS_WebInspector.Services
             bool useTiffCoordinates)
         {
             if (points == null || points.Count == 0)
+            {
                 return;
+            }
 
             foreach (AlignmentControlPoint controlPoint in points.Where(point =>
                          !point.IsVirtual && point.Column != AlignmentControlColumn.Center))
@@ -169,13 +200,17 @@ namespace CIS_WebInspector.Services
                     ? controlPoint.ExpectedTiffPoint
                     : controlPoint.CoarseCisPoint;
                 if (!TryScaleDiagnosticPoint(prediction, scale, canvas.Size(), out Point predictedCenter))
+                {
                     continue;
+                }
 
                 DrawDiagnosticCross(canvas, predictedCenter, 7, new Scalar(220, 60, 220));
 
                 bool hasFinalPoint = controlPoint.IsDetected || controlPoint.IsInterpolated;
                 if (!hasFinalPoint)
+                {
                     continue;
+                }
 
                 Point2d finalPoint = useTiffCoordinates
                     ? (controlPoint.IsDetected && IsUsableDiagnosticPoint(controlPoint.DetectedTiffPoint)
@@ -183,7 +218,9 @@ namespace CIS_WebInspector.Services
                         : controlPoint.ExpectedTiffPoint)
                     : controlPoint.DetectedCisPoint;
                 if (!TryScaleDiagnosticPoint(finalPoint, scale, canvas.Size(), out Point detectedCenter))
+                {
                     continue;
+                }
 
                 Scalar color = controlPoint.IsInterpolated
                     ? new Scalar(0, 165, 255)
@@ -219,7 +256,9 @@ namespace CIS_WebInspector.Services
         {
             int bannerHeight = Math.Min(AlignmentPreviewLegendHeight, canvas.Height);
             if (bannerHeight <= 0)
+            {
                 return;
+            }
 
             Cv2.Rectangle(
                 canvas,
@@ -263,12 +302,16 @@ namespace CIS_WebInspector.Services
         {
             scaledPoint = default(Point);
             if (!IsUsableDiagnosticPoint(sourcePoint))
+            {
                 return false;
+            }
 
             int x = (int)Math.Round(sourcePoint.X * scale);
             int y = (int)Math.Round(sourcePoint.Y * scale);
             if (x < 0 || y < 0 || x >= canvasSize.Width || y >= canvasSize.Height)
+            {
                 return false;
+            }
 
             scaledPoint = new Point(x, y);
             return true;

@@ -46,12 +46,13 @@ $contrib = Get-Source 'opencv_contrib' '15B1DECFA4D2EAF3B39148EFF4F311739FDB32F0
 # 不关闭 IPP：插值/卷积的浮点差异可能影响模糊二维码的临界识别与几何坐标。
 Invoke-CMake @('-S', $opencv, '-B', $opencvBuild, '-A', 'x64',
     '-DCMAKE_POLICY_VERSION_MINIMUM=3.5', '-DCMAKE_CXX_FLAGS=/utf-8', '-DCMAKE_C_FLAGS=/utf-8',
-    "-DOPENCV_EXTRA_MODULES_PATH=$contrib/modules", '-DBUILD_LIST=core,imgproc,dnn,wechat_qrcode,features2d,calib3d,ximgproc',
+    "-DOPENCV_EXTRA_MODULES_PATH=$contrib/modules", '-DBUILD_LIST=core,imgproc,imgcodecs,objdetect,dnn,wechat_qrcode,features2d,calib3d,ximgproc',
     '-DBUILD_SHARED_LIBS=OFF', '-DBUILD_WITH_STATIC_CRT=OFF', '-DBUILD_TESTS=OFF', '-DBUILD_PERF_TESTS=OFF',
     '-DBUILD_EXAMPLES=OFF', '-DBUILD_opencv_apps=OFF', '-DBUILD_JAVA=OFF', '-DENABLE_PRECOMPILED_HEADERS=OFF',
     '-DWITH_EIGEN=OFF', '-DBUILD_opencv_python2=OFF', '-DBUILD_opencv_python3=OFF',
     '-DWITH_IPP=ON', '-DWITH_OPENCL=OFF', '-DWITH_ITT=OFF', '-DWITH_FFMPEG=OFF', '-DWITH_MSMF=OFF', '-DOPENCV_DNN_OPENCL=OFF')
 Invoke-CMake @('--build', $opencvBuild, '--config', $Configuration, '--parallel', "$Parallelism", '--', '/p:UseStructuredOutput=false')
-Invoke-CMake @('-S', (Join-Path $root 'Native'), '-B', $nativeBuild, '-A', 'x64', "-DOpenCV_DIR=$opencvBuild")
+Invoke-CMake @('-S', (Join-Path $root 'Native'), '-B', $nativeBuild, '-A', 'x64', "-DOpenCV_DIR=$opencvBuild",
+    '-DQR_READER_ONLY=OFF', '-DQR_BUILD_EXAMPLES=OFF', '-DQR_BUILD_TESTS=OFF')
 Invoke-CMake @('--build', $nativeBuild, '--config', $Configuration, '--parallel', "$Parallelism", '--', '/p:UseStructuredOutput=false')
 Write-Host "已生成：$nativeBuild\$Configuration\CISVisionCore.dll"

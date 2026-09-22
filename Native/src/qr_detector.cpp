@@ -2,25 +2,33 @@
 #include <Windows.h>
 #include <fstream>
 
-namespace cis
+namespace qr
 {
 namespace
 {
-// WeChatQRCode 偶尔会返回只包含空白字符的字符串；业务上必须视为未识别，
-// 不能仅凭检测框存在就触发图像拼接。
+// 保留既有“空/纯空白文本不算命中”的结果策略。仅有检测框不能表示成功解码。
+// 当前读码器面向非空文本标识；若需读取纯空白或任意二进制载荷，应另行定义结果策略。
 bool blank_text(const std::string &text)
 {
     if (text.empty())
+    {
         return true;
+    }
     int size = MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
     if (size <= 0)
+    {
         return false;
+    }
     std::wstring wide(size, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), wide.data(), size);
     for (wchar_t c : wide)
+    {
         if (!((c >= 9 && c <= 13) || c == 32 || c == 0x85 || c == 0xa0 || c == 0x1680 || (c >= 0x2000 && c <= 0x200a) ||
               c == 0x2028 || c == 0x2029 || c == 0x202f || c == 0x205f || c == 0x3000))
+        {
             return false;
+        }
+    }
     return true;
 }
 
@@ -33,25 +41,28 @@ std::string region_description(const Region &r)
 }
 } // namespace
 
-void QrDetector::configure(int x, int width, bool invert, const float *values, uint32_t count)
+void QrDetector::configure(const Options &options)
 {
-    // 配置按采集会话快照保存。C ABI 传入的 scales 数组只在本函数内借用，
-    // 返回后 C# 即可解除固定；检测期间不会观察到设置窗口的中途修改。
-    roi_x_ = x;
-    roi_width_ = width;
-    inverted_ = invert;
+    // 配置值在本函数内复制，调用方后续修改 options 不影响已配置的实例。
+    inverted_ = options.invert_polarity;
     scales_.clear();
-    for (uint32_t i = 0; i < count; ++i)
+    for (float value : options.scales_y)
     {
-        double v = values[i];
+        double v = value;
         // 过滤非数值、过度缩放和近似重复项，避免同一候选重复调用耗时较高的 DNN。
         if (!std::isfinite(v) || v < .25 || v > 4)
+        {
             continue;
+        }
         if (std::none_of(scales_.begin(), scales_.end(), [v](double prior) { return std::abs(prior - v) < .005; }))
+        {
             scales_.push_back(v);
+        }
     }
     if (scales_.empty())
+    {
         scales_.push_back(1);
+    }
     // 工作尺度变化后重新执行轻量预热，但现有模型对象仍继续复用。
     warmed_ = false;
 }
@@ -59,7 +70,9 @@ void QrDetector::configure(int x, int width, bool invert, const float *values, u
 void QrDetector::ensure_detector()
 {
     if (detector_)
+    {
         return;
+    }
     std::array<std::string, 4> paths;
     const char *files[] = {"detect.prototxt", "detect.caffemodel", "sr.prototxt", "sr.caffemodel"};
     // 在构造 WeChatQRCode 前逐一检查模型，错误信息可直接指出缺少的文件。
@@ -67,30 +80,40 @@ void QrDetector::ensure_detector()
     {
         paths[i] = directory_ + "/" + files[i];
         if (!std::ifstream(paths[i], std::ios::binary))
+        {
             throw std::runtime_error("Missing WeChatQRCode model: " + paths[i]);
+        }
     }
     detector_ = std::make_unique<cv::wechat_qrcode::WeChatQRCode>(paths[0], paths[1], paths[2], paths[3]);
 }
-void QrDetector::initialize()
+void QrDetector::initialize(cv::Size working_size)
 {
     attempts_ = 0;
     ensure_detector();
     if (warmed_)
+    {
         return;
+    }
     // 用不包含二维码的小图触发 DNN 与超分辨率网络的首次初始化。
     // 预热只消除首帧抖动，结果不参与业务判断，attempts 也在结束后清零。
-    cv::Mat blank(2500, std::max(64, roi_width_), CV_8UC1, cv::Scalar(255));
+    if (working_size.width <= 0 || working_size.height <= 0)
+    {
+        throw std::invalid_argument("Warm-up size must be positive");
+    }
+    cv::Mat blank(working_size, CV_8UC1, cv::Scalar(255));
     Hit ignored;
     for (double scale : scales_)
+    {
         decode(blank, scale, ignored);
+    }
     attempts_ = 0;
     warmed_ = true;
 }
 
 bool QrDetector::decode(const cv::Mat &source, double scale_y, Hit &hit)
 {
-    // CIS 为沿 Y 方向连续扫描，速度波动主要表现为纵向压缩/拉伸。
-    // 快速路径只枚举 scaleY，命中后由调用方把 Y 坐标和高度恢复到 source 坐标系。
+    // 可选纵向重采样用于压缩/拉伸输入；默认只有 1.0，不假定输入来自线扫设备。
+    // 命中后撤销 scaleY，把坐标与尺寸恢复到本次输入图。
     cv::Mat resized, input = source;
     if (std::abs(scale_y - 1) >= .0001)
     {
@@ -105,7 +128,9 @@ bool QrDetector::decode(const cv::Mat &source, double scale_y, Hit &hit)
     {
         const auto &box = boxes[i];
         if (blank_text(texts[i]) || box.empty() || box.depth() != CV_32F || box.total() * box.channels() < 8)
+        {
             continue;
+        }
         cv::Mat flat = box.reshape(1, 1);
         double x[4], y[4];
         hit = {};
@@ -118,8 +143,8 @@ bool QrDetector::decode(const cv::Mat &source, double scale_y, Hit &hit)
         }
         hit.x /= 4;
         hit.y /= 4;
-        // WeChatQRCode 返回顺时针四边形。拼接和 Mark 比例换算使用 X/Y 投影宽高，
-        // 不能改成欧氏边长，否则会把横向分辨率和轻微旋转混入 CIS 纵向尺度。
+        // 常规检测框使用 X/Y 投影宽高，表示输入图坐标轴上的尺寸，区别于欧氏边长。
+        // 透视恢复另有几何来源，Result 的 dimensions_are_side_lengths 明确标注该差别。
         hit.width = std::max((std::abs(x[1] - x[0]) + std::abs(x[3] - x[2])) * .5,
                              (std::abs(x[2] - x[1]) + std::abs(x[0] - x[3])) * .5);
         hit.height = std::max((std::abs(y[1] - y[0]) + std::abs(y[3] - y[2])) * .5,
@@ -135,13 +160,17 @@ bool QrDetector::decode_xy(const cv::Mat &source, double x, double y, Hit &hit)
     // 该函数封装任意 X/Y 重采样，并在成功后撤销缩放。
     // 缩小时使用 Area 抑制条纹与混叠；放大时使用 Linear，避免锐化产生伪模块边缘。
     if (source.empty() || x <= 0 || y <= 0 || !std::isfinite(x) || !std::isfinite(y))
+    {
         return false;
+    }
     int width = std::max(64, round_even(source.cols * x)), height = std::max(64, round_even(source.rows * y));
     double sx = width / static_cast<double>(source.cols), sy = height / static_cast<double>(source.rows);
     cv::Mat resized;
     cv::resize(source, resized, {width, height}, 0, 0, sx <= 1 && sy <= 1 ? cv::INTER_AREA : cv::INTER_LINEAR);
     if (!decode(resized, 1, hit))
+    {
         return false;
+    }
     hit.x /= sx;
     hit.y /= sy;
     hit.width /= sx;
@@ -152,10 +181,32 @@ bool QrDetector::decode_xy(const cv::Mat &source, double x, double y, Hit &hit)
 
 Result QrDetector::detect(const cv::Mat &source)
 {
-    // 统一主流程：转灰度 -> 横向 ROI -> 极性归一 -> 常规 Y 尺度 ->
+    return detect(source, DetectHints{});
+}
+
+Result QrDetector::detect(const cv::Mat &source, const DetectHints &hints)
+{
+    // 通用主流程：完整输入图 -> 转灰度/极性归一 -> 常规 Y 尺度 ->
     // 定位框门控的自适应/局部候选 -> 透视与低对比恢复 -> 严重失焦恢复。
     // 所有分支只有在 WeChatQRCode 解出非空文本后才返回成功。
     attempts_ = 0;
+    if (source.empty() || source.dims != 2 || source.depth() != CV_8U ||
+        (source.channels() != 1 && source.channels() != 3 && source.channels() != 4))
+    {
+        throw std::invalid_argument("Invalid image: Gray8/BGR24/BGRA32 required");
+    }
+    cv::Rect evidence_region = hints.evidence_region;
+    if (evidence_region == cv::Rect())
+    {
+        evidence_region = {0, 0, source.cols, source.rows};
+    }
+    if (evidence_region.x < 0 || evidence_region.y < 0 || evidence_region.width <= 0 || evidence_region.height <= 0 ||
+        evidence_region.width > source.cols || evidence_region.height > source.rows ||
+        evidence_region.x > source.cols - evidence_region.width ||
+        evidence_region.y > source.rows - evidence_region.height)
+    {
+        throw std::invalid_argument("Evidence region must be inside the input image");
+    }
     ensure_detector();
     cv::Mat gray = source, gray_owned;
     if (source.channels() != 1)
@@ -164,27 +215,17 @@ Result QrDetector::detect(const cv::Mat &source)
         cv::cvtColor(source, gray_owned, source.channels() == 4 ? cv::COLOR_BGRA2GRAY : cv::COLOR_BGR2GRAY);
         gray = gray_owned;
     }
-    int x = std::max(0, std::min(roi_x_, gray.cols - 1));
-    int width = roi_width_ > 0 ? std::min(roi_width_, gray.cols - x) : gray.cols - x;
-    if (width <= 0)
-    {
-        x = 0;
-        width = gray.cols;
-    }
-    int core_x = x, core_width = width;
-    // 配置 ROI 表示二维码的常规安装区域。二维码贴近传感器边缘时，定位框可能略微落到
-    // ROI 左侧，经典定位还需要少量右侧背景判断边界，因此两侧增加约 1/6 ROI 的保护带。
-    // 保护带仍远小于整幅 CIS 宽度，避免把大面积无关图案送入二维码网络。
-    int guard = std::max(64, width / 6), left = std::min(x, guard), right = std::min(gray.cols - (x + width), guard);
-    x -= left;
-    width = std::min(gray.cols - x, width + left + right);
-    cv::Mat roi = gray(cv::Rect(x, 0, width, gray.rows)), normalized;
-    // CIS 上二维码只限制横向安装区域；纵向保留全帧，以覆盖单帧和跨帧拼接后的任意 Y。
-    // 正常生产的白色前景二维码通过配置反色为常规黑码；异常无白墨黑码由后续受限分支恢复。
+    cv::Mat normalized;
+    // 输入范围由调用方决定；核心不读取安装位置、不裁横向条带、不自动扩大搜索范围。
+    // 优先极性只是识别提示，困难码仍由后面的定位证据决定是否尝试相反极性。
     if (inverted_)
-        cv::bitwise_not(roi, normalized);
+    {
+        cv::bitwise_not(gray, normalized);
+    }
     else
-        roi.copyTo(normalized);
+    {
+        gray.copyTo(normalized);
+    }
     const std::string polarity = inverted_ ? "inverted" : "original";
     Hit hit;
     Result result;
@@ -192,23 +233,25 @@ Result QrDetector::detect(const cv::Mat &source)
     // 1. 快速路径：按配置的少量 Y 向候选直接解码。
     //    这条路径覆盖绝大多数正常帧，并保持输入帧坐标契约。
     for (double scale : scales_)
+    {
         if (decode(normalized, scale, hit))
         {
-            result = from_hit(hit, hit.x + x, hit.y / hit.scale_y, 1, hit.scale_y);
+            result = from_hit(hit, hit.x, hit.y / hit.scale_y, 1, hit.scale_y);
             result.strategy = "WeChatQRCode, polarity=" + polarity + ", scaleY=" + fixed(hit.scale_y, 3);
             return result;
         }
+    }
     // 2. 常规解码失败后，从嵌套轮廓中提取并去重定位框证据。
-    //    几何取证只看用户配置的核心 ROI；保护带不参与 Otsu，避免额外背景改变阈值和轮廓层级。
-    //    单帧与跨帧组合图共用完全相同的门控和候选生成逻辑。
-    cv::Rect core(core_x - x, 0, core_width, gray.rows);
+    //    默认在整图取证。高级调用者可显式约束统计范围，防止无关背景影响 Otsu。
+    //    提示区不用于截断最终解码图，也不隐含传感器方向或业务位置。
     std::vector<Finder> evidence;
     try
     {
-        evidence = finder_evidence(normalized(core));
+        evidence = finder_evidence(normalized(evidence_region));
     }
     catch (const cv::Exception &)
     {
+        // 轮廓取证失败时保留空证据，后面的失焦模板恢复仍可继续尝试。
     }
     std::vector<Scale> candidates;
     int coherent = 0;
@@ -216,16 +259,20 @@ Result QrDetector::detect(const cv::Mat &source)
     bool reliable = adaptive_scales(evidence, candidates, coherent, side, relative);
     // 根据定位框尺寸与间距实时计算 scaleX/scaleY，不保存任何针对历史样本的固定缩放系数。
     if (reliable)
+    {
         for (const auto &candidate : candidates)
+        {
             if (decode_xy(normalized, candidate.x, candidate.y, hit))
             {
-                result = from_hit(hit, hit.x + x, hit.y);
+                result = from_hit(hit, hit.x, hit.y);
                 result.strategy = "WeChatQRCode, adaptive-finder, finderCount=" + std::to_string(coherent) +
                                   ", estimatedSide=" + fixed(side, 1) + ", targetSide=" + fixed(candidate.target, 1) +
                                   ", geometryScaleY=" + fixed(relative, 3) + ", polarity=" + polarity +
                                   ", scaleX=" + fixed(candidate.x, 3) + ", scaleY=" + fixed(candidate.y, 3);
                 return result;
             }
+        }
+    }
     // 3. 自适应整条 ROI 仍失败时，再由“嵌套定位框 + 经典四角点”双重几何确认局部码区。
     //    四角点可以反推出被传感器边界截断的码区/静区；白色补边只恢复二维码规范要求的背景，
     //    不臆造任何数据模块，纠错和业务文本仍完全交给 WeChatQRCode。
@@ -240,11 +287,12 @@ Result QrDetector::detect(const cv::Mat &source)
             input = padded;
         }
         for (const auto &candidate : local_scales(region))
+        {
             // 局部候选使用有限的动态工作尺寸，提高二维码在 CNN 输入中的占比，
             // 同时避免引入锐化、固定阈值等容易随样本波动的预处理分支。
             if (decode_xy(input, candidate.x, candidate.y, hit))
             {
-                result = from_region(hit, x, region);
+                result = from_region(hit, region);
                 result.strategy =
                     "WeChatQRCode, " + std::string(region.padded() ? "edge-padded" : "finder-local-adaptive") +
                     ", finderCount=" + std::to_string(coherent) + ", roi=" + region_description(region) +
@@ -253,6 +301,7 @@ Result QrDetector::detect(const cv::Mat &source)
                     ", scaleX=" + fixed(candidate.x, 3) + ", scaleY=" + fixed(candidate.y, 3);
                 return result;
             }
+        }
         double pre_scale = std::min(1., 640. / std::max(input.cols, input.rows));
         // OpenCV WeChatQRCode 会把大图压到固定面积。长条 ROI 中二维码占比过小时容易丢失定位点，
         // 因此只对已确认的局部码区限制最长边约 640 px，在降低噪声的同时保留模块边缘。
@@ -265,39 +314,47 @@ Result QrDetector::detect(const cv::Mat &source)
             input = resized;
         }
         for (double scale : scales_)
+        {
             if (decode(input, scale, hit))
             {
-                result = from_region(hit, x, region, pre_scale, pre_scale * hit.scale_y);
+                result = from_region(hit, region, pre_scale, pre_scale * hit.scale_y);
                 result.strategy = "WeChatQRCode, finder-roi=" + region_description(region) +
                                   ", preScale=" + fixed(pre_scale, 3) + ", polarity=" + polarity +
                                   ", scaleY=" + fixed(hit.scale_y, 3);
                 return result;
             }
+        }
     }
     // 4. 只有存在定位框轮廓证据时才展开较昂贵的透视与反极性恢复，
     //    避免普通无二维码帧无条件把完整识别流程执行两遍。
     if (!evidence.empty())
     {
-        if (perspective(normalized, core, x, result))
+        if (perspective(normalized, evidence_region, result))
         {
             result.strategy += ", polarity=" + polarity;
             return result;
         }
-        if (inverted_ && perspective(roi, core, x, result))
+        if (inverted_ && perspective(gray, evidence_region, result))
         {
-            // 配置极性适合常规白色前景二维码；白墨缺失时码可能变为黑色前景。
-            // 仅在标准极性失败且已有几何证据时，回到传感器原始灰度复用同一套透视恢复。
+            // 优先白色前景失败且已有几何证据时，回到原始灰度复用透视恢复。
             result.strategy += ", polarity=opposite-original";
             return result;
         }
-        if (low_contrast(roi, x, static_cast<int>(evidence.size()), result))
+        if (low_contrast(gray, static_cast<int>(evidence.size()), result))
+        {
             return result;
+        }
     }
     // 5. 严重失焦会抹掉嵌套轮廓，但三个定位框的整体明暗结构仍可能存在。
     //    最终兜底在缩小的灰度/颜色通道上寻找三个受几何约束的模板峰；
+    //    已确认的三定位框可继续进入局部恢复：Otsu 外边界失败后尝试
+    //    按模块宽度设置窗口的自适应测量，校正图始终取自实拍灰度。
     //    找不到可信三点组时不会继续调用额外 DNN。
-    if (blurred(source, {x, 0, width, source.rows}, x, result))
+    //    blurred 的定义位于 qr_recovery.cpp，局部边界恢复位于 qr_blur_local.cpp。
+    if (blurred(source, result))
+    {
         return result;
+    }
     return {};
 }
-} // namespace cis
+} // namespace qr

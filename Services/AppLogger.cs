@@ -40,7 +40,9 @@ namespace CIS_WebInspector.Services
         public void Write(string message)
         {
             if (_disposed || string.IsNullOrEmpty(message))
+            {
                 return;
+            }
 
             DateTime now = DateTime.Now;
             string formattedMessage = $"[{now:yyyy-MM-dd HH:mm:ss.fff}] {message}";
@@ -61,7 +63,9 @@ namespace CIS_WebInspector.Services
         public void WriteDiagnostic(string message)
         {
             if (_disposed || string.IsNullOrEmpty(message))
+            {
                 return;
+            }
 
             System.Diagnostics.Debug.WriteLine(message);
         }
@@ -72,7 +76,9 @@ namespace CIS_WebInspector.Services
             lock (_fileSync)
             {
                 if (_disposed)
+                {
                     return;
+                }
 
                 if (_writer == null || !string.Equals(_writerDate, date, StringComparison.Ordinal))
                 {
@@ -101,7 +107,9 @@ namespace CIS_WebInspector.Services
         {
             Delegate[] handlers = MessageWritten?.GetInvocationList();
             if (handlers == null)
+            {
                 return;
+            }
 
             foreach (Action<string> handler in handlers)
             {
@@ -120,7 +128,9 @@ namespace CIS_WebInspector.Services
         {
             lock (_fileSync)
             {
-                try { _writer?.Dispose(); } catch { }
+                try
+                { _writer?.Dispose(); }
+                catch { }
                 _writer = null;
                 _writerDate = null;
             }
@@ -129,7 +139,9 @@ namespace CIS_WebInspector.Services
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
 
             _disposed = true;
             CloseWriter();

@@ -39,7 +39,9 @@ namespace CIS_WebInspector.Services
                     lock (ConfigSync)
                     {
                         if (_instance == null)
+                        {
                             LoadOrCreateConfig();
+                        }
                     }
                 }
                 return _instance;
@@ -66,7 +68,9 @@ namespace CIS_WebInspector.Services
         public static void ApplyAndSave(AppConfig updatedConfig)
         {
             if (updatedConfig == null)
+            {
                 throw new ArgumentNullException(nameof(updatedConfig));
+            }
 
             AppConfig globalConfig = Config;
             lock (ConfigSync)
@@ -76,7 +80,9 @@ namespace CIS_WebInspector.Services
                 foreach (System.Reflection.PropertyInfo property in typeof(AppConfig).GetProperties())
                 {
                     if (property.CanRead && property.CanWrite)
+                    {
                         property.SetValue(globalConfig, property.GetValue(validatedSnapshot));
+                    }
                 }
 
                 WriteConfigFile(globalConfig);
@@ -94,7 +100,9 @@ namespace CIS_WebInspector.Services
                     bool requiresLegacyLengthMigration = UsesLegacyPixelLengthThresholds(json);
                     _instance = JsonSerializer.Deserialize<AppConfig>(json, SerializerOptions);
                     if (_instance == null)
+                    {
                         _instance = new AppConfig();
+                    }
 
                     bool configMigrated = false;
                     if (requiresLegacyAreaMigration)
@@ -243,7 +251,9 @@ namespace CIS_WebInspector.Services
         private static double ConvertLegacyPixelsToMm(double pixels, double pixelsPerMm)
         {
             if (pixels <= 0 || double.IsNaN(pixels) || double.IsInfinity(pixels))
+            {
                 return 0;
+            }
 
             return Math.Round(
                 pixels / pixelsPerMm,

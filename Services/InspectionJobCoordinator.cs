@@ -40,11 +40,19 @@ namespace CIS_WebInspector.Services
             Func<InspectionJobResult, long, Task> publishAsync)
         {
             if (stitchedResult == null)
+            {
                 throw new ArgumentNullException(nameof(stitchedResult));
+            }
+
             if (configSnapshot == null)
+            {
                 throw new ArgumentNullException(nameof(configSnapshot));
+            }
+
             if (publishAsync == null)
+            {
                 throw new ArgumentNullException(nameof(publishAsync));
+            }
 
             var cancellation = new CancellationTokenSource();
             CancellationTokenSource previous;
@@ -112,7 +120,9 @@ namespace CIS_WebInspector.Services
                 cancellation.Token.ThrowIfCancellationRequested();
 
                 if (!IsCurrent(jobId))
+                {
                     return;
+                }
 
                 InspectionJobResult result = await Task.Run(
                     () => _runner.Run(stitchedResult, configSnapshot, cancellation.Token),
@@ -120,7 +130,9 @@ namespace CIS_WebInspector.Services
 
                 // 取消只能在算法检查点生效，因此 Runner 返回后仍必须用作业号阻止旧结果发布。
                 if (!IsCurrent(jobId))
+                {
                     return;
+                }
 
                 await publishAsync(result, jobId).ConfigureAwait(false);
             }
@@ -135,12 +147,16 @@ namespace CIS_WebInspector.Services
             finally
             {
                 if (gateEntered)
+                {
                     _executionGate.Release();
+                }
 
                 lock (_sync)
                 {
                     if (_currentJobId == jobId && ReferenceEquals(_currentCancellation, cancellation))
+                    {
                         _currentCancellation = null;
+                    }
                 }
 
                 cancellation.Dispose();
@@ -150,7 +166,9 @@ namespace CIS_WebInspector.Services
         private static void TryCancel(CancellationTokenSource cancellation)
         {
             if (cancellation == null)
+            {
                 return;
+            }
 
             try
             {
@@ -168,7 +186,9 @@ namespace CIS_WebInspector.Services
             lock (_sync)
             {
                 if (_disposed)
+                {
                     return;
+                }
 
                 _disposed = true;
                 cancellation = _currentCancellation;

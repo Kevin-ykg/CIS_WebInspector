@@ -27,11 +27,13 @@ static bool validate(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &a, c
                               c.MinCircularityTiff,
                               c.MinCircularityCis};
     for (double n : numbers)
+    {
         if (!std::isfinite(n))
         {
             error = "Mark 配准参数包含 NaN 或无穷大。";
             return false;
         }
+    }
     if (a.GlobalCenterY < 0 || a.SegmentStartGlobalY < 0)
     {
         error = "二维码全局 Y 或拼接段起始全局 Y 无效。";
@@ -70,11 +72,19 @@ static bool validate(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &a, c
 static bool finite_transform(const cv::Mat &h)
 {
     if (h.rows != 3 || h.cols != 3 || h.type() != CV_64FC1)
+    {
         return false;
+    }
     for (int y = 0; y < 3; ++y)
+    {
         for (int x = 0; x < 3; ++x)
+        {
             if (!std::isfinite(h.at<double>(y, x)))
+            {
                 return false;
+            }
+        }
+    }
     return true;
 }
 static cv::Mat robust_transform(const std::vector<cv::Point2f> &source, const std::vector<cv::Point2f> &target,
@@ -86,12 +96,16 @@ static cv::Mat robust_transform(const std::vector<cv::Point2f> &source, const st
     {
         auto h = cv::findHomography(source, target, cv::RANSAC, threshold);
         if (!h.empty())
+        {
             return h;
+        }
     }
     cv::Mat inliers;
     auto affine = cv::estimateAffine2D(source, target, inliers, cv::RANSAC, threshold);
     if (affine.empty())
+    {
         return {};
+    }
     cv::Mat h = cv::Mat::eye(3, 3, CV_64FC1);
     affine.copyTo(h(cv::Rect(0, 0, 3, 2)));
     return h;
@@ -100,7 +114,9 @@ static bool project_checked(const cv::Mat &h, cv::Point2f p, cv::Point2d &output
 {
     double d = h.at<double>(2, 0) * p.x + h.at<double>(2, 1) * p.y + h.at<double>(2, 2);
     if (std::abs(d) <= 1e-9 || !std::isfinite(d))
+    {
         return false;
+    }
     output = project(h, cv::Point2d(p));
     return finite(output);
 }
@@ -118,7 +134,9 @@ static bool quality(const cv::Mat &h, const std::vector<cv::Point2f> &source, co
         }
         double dx = p.x - target[i].x, dy = p.y - target[i].y, error = std::sqrt(dx * dx + dy * dy);
         if (error <= threshold)
+        {
             inliers.push_back(error);
+        }
     }
     double ratio = static_cast<double>(inliers.size()) / std::max(size_t(1), source.size());
     if (inliers.size() <
@@ -158,7 +176,9 @@ static bool quality(const cv::Mat &h, const std::vector<cv::Point2f> &source, co
 void compute(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anchor, const Config &config, Result &output)
 {
     if (!validate(cis, tiff, anchor, config, output.Diagnostic))
+    {
         return;
+    }
     auto start = Clock::now();
     double ppm = config.LayoutDpi / 25.4, ppmY = anchor.PixelHeight / config.QrPhysicalHeightMm,
            ppmX = anchor.PixelWidth / config.QrPhysicalWidthMm;
@@ -208,7 +228,9 @@ void compute(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anchor, cons
             sort_x(topPoints);
         }
         if (row == 1 && config.EnableWhiteInkInspection)
+        {
             output.Ink = inspect_white(cisGray, regions[row], cisRows[row], topPoints, config);
+        }
     }
     std::vector<cv::Point2f> source, target;
     std::vector<CisAlignmentMark> marks;
@@ -219,7 +241,9 @@ void compute(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anchor, cons
         auto &m = matches[row];
         m = match_rows(tiffRows[row], cisRows[row], ppm / ppmX);
         if (row)
+        {
             rowsDiagnostic += " | ";
+        }
         rowsDiagnostic += cv::format(
             "%s: TIFF=%d, CIS=%d, Matched=%d, TIFF-ROI=%s, CIS-ROI=%s, SinglePass=True, Tilt=%.2fdeg, YDrift=%.1fpx, "
             "LineResidual=%.2fpx, MatchResidual=%.2fpx, Coverage=%.1f%%",
@@ -231,7 +255,9 @@ void compute(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anchor, cons
         if (m.TiffPoints.size() < MinimumPointsPerRow)
         {
             if (failure.empty())
+            {
                 failure = regions[row].Name + " 排有效对应 Mark 少于 2 个。";
+            }
             continue;
         }
         for (size_t i = 0; i < m.TiffPoints.size(); ++i)

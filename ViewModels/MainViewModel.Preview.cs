@@ -23,7 +23,10 @@ namespace CIS_WebInspector.ViewModels
         /// <summary>在 UI 线程把最新托管帧复制到预分配 WriteableBitmap，不保留输入缓冲区引用。</summary>
         private void UpdateLivePreview(FrameReadyEventArgs e)
         {
-            if (LivePreview == null || e?.DataArray == null) return;
+            if (LivePreview == null || e?.DataArray == null)
+            {
+                return;
+            }
 
             bool isLocked = false;
             try
@@ -44,7 +47,9 @@ namespace CIS_WebInspector.ViewModels
             {
                 if (isLocked)
                 {
-                    try { LivePreview.Unlock(); } catch { }
+                    try
+                    { LivePreview.Unlock(); }
+                    catch { }
                 }
             }
         }
@@ -53,7 +58,9 @@ namespace CIS_WebInspector.ViewModels
         private void UpdateStitchedPreview(StitchedImageResult result)
         {
             if (result?.Data == null || result.Data.Length == 0 || result.Width <= 0 || result.Height <= 0)
+            {
                 return;
+            }
 
             var pixelFormat = result.BitsPerPixel == 8 ? PixelFormats.Gray8 : PixelFormats.Bgr24;
             var palette = result.BitsPerPixel == 8 ? BitmapPalettes.Gray256 : null;
@@ -64,7 +71,10 @@ namespace CIS_WebInspector.ViewModels
                 // 因此我们只为 UI 预览生成一个按比例缩小的预览图（例如限制最大宽度为 2000 像素）
                 int maxWidth = 2000;
                 float scale = (float)maxWidth / result.Width;
-                if (scale >= 1.0f) scale = 1.0f;
+                if (scale >= 1.0f)
+                {
+                    scale = 1.0f;
+                }
 
                 int previewWidth = Math.Max(1, (int)(result.Width * scale));
                 int previewHeight = Math.Max(1, (int)(result.Height * scale));
@@ -116,7 +126,11 @@ namespace CIS_WebInspector.ViewModels
         /// <summary>窗体关闭时停止生产/消费链并确定性释放相机、二维码模型和后台保存线程。</summary>
         public void Dispose()
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             ExecuteStop(null);
             CleanupSource();

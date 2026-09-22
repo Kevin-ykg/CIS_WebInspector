@@ -7,7 +7,9 @@ namespace
 void message(char *out, uint32_t capacity, const char *text) noexcept
 {
     if (!out || !capacity)
+    {
         return;
+    }
     size_t n = std::min<size_t>(capacity - 1, std::strlen(text));
     std::memcpy(out, text, n);
     out[n] = 0;
@@ -39,17 +41,25 @@ template <class F> int32_t guarded(char *error, uint32_t capacity, F action) noe
 cv::Mat image_view(const CisAlignmentImage *image)
 {
     if (!image || image->struct_size != sizeof(*image))
+    {
         throw std::invalid_argument("Alignment image ABI layout mismatch");
+    }
     if (!image->pixels || image->width <= 0 || image->height <= 0 ||
         (image->channels != 1 && image->channels != 3 && image->channels != 4))
+    {
         throw std::invalid_argument("Gray8/BGR24/BGRA32 image required");
+    }
     uint64_t row = static_cast<uint64_t>(image->width) * image->channels;
     if (image->stride < row || (image->height > 1 && image->stride > (UINT64_MAX - row) / (image->height - 1)) ||
         image->buffer_bytes < image->stride * (image->height - 1) + row)
+    {
         throw std::invalid_argument("Image stride/length invalid");
+    }
     if (image->buffer_bytes > PTRDIFF_MAX ||
         reinterpret_cast<uintptr_t>(image->pixels) > UINTPTR_MAX - image->buffer_bytes)
+    {
         throw std::invalid_argument("Image address range overflow");
+    }
     // 创建的 Mat 仅是视图，不取得像素所有权；离开 API 时它不会释放 C# 内存。
     return {image->height, image->width, CV_MAKETYPE(CV_8U, image->channels), const_cast<uint8_t *>(image->pixels),
             static_cast<size_t>(image->stride)};
@@ -58,14 +68,22 @@ template <class T>
 int32_t copy_records(void *handle, const std::vector<T> alignment::Result::*member, T *output, uint32_t count) noexcept
 {
     if (!handle)
+    {
         return -1;
+    }
     auto &items = static_cast<alignment::Result *>(handle)->*member;
     if (count < items.size())
+    {
         return -3;
+    }
     if (!items.empty() && !output)
+    {
         return -1;
+    }
     if (!items.empty())
+    {
         std::memcpy(output, items.data(), items.size() * sizeof(T));
+    }
     return 0;
 }
 } // namespace
@@ -85,16 +103,24 @@ int32_t __cdecl cis_alignment_compute(const CisAlignmentImage *cis, const CisAli
                                       void **result, char *error, uint32_t capacity)
 {
     if (result)
+    {
         *result = nullptr;
+    }
     return guarded(error, capacity, [&] {
         if (!result || !anchor || anchor->struct_size != sizeof(*anchor) || !config ||
             config->struct_size != sizeof(*config) || (mode != 0 && mode != 1))
+        {
             throw std::invalid_argument("Alignment ABI/config/mode invalid");
+        }
         if (anchor->GlobalCenterY < 0 || anchor->SegmentStartGlobalY < 0)
+        {
             throw std::invalid_argument("Global Y must be nonnegative");
+        }
         // 防止错误 ABI/损坏配置申请不受限的控制网格；不约束实际的毫米几何或正常参数范围。
         if (config->SideMarkPairCount > 4096 || config->NonlinearRemapStripeRows > 1048576)
+        {
             throw std::invalid_argument("Alignment allocation limit exceeded");
+        }
         auto owned = std::make_unique<alignment::Result>();
         if (mode == 1 && !config->EnableWhiteInkInspection)
         { /* 关闭时不触碰输入像素。 */
@@ -103,7 +129,9 @@ int32_t __cdecl cis_alignment_compute(const CisAlignmentImage *cis, const CisAli
         {
             cv::Mat source = image_view(cis);
             if (mode == 0)
+            {
                 alignment::compute(source, image_view(tiff), *anchor, *config, *owned);
+            }
             else
             {
                 auto start = alignment::Clock::now();
@@ -118,7 +146,9 @@ int32_t __cdecl cis_alignment_compute(const CisAlignmentImage *cis, const CisAli
 int32_t __cdecl cis_alignment_summary(void *result, CisAlignmentSummary *summary)
 {
     if (!result || !summary || summary->struct_size != sizeof(*summary))
+    {
         return -1;
+    }
     auto &r = *static_cast<alignment::Result *>(result);
     *summary = {};
     summary->struct_size = sizeof(*summary);
@@ -134,12 +164,16 @@ int32_t __cdecl cis_alignment_summary(void *result, CisAlignmentSummary *summary
     summary->sample_count = static_cast<uint32_t>(r.Ink.Samples.size());
     summary->grid_rows = static_cast<uint32_t>(r.GridY.size());
     if (!r.H.empty())
+    {
         for (int y = 0; y < 3; ++y)
+        {
             for (int x = 0; x < 3; ++x)
             {
                 summary->homography[y * 3 + x] = r.H.at<double>(y, x);
                 summary->inverse[y * 3 + x] = r.Inverse.at<double>(y, x);
             }
+        }
+    }
     summary->ink_percent = r.Ink.InkLevelPercent;
     summary->mark_mean = r.Ink.MarkMean;
     summary->mark_variance = r.Ink.MarkVariance;
@@ -168,27 +202,41 @@ int32_t __cdecl cis_alignment_controls(void *result, CisAlignmentControl *output
 int32_t __cdecl cis_alignment_samples(void *result, CisWhiteInkSample *output, uint32_t count)
 {
     if (!result)
+    {
         return -1;
+    }
     auto &samples = static_cast<alignment::Result *>(result)->Ink.Samples;
     if (count < samples.size())
+    {
         return -3;
+    }
     if (!samples.empty() && !output)
+    {
         return -1;
+    }
     if (!samples.empty())
+    {
         std::memcpy(output, samples.data(), samples.size() * sizeof(*output));
+    }
     return 0;
 }
 int32_t __cdecl cis_alignment_log(void *result, int32_t kind, char *output, uint32_t capacity, uint32_t *required)
 {
     if (!result || !required || (kind != 0 && kind != 1))
+    {
         return -1;
+    }
     auto &r = *static_cast<alignment::Result *>(result);
     auto &text = kind == 0 ? r.Diagnostic : r.Ink.Diagnostic;
     if (text.size() >= UINT32_MAX)
+    {
         return -2;
+    }
     *required = static_cast<uint32_t>(text.size() + 1);
     if (!output || capacity < *required)
+    {
         return -3;
+    }
     std::memcpy(output, text.c_str(), *required);
     return 0;
 }
@@ -197,13 +245,19 @@ int32_t __cdecl cis_alignment_warp(void *result, const CisAlignmentImage *cis, c
 {
     return guarded(error, capacity, [&] {
         if (!result)
+        {
             throw std::invalid_argument("Null alignment result");
+        }
         cv::Mat source = image_view(cis), target = image_view(output);
         if (source.type() != target.type())
+        {
             throw std::invalid_argument("Warp input/output channel mismatch");
+        }
         auto src = reinterpret_cast<uintptr_t>(cis->pixels), dst = reinterpret_cast<uintptr_t>(output->pixels);
         if (src < dst + output->buffer_bytes && dst < src + cis->buffer_bytes)
+        {
             throw std::invalid_argument("Warp input/output must not overlap");
+        }
         alignment::warp(source, target, *static_cast<alignment::Result *>(result));
     });
 }

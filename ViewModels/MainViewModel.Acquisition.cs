@@ -19,7 +19,10 @@ namespace CIS_WebInspector.ViewModels
                 Filter = "Volans 配置文件(*.arcf)|*.arcf|所有文件(*.*)|*.*",
                 Title = "选择相机配置文件"
             };
-            if (ofd.ShowDialog() != true) return;
+            if (ofd.ShowDialog() != true)
+            {
+                return;
+            }
 
             InitializeDataSource(
                 config => new CisCameraEngine(config),
@@ -39,10 +42,16 @@ namespace CIS_WebInspector.ViewModels
                 Filter = "图像文件(*.bmp;*.png;*.tif;*.jpg)|*.bmp;*.png;*.tif;*.tiff;*.jpg|所有文件(*.*)|*.*",
                 Title = "选择图像目录中的任意一张图片"
             };
-            if (ofd.ShowDialog() != true) return;
+            if (ofd.ShowDialog() != true)
+            {
+                return;
+            }
 
             string selectedDir = System.IO.Path.GetDirectoryName(ofd.FileName);
-            if (string.IsNullOrEmpty(selectedDir)) return;
+            if (string.IsNullOrEmpty(selectedDir))
+            {
+                return;
+            }
 
             InitializeDataSource(
                 config => new OfflineImageSource(config),
@@ -62,7 +71,9 @@ namespace CIS_WebInspector.ViewModels
             string failureStatus)
         {
             if (sourceFactory == null)
+            {
                 throw new ArgumentNullException(nameof(sourceFactory));
+            }
 
             AppConfig acquisitionConfig = ConfigManager.CaptureSnapshot();
             CleanupSource();
@@ -77,7 +88,10 @@ namespace CIS_WebInspector.ViewModels
             {
                 StatusText = failureStatus;
                 if (!string.IsNullOrWhiteSpace(initializationError))
+                {
                     AddLog($"[ERROR] {failureStatus}: {initializationError}");
+                }
+
                 return;
             }
 
@@ -209,7 +223,10 @@ namespace CIS_WebInspector.ViewModels
                 Title = "保存拼接图像",
                 FileName = $"stitched_{DateTime.Now:yyyyMMdd_HHmmss}"
             };
-            if (sfd.ShowDialog() != true) return;
+            if (sfd.ShowDialog() != true)
+            {
+                return;
+            }
 
             try
             {
@@ -233,7 +250,9 @@ namespace CIS_WebInspector.ViewModels
             AppConfig acquisitionConfig = ActiveAcquisitionConfig;
             if (processor == null || source == null || acquisitionConfig == null ||
                 Volatile.Read(ref _stopAfterCurrentFrame) != 0)
+            {
                 return;
+            }
 
             FrameReadyEventArgs ownedFrame;
             try
@@ -248,7 +267,11 @@ namespace CIS_WebInspector.ViewModels
             }
 
             Interlocked.Increment(ref _receivedFrameCount);
-            if (ownedFrame.IsBroken) Interlocked.Increment(ref _brokenFrameCount);
+            if (ownedFrame.IsBroken)
+            {
+                Interlocked.Increment(ref _brokenFrameCount);
+            }
+
             Volatile.Write(ref _latestBufferIndex, ownedFrame.BufferIndex);
 
             // 离线源可等待消费者腾出空间以保证逐帧完整；在线源仅短暂等待，超时后安全停采。
@@ -307,7 +330,9 @@ namespace CIS_WebInspector.ViewModels
             }
 
             if (Volatile.Read(ref _stopAfterCurrentFrame) != 0)
+            {
                 Volatile.Read(ref _frameProcessor)?.DiscardPending();
+            }
         }
 
         private void QueueLivePreview(FrameReadyEventArgs frame)
@@ -322,12 +347,17 @@ namespace CIS_WebInspector.ViewModels
         {
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher == null || Interlocked.CompareExchange(ref _previewDispatchPending, 1, 0) != 0)
+            {
                 return;
+            }
 
             dispatcher.InvokeAsync(() =>
             {
                 FrameReadyEventArgs latest = Interlocked.Exchange(ref _latestPreviewFrame, null);
-                if (latest != null) UpdateLivePreview(latest);
+                if (latest != null)
+                {
+                    UpdateLivePreview(latest);
+                }
 
                 FrameCount = (ulong)Math.Max(0, Interlocked.Read(ref _receivedFrameCount));
                 BrokenCount = (ulong)Math.Max(0, Interlocked.Read(ref _brokenFrameCount));
@@ -335,7 +365,9 @@ namespace CIS_WebInspector.ViewModels
 
                 Interlocked.Exchange(ref _previewDispatchPending, 0);
                 if (Volatile.Read(ref _latestPreviewFrame) != null)
+                {
                     SchedulePreviewUpdate();
+                }
             }, System.Windows.Threading.DispatcherPriority.Render);
         }
 
@@ -368,18 +400,27 @@ namespace CIS_WebInspector.ViewModels
                 _frameProcessor = null;
             }
 
-            if (processor == null) return;
+            if (processor == null)
+            {
+                return;
+            }
 
             bool stopped = processor.Stop(drain, 10000);
             if (!stopped)
+            {
                 AddLog("[WARN] 帧处理线程未在 10 秒内退出；已禁止继续入队，请检查算法耗时或非托管调用。");
+            }
+
             processor.Dispose();
         }
 
         /// <summary>确保过载/算法异常只触发一次安全停机，并把最终状态切回 UI 线程。</summary>
         private void SignalProcessingStop(string reason)
         {
-            if (Interlocked.Exchange(ref _processingStopSignaled, 1) != 0) return;
+            if (Interlocked.Exchange(ref _processingStopSignaled, 1) != 0)
+            {
+                return;
+            }
 
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher != null)
@@ -407,7 +448,9 @@ namespace CIS_WebInspector.ViewModels
             string reason)
         {
             if (offlineSource == null)
+            {
                 return;
+            }
 
             Interlocked.Exchange(ref _stopAfterCurrentFrame, 1);
             offlineSource.StopGrab();

@@ -40,7 +40,8 @@ internal static class NativeContractChecks
         Require(cis_qr_create(null, out IntPtr invalid, error, (uint)error.Length) == -1 && invalid == IntPtr.Zero, "empty model path");
         Require(cis_qr_initialize(IntPtr.Zero, error, (uint)error.Length) == -1, "null context");
         Require(cis_qr_create(models + "\\__missing__", out IntPtr missing, error, (uint)error.Length) == 0, "lazy create");
-        try { Require(cis_qr_initialize(missing, error, (uint)error.Length) == -2 && error[0] != 0, "missing model reported"); }
+        try
+        { Require(cis_qr_initialize(missing, error, (uint)error.Length) == -2 && error[0] != 0, "missing model reported"); }
         finally { cis_qr_destroy(missing); }
         Require(cis_qr_create(models, out IntPtr handle, error, (uint)error.Length) == 0, "create");
         try
@@ -49,14 +50,16 @@ internal static class NativeContractChecks
             Require(cis_qr_configure(handle, ref config, error, (uint)error.Length) == 0, "configure defaults");
             config.Size = 1;
             Require(cis_qr_configure(handle, ref config, error, (uint)error.Length) == -1, "reject wrong struct size");
-            config.Size = 32; config.Count = 1;
+            config.Size = 32;
+            config.Count = 1;
             Require(cis_qr_configure(handle, ref config, error, (uint)error.Length) == -1, "reject null scale pointer");
             // configure 必须复制借来的尺度数组；返回后原缓冲立即改写和解除固定。
             var scales = new[] { 1f, float.NaN, -1f, 1f };
             var scalePin = GCHandle.Alloc(scales, GCHandleType.Pinned);
             try
             {
-                config.Scales = scalePin.AddrOfPinnedObject(); config.Count = 4;
+                config.Scales = scalePin.AddrOfPinnedObject();
+                config.Count = 4;
                 Require(cis_qr_configure(handle, ref config, error, (uint)error.Length) == 0, "scale snapshot");
                 scales[0] = 0.25f;
             }
@@ -71,14 +74,23 @@ internal static class NativeContractChecks
                 var pin = GCHandle.Alloc(input, GCHandleType.Pinned);
                 try
                 {
-                    var text = new byte[256]; var strategy = new byte[256];
+                    var text = new byte[256];
+                    var strategy = new byte[256];
                     Func<ulong, ulong, int, uint, int> detect = (bytes, step, channelCount, resultSize) =>
                     {
                         var result = new Result { Size = resultSize, Found = 1, X = 123 };
                         int status = cis_qr_detect(handle, pin.AddrOfPinnedObject(), bytes, width, height, step, channelCount,
                             ref result, text, 256, strategy, 256, error, (uint)error.Length);
-                        if (resultSize == 48) Require(result.Found == 0 && result.X == 0 && text[0] == 0, "reset result on blank/error");
-                        if (status == 1) Require(result.Attempts == 1 && error[0] == 0, "copied scale and cleared error");
+                        if (resultSize == 48)
+                        {
+                            Require(result.Found == 0 && result.X == 0 && text[0] == 0, "reset result on blank/error");
+                        }
+
+                        if (status == 1)
+                        {
+                            Require(result.Attempts == 1 && error[0] == 0, "copied scale and cleared error");
+                        }
+
                         return status;
                     };
                     Require(detect((ulong)input.Length, (ulong)stride, channels, 48) == 1, "padded stride " + channels);
@@ -103,10 +115,14 @@ internal static class NativeContractChecks
             Parallel.For(0, 20, i =>
             {
                 var result = detector.Detect(new byte[128 * 96], 128, 96, 128, 8);
-                if (result.Found || detector.LastError != null) throw new InvalidOperationException("Concurrent blank detection failed");
+                if (result.Found || detector.LastError != null)
+                {
+                    throw new InvalidOperationException("Concurrent blank detection failed");
+                }
             });
             Require(true, "same-context concurrent calls serialized");
-            detector.Dispose(); detector.Dispose();
+            detector.Dispose();
+            detector.Dispose();
             Require(!detector.Detect(new byte[1], 1, 1, 1, 8).Found && detector.LastError != null, "disposed context fails safely");
         }
         // 记录释放后的私有内存观察值，不把分配器保留内存等同于泄漏，也不据此宣称生产稳定性。
@@ -118,12 +134,16 @@ internal static class NativeContractChecks
                 Require(detector.Initialize(), "lifecycle " + i);
                 Require(!detector.Detect(new byte[128 * 96], 128, 96, 128, 8).Found && detector.LastError == null, "lifecycle detect " + i);
             }
-            if (i % 5 == 4) Console.WriteLine($"Lifecycle {i + 1}: private bytes={Process.GetCurrentProcess().PrivateMemorySize64}");
+            if (i % 5 == 4)
+            {
+                Console.WriteLine($"Lifecycle {i + 1}: private bytes={Process.GetCurrentProcess().PrivateMemorySize64}");
+            }
         }
-        Console.WriteLine($"PASS {_checks} contract checks"); return 0;
+        Console.WriteLine($"PASS {_checks} contract checks");
+        return 0;
     }
     private static void Require(bool condition, string name)
-    { if (!condition) throw new InvalidOperationException(name); _checks++; }
+    { if (!condition) { throw new InvalidOperationException(name); } _checks++; }
 
     public static int CheckImage(string models, string configPath, string imagePath)
     {
@@ -134,8 +154,15 @@ internal static class NativeContractChecks
         try
         {
             int factor = Math.Max(1, config.DownscaleFactor);
-            var settings = new Config { Size = 32, X = config.BaseRoiX / factor, Width = config.BaseRoiWidth / factor,
-                Invert = config.QrInvertPolarity ? 1 : 0, Scales = scalePin.AddrOfPinnedObject(), Count = (uint)config.QrScaleYCandidates.Length };
+            var settings = new Config
+            {
+                Size = 32,
+                X = config.BaseRoiX / factor,
+                Width = config.BaseRoiWidth / factor,
+                Invert = config.QrInvertPolarity ? 1 : 0,
+                Scales = scalePin.AddrOfPinnedObject(),
+                Count = (uint)config.QrScaleYCandidates.Length
+            };
             Require(cis_qr_configure(handle, ref settings, error, 4096) == 0, "configure real-image context");
             using (var original = Cv2.ImRead(imagePath, ImreadModes.Color))
             using (var resized = new Mat())
@@ -144,41 +171,62 @@ internal static class NativeContractChecks
                 Result? expected = null;
                 string expectedText = null;
                 foreach (int channels in new[] { 3, 1, 4 })
-                using (var converted = new Mat())
                 {
-                    if (channels == 1) Cv2.CvtColor(resized, converted, ColorConversionCodes.BGR2GRAY);
-                    else if (channels == 4) Cv2.CvtColor(resized, converted, ColorConversionCodes.BGR2BGRA);
-                    else resized.CopyTo(converted);
-                    int stride = converted.Width * channels + 13;
-                    var bytes = Enumerable.Repeat((byte)79, stride * converted.Height).ToArray();
-                    for (int y = 0; y < converted.Height; y++) Marshal.Copy(converted.Ptr(y), bytes, y * stride, converted.Width * channels);
-                    var before = (byte[])bytes.Clone();
-                    var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
-                    try
+                    using (var converted = new Mat())
                     {
-                        var result = new Result { Size = 48 };
-                        var text = new byte[16384]; var strategy = new byte[4096];
-                        int status = cis_qr_detect(handle, pin.AddrOfPinnedObject(), (ulong)bytes.Length, converted.Width, converted.Height,
-                            (ulong)stride, channels, ref result, text, (uint)text.Length, strategy, 4096, error, 4096);
-                        Require(status == 0 && result.Found == 1, "real image decoded " + channels);
-                        string decoded = Encoding.UTF8.GetString(text, 0, Array.IndexOf(text, (byte)0));
-                        if (expected.HasValue)
-                            Require(expectedText == decoded && result.X == expected.Value.X && result.Y == expected.Value.Y &&
+                        if (channels == 1)
+                        {
+                            Cv2.CvtColor(resized, converted, ColorConversionCodes.BGR2GRAY);
+                        }
+                        else if (channels == 4)
+                        {
+                            Cv2.CvtColor(resized, converted, ColorConversionCodes.BGR2BGRA);
+                        }
+                        else
+                        {
+                            resized.CopyTo(converted);
+                        }
+
+                        int stride = converted.Width * channels + 13;
+                        var bytes = Enumerable.Repeat((byte)79, stride * converted.Height).ToArray();
+                        for (int y = 0; y < converted.Height; y++)
+                        {
+                            Marshal.Copy(converted.Ptr(y), bytes, y * stride, converted.Width * channels);
+                        }
+
+                        var before = (byte[])bytes.Clone();
+                        var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+                        try
+                        {
+                            var result = new Result { Size = 48 };
+                            var text = new byte[16384];
+                            var strategy = new byte[4096];
+                            int status = cis_qr_detect(handle, pin.AddrOfPinnedObject(), (ulong)bytes.Length, converted.Width, converted.Height,
+                                (ulong)stride, channels, ref result, text, (uint)text.Length, strategy, 4096, error, 4096);
+                            Require(status == 0 && result.Found == 1, "real image decoded " + channels);
+                            string decoded = Encoding.UTF8.GetString(text, 0, Array.IndexOf(text, (byte)0));
+                            if (expected.HasValue)
+                            {
+                                Require(expectedText == decoded && result.X == expected.Value.X && result.Y == expected.Value.Y &&
                                 Math.Abs(result.Width - expected.Value.Width) < 1e-6 && Math.Abs(result.Height - expected.Value.Height) < 1e-6, "pixel format equivalence");
-                        else { expected = result; expectedText = decoded; }
-                        result.Size = 48;
-                        status = cis_qr_detect(handle, pin.AddrOfPinnedObject(), (ulong)bytes.Length, converted.Width, converted.Height,
-                            (ulong)stride, channels, ref result, text, 1, strategy, 1, error, 4096);
-                        Require(status == -3 && result.Found == 0 && result.TextBytes > 1 && result.StrategyBytes > 1 &&
-                            text[0] == 0 && strategy[0] == 0 && error[0] != 0, "short output never returns truncated success");
-                        Require(bytes.SequenceEqual(before), "real pixels and padding unchanged");
-                        Console.WriteLine($"Channels={channels}, decoded={decoded}, center={expected.Value.X},{expected.Value.Y}");
+                            }
+                            else
+                            { expected = result; expectedText = decoded; }
+                            result.Size = 48;
+                            status = cis_qr_detect(handle, pin.AddrOfPinnedObject(), (ulong)bytes.Length, converted.Width, converted.Height,
+                                (ulong)stride, channels, ref result, text, 1, strategy, 1, error, 4096);
+                            Require(status == -3 && result.Found == 0 && result.TextBytes > 1 && result.StrategyBytes > 1 &&
+                                text[0] == 0 && strategy[0] == 0 && error[0] != 0, "short output never returns truncated success");
+                            Require(bytes.SequenceEqual(before), "real pixels and padding unchanged");
+                            Console.WriteLine($"Channels={channels}, decoded={decoded}, center={expected.Value.X},{expected.Value.Y}");
+                        }
+                        finally { pin.Free(); }
                     }
-                    finally { pin.Free(); }
                 }
             }
         }
         finally { scalePin.Free(); cis_qr_destroy(handle); }
-        Console.WriteLine($"PASS {_checks} real-image contract checks"); return 0;
+        Console.WriteLine($"PASS {_checks} real-image contract checks");
+        return 0;
     }
 }

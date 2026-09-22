@@ -24,7 +24,9 @@ double sample(const cv::Mat &values, double x, double y)
 {
     int x0 = static_cast<int>(std::floor(x)), y0 = static_cast<int>(std::floor(y)), x1 = x0 + 1, y1 = y0 + 1;
     if (x0 < 0 || y0 < 0 || x1 >= values.cols || y1 >= values.rows)
+    {
         return LocalAlignmentChamferDistanceCapWorkPx;
+    }
     double fx = x - x0, fy = y - y0;
     double top = values.at<float>(y0, x0) * (1. - fx) + values.at<float>(y0, x1) * fx;
     double bottom = values.at<float>(y1, x0) * (1. - fx) + values.at<float>(y1, x1) * fx;
@@ -50,16 +52,24 @@ Shift best_shift(const cv::Mat &reference, const cv::Mat &moving, int radius, in
                  (subpixel ? static_cast<int>(std::ceil(LocalAlignmentSubpixelRadiusWorkPx)) + 1 : 1);
     std::vector<cv::Point> references, movings;
     for (int y = margin; y < reference.rows - margin; ++y)
+    {
         for (int x = margin; x < reference.cols - margin; ++x)
         {
             if (reference.ptr<uint8_t>(y)[x])
+            {
                 references.emplace_back(x, y);
+            }
             if (moving.ptr<uint8_t>(y)[x])
+            {
                 movings.emplace_back(x, y);
+            }
         }
+    }
     Shift best;
     if (references.empty() || movings.empty())
+    {
         return best;
+    }
     int reference_stride = std::max(
         1,
         static_cast<int>(std::ceil(references.size() / static_cast<double>(LocalAlignmentMaxEdgeSamplesPerDirection))));
@@ -82,27 +92,39 @@ Shift best_shift(const cv::Mat &reference, const cv::Mat &moving, int radius, in
         }
         double score = .5 * (forward / nf + reverse / nr), magnitude = dx * dx + dy * dy;
         if (score < best.score - 1e-9 || (std::abs(score - best.score) <= 1e-9 && magnitude < best.magnitude))
+        {
             best = {score, dx, dy, magnitude};
+        }
     };
     // 先整数网格，再仅在整数最优点邻域以 0.25 工作像素精修；相同评分优先更小位移。
     for (int dy = -radius; dy <= radius; ++dy)
+    {
         for (int dx = -radius; dx <= radius; ++dx)
+        {
             if (std::sqrt(static_cast<double>(dx * dx + dy * dy)) <= maximum + 1e-9)
+            {
                 evaluate(dx, dy);
+            }
+        }
+    }
     if (subpixel && radius > 0 && std::isfinite(best.score))
     {
         double bx = best.x, by = best.y;
         for (double oy = -LocalAlignmentSubpixelRadiusWorkPx; oy <= LocalAlignmentSubpixelRadiusWorkPx + 1e-9;
              oy += LocalAlignmentSubpixelStepWorkPx)
+        {
             for (double ox = -LocalAlignmentSubpixelRadiusWorkPx; ox <= LocalAlignmentSubpixelRadiusWorkPx + 1e-9;
                  ox += LocalAlignmentSubpixelStepWorkPx)
             {
                 double dx = bx + ox, dy = by + oy;
                 if (std::abs(dx) > radius + 1e-9 || std::abs(dy) > radius + 1e-9 ||
                     std::sqrt(dx * dx + dy * dy) > maximum + 1e-9)
+                {
                     continue;
+                }
                 evaluate(dx, dy);
             }
+        }
     }
     return best;
 }
@@ -125,37 +147,49 @@ bool locally_stable(const cv::Mat &reference, const cv::Mat &before, const cv::M
         regressed = 0;
     // 固定模板边缘分成 3x3 区，比较同一组点；忽略 Warp 可能越界的安全边框。
     for (int gy = 0; gy < LocalAlignmentValidationGridSize; ++gy)
+    {
         for (int gx = 0; gx < LocalAlignmentValidationGridSize; ++gx)
         {
             int count = 0;
             double sum_before = 0, sum_after = 0;
             for (int y = gy * reference.rows / 3; y < (gy + 1) * reference.rows / 3; ++y)
+            {
                 for (int x = gx * reference.cols / 3; x < (gx + 1) * reference.cols / 3; ++x)
                 {
                     if (x < border || x >= reference.cols - border || y < border || y >= reference.rows - border ||
                         !reference.ptr<uint8_t>(y)[x])
+                    {
                         continue;
+                    }
                     ++count;
                     sum_before += std::min(static_cast<double>(distance_before.at<float>(y, x)),
                                            LocalAlignmentChamferDistanceCapWorkPx);
                     sum_after += std::min(static_cast<double>(distance_after.at<float>(y, x)),
                                           LocalAlignmentChamferDistanceCapWorkPx);
                 }
+            }
             if (count < LocalAlignmentMinReferenceEdgesPerCell)
+            {
                 continue;
+            }
             ++cells;
             double regression = sum_after / count - sum_before / count;
             worst = std::max(worst, regression);
             if (regression > LocalAlignmentMaxLocalRegressionPixels)
+            {
                 ++regressed;
+            }
         }
+    }
     if (cells == 0)
     {
         worst = infinity;
         return false;
     }
     if (worst == -infinity)
+    {
         worst = 0;
+    }
     return regressed == 0 || (improvement >= LocalAlignmentStrongEdgeImprovementRatio && regressed == 1 &&
                               worst <= LocalAlignmentStrongCaseMaxLocalRegressionPixels);
 }
@@ -190,7 +224,9 @@ bool refine(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, double sca
     gate.dy = shift.y;
     double improvement = (gate.before - gate.after) / std::max(gate.before, 1e-6);
     if (!std::isfinite(gate.before) || !std::isfinite(gate.after) || improvement < minimum_improvement)
+    {
         return false;
+    }
     // 精修矩阵先保存在临时副本；后续拒绝时不污染原始 SIFT 或平移候选。
     cv::Mat refined = transform.clone();
     refined.at<double>(0, 2) += gate.dx;
@@ -200,7 +236,9 @@ bool refine(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, double sca
         cv::warpAffine(cb, final_warp, refined, ab.size(), cv::INTER_NEAREST);
         cv::morphologyEx(final_warp, final_edges, cv::MORPH_GRADIENT, kernel);
         if (!locally_stable(ae, before, final_edges, scale, improvement, gate.worst, gate.cells))
+        {
             return false;
+        }
     }
     else
     {
@@ -222,7 +260,9 @@ bool valid_transform(const cv::Mat &transform, double scale, std::string &diagno
            rotation = std::atan2(c, a) * 180. / CV_PI;
     bool finite = true;
     for (double v : {a, b, c, d, tx, ty, determinant, s1, s2, shear, rotation})
+    {
         finite = finite && std::isfinite(v);
+    }
     bool accepted = finite && determinant > 0 && s1 >= .90 && s1 <= 1.10 && s2 >= .90 && s2 <= 1.10 && shear <= .15 &&
                     std::abs(rotation) <= 5. && std::abs(tx / scale) <= LocalAlignmentMaxTranslationOriginalPx &&
                     std::abs(ty / scale) <= LocalAlignmentMaxTranslationOriginalPx;
@@ -239,7 +279,9 @@ bool sufficient_coverage(const std::vector<cv::Point2f> &points, cv::Size size, 
 {
     coverage = 0;
     if (points.empty() || size.width <= 0 || size.height <= 0)
+    {
         return false;
+    }
     float minx = points[0].x, maxx = minx, miny = points[0].y, maxy = miny;
     std::set<int> cells;
     for (auto p : points)
@@ -286,7 +328,9 @@ bool translation_fallback(const std::vector<cv::Point2f> &source, const std::vec
 {
     p80 = infinity;
     if (source.size() < 3 || scale <= 0)
+    {
         return false;
+    }
     std::vector<double> dx, dy, residuals;
     for (size_t i = 0; i < source.size(); ++i)
     {
@@ -302,7 +346,9 @@ bool translation_fallback(const std::vector<cv::Point2f> &source, const std::vec
     std::sort(residuals.begin(), residuals.end());
     p80 = residuals[std::max(0, static_cast<int>(std::ceil(source.size() * .80)) - 1)];
     if (p80 > LocalAlignmentTranslationConsensusP80OriginalPx)
+    {
         return false;
+    }
     transform = cv::Mat::eye(2, 3, CV_64F);
     transform.at<double>(0, 2) = mx;
     transform.at<double>(1, 2) = my;
@@ -315,8 +361,12 @@ std::vector<cv::DMatch> ratio_matches(cv::BFMatcher &matcher, const cv::Mat &a, 
     matcher.knnMatch(a, b, knn, 2);
     std::vector<cv::DMatch> result;
     for (const auto &matches : knn)
+    {
         if (matches.size() >= 2 && matches[0].distance < .70f * matches[1].distance)
+        {
             result.push_back(matches[0]);
+        }
+    }
     return result;
 }
 std::string edge_diagnostic(const EdgeGate &gate)
@@ -332,6 +382,7 @@ std::shared_ptr<TemplateFeatures> TemplateCache::get(const cv::Mat &image, cv::S
     uint64_t hash = 1469598103934665603ULL;
     // 16x16 规则网格 FNV 签名仅用于分桶；相同签名必须再经过 L1==0 精确像素比较。
     for (int gy = 0; gy < 16; ++gy)
+    {
         for (int gx = 0; gx < 16; ++gx)
         {
             int y = std::min(image.rows - 1, static_cast<int>((2LL * gy + 1) * image.rows / 32));
@@ -342,6 +393,7 @@ std::shared_ptr<TemplateFeatures> TemplateCache::get(const cv::Mat &image, cv::S
                 hash *= 1099511628211ULL;
             }
         }
+    }
     std::string key = std::to_string(image.rows) + "x" + std::to_string(image.cols) + ":" +
                       std::to_string(image.type()) + ":" + std::to_string(hash);
     double key_ms = elapsed(start);
@@ -351,7 +403,9 @@ std::shared_ptr<TemplateFeatures> TemplateCache::get(const cv::Mat &image, cv::S
         stats.quick_key_ms += key_ms;
         auto &entry = buckets[key];
         if (!entry)
+        {
             entry = std::make_shared<TemplateBucket>();
+        }
         bucket = entry;
     }
     // 全局锁只维护目录/统计，同一哈希桶单独加锁以避免重复创建模板。
@@ -368,10 +422,14 @@ std::shared_ptr<TemplateFeatures> TemplateCache::get(const cv::Mat &image, cv::S
             ++stats.comparisons;
             stats.comparison_ms += compare_ms;
             if (equal)
+            {
                 ++stats.hits;
+            }
         }
         if (equal)
+        {
             return entry;
+        }
     }
     auto entry = std::make_shared<TemplateFeatures>();
     entry->representative = image.clone();
@@ -433,31 +491,41 @@ Alignment local_align(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, 
             std::sqrt(gate.dx * gate.dx + gate.dy * gate.dy) >=
             LocalAlignmentTranslationRefineRadiusOriginalPx * scale * LocalAlignmentFastTranslationBoundaryRatio;
         if (accepted && !boundary && valid_transform(fast, scale, diagnostic))
+        {
             return accept(fast, "FastTranslation", gate, "");
+        }
 
         // 2. 每 worker 独占 SIFT/BFMatcher，模板特征按批次复用。输入已统一到独立 700 px 工作宽度。
         worker.initialize();
         auto pattern = worker.cache->get(alpha, *worker.sift);
         if (pattern->keypoints.empty() || pattern->descriptors.empty())
+        {
             return reject("模板特征为空");
+        }
         cv::Mat descriptors;
         std::vector<cv::KeyPoint> keypoints;
         worker.sift->detectAndCompute(cis, cv::noArray(), keypoints, descriptors);
         if (keypoints.empty() || descriptors.empty())
+        {
             return reject("CIS 特征为空");
+        }
         auto forward = ratio_matches(*worker.matcher, pattern->descriptors, descriptors),
              reverse = ratio_matches(*worker.matcher, descriptors, pattern->descriptors);
         // 周期纹理容易一对多误配。正反方向都把对方选为最佳才保留，
         // 然后再按原图尺度限制位移；增加特征数不能替代这两层几何约束。
         std::unordered_map<int, int> reverse_map;
         for (auto m : reverse)
+        {
             reverse_map[m.queryIdx] = m.trainIdx;
+        }
         std::vector<cv::Point2f> targets, sources;
         for (auto m : forward)
         {
             auto it = reverse_map.find(m.trainIdx);
             if (it == reverse_map.end() || it->second != m.queryIdx)
+            {
                 continue;
+            }
             auto a = pattern->keypoints[m.queryIdx].pt, c = keypoints[m.trainIdx].pt;
             if (std::abs((a.x - c.x) / scale) <= LocalAlignmentMaxMatchDisplacementOriginalPx &&
                 std::abs((a.y - c.y) / scale) <= LocalAlignmentMaxMatchDisplacementOriginalPx)
@@ -467,7 +535,9 @@ Alignment local_align(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, 
             }
         }
         if (targets.size() < 6)
+        {
             return reject("有效匹配不足(" + std::to_string(targets.size()) + "/6)");
+        }
         cv::Mat inlier_mask, transform;
         // 相似变换只允许平移/旋转/统一缩放，不引入完整仿射的剪切和非等比拉伸。
         // 固定随机种子，只对 RANSAC 的短求解加锁；矩阵方向始终为 CIS -> TIFF。
@@ -479,22 +549,32 @@ Alignment local_align(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, 
                                                     .99, 10);
         }
         if (transform.empty() || inlier_mask.empty())
+        {
             return reject("Similarity RANSAC 未得到矩阵或内点");
+        }
         std::vector<cv::Point2f> ti, si;
         for (size_t i = 0; i < std::min(inlier_mask.total(), targets.size()); ++i)
+        {
             if (inlier_mask.ptr<uint8_t>()[i])
             {
                 ti.push_back(targets[i]);
                 si.push_back(sources[i]);
             }
+        }
         double ratio = ti.size() / static_cast<double>(targets.size()), coverage = 0;
         if (ti.size() < 6)
+        {
             return reject("Similarity 内点不足");
+        }
         if (!sufficient_coverage(ti, alpha.size(), coverage))
+        {
             return reject("内点空间覆盖不足: " + number(coverage));
+        }
         double residual = rms(transform, si, ti, scale);
         if (residual > LocalAlignmentMaxResidualRmsOriginalPx)
+        {
             return reject("内点重投影 RMS 过大: " + number(residual));
+        }
         bool standard = ratio >= LocalAlignmentMinimumInlierRatio;
         // 大量重复文字可能拉低比例但仍有足够可靠内点。条件通道同时要求 >=12 内点、
         // >=35% 比例、>=8% 覆盖、<=2.5 原像素 RMS；通过后仍须检查矩阵范围和轮廓，
@@ -504,9 +584,13 @@ Alignment local_align(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, 
                            coverage >= LocalAlignmentConditionalMinimumBoundingCoverage &&
                            residual <= LocalAlignmentConditionalMaxResidualRmsOriginalPx;
         if (!standard && !conditional)
+        {
             return reject("Similarity 内点置信度不足");
+        }
         if (!valid_transform(transform, scale, diagnostic))
+        {
             return reject(diagnostic);
+        }
         std::string model = standard ? "Similarity" : "SimilarityConditional";
         // 3. 原有相似变换质量门控；必要时使用同一组 RANSAC 内点位移中位数给出平移候选。
         if (!refine(alpha, cis, at, ct, scale, transform, true, LocalAlignmentMinEdgeImprovementRatio,
@@ -526,13 +610,17 @@ Alignment local_align(const cv::Mat &alpha, const cv::Mat &cis, int at, int ct, 
                                  LocalAlignmentCandidateRefineRadiusOriginalPx, gate);
             }
             if (!refined)
+            {
                 return reject("相似变换与纯平移均未通过轮廓质量门控: similarity(" + similarity + "), translation(" +
                               edge_diagnostic(gate) + "), P80=" + number(p80));
+            }
             translation.copyTo(transform);
             model = "Translation";
         }
         if (!valid_transform(transform, scale, diagnostic))
+        {
             return reject("边缘精修后" + diagnostic);
+        }
         return accept(transform, model, gate,
                       "kp=" + std::to_string(pattern->keypoints.size()) + "/" + std::to_string(keypoints.size()) +
                           ", mutual=" + std::to_string(targets.size()) + ", inliers=" + std::to_string(ti.size()) +

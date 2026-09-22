@@ -24,7 +24,11 @@ namespace CIS_WebInspector.Services
             Action<FrameReadyEventArgs> processFrame,
             Action<Exception> onError)
         {
-            if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+            if (capacity <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(capacity));
+            }
+
             _processFrame = processFrame ?? throw new ArgumentNullException(nameof(processFrame));
             _onError = onError;
             _queue = new BlockingCollection<FrameReadyEventArgs>(capacity);
@@ -41,15 +45,26 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public static FrameReadyEventArgs CreateOwnedFrame(FrameReadyEventArgs source)
         {
-            if (source == null) throw new ArgumentNullException(nameof(source));
+            if (source == null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
             if (source.Width <= 0 || source.Height <= 0 || source.Stride <= 0)
+            {
                 throw new ArgumentException("帧尺寸或步长无效。", nameof(source));
+            }
 
             int byteCount = checked(source.Stride * source.Height);
             if (source.DataArray == null)
+            {
                 throw new ArgumentException("帧不包含有效图像数据。", nameof(source));
+            }
+
             if (source.DataArray.Length < byteCount)
+            {
                 throw new ArgumentException("托管帧缓冲区长度不足。", nameof(source));
+            }
 
             return new FrameReadyEventArgs
             {
@@ -68,7 +83,9 @@ namespace CIS_WebInspector.Services
         public bool TryEnqueue(FrameReadyEventArgs frame, int millisecondsTimeout)
         {
             if (frame == null || Volatile.Read(ref _disposed) != 0 || _queue.IsAddingCompleted)
+            {
                 return false;
+            }
 
             try
             {
@@ -88,7 +105,11 @@ namespace CIS_WebInspector.Services
         public int DiscardPending()
         {
             int discarded = 0;
-            while (_queue.TryTake(out _)) discarded++;
+            while (_queue.TryTake(out _))
+            {
+                discarded++;
+            }
+
             return discarded;
         }
 
@@ -98,13 +119,19 @@ namespace CIS_WebInspector.Services
         public bool Stop(bool drain, int waitMilliseconds)
         {
             if (!_queue.IsAddingCompleted)
+            {
                 _queue.CompleteAdding();
+            }
 
             if (!drain)
+            {
                 DiscardPending();
+            }
 
             if (Thread.CurrentThread.ManagedThreadId == Volatile.Read(ref _workerThreadId))
+            {
                 return false;
+            }
 
             try
             {
@@ -145,10 +172,16 @@ namespace CIS_WebInspector.Services
         /// <summary>停止接收并尝试结束消费者；不在消费者线程自身等待，避免自锁。</summary>
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
             Stop(false, 10000);
             if (_worker.IsCompleted)
+            {
                 _queue.Dispose();
+            }
         }
     }
 }

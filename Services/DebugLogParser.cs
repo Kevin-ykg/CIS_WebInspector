@@ -32,9 +32,9 @@ namespace CIS_WebInspector.Services
 
             string keyword1 = qrCodeText;
             string keyword2 = "formattingFilename";
-            
+
             string matchedLine = null;
-            
+
             // 当前协议按日志顺序采用第一条匹配记录；二维码应能唯一标识一次排版任务。
             using (var reader = new StreamReader(logFilePath))
             {
@@ -85,37 +85,51 @@ namespace CIS_WebInspector.Services
                             }
 
                             // relative* 字段保持上游定义的毫米坐标，不在解析阶段混入 DPI/像素语义。
-                            if (cuttingInput.TryGetProperty("sourceFileLocation", out var sourceFileLocation) && 
+                            if (cuttingInput.TryGetProperty("sourceFileLocation", out var sourceFileLocation) &&
                                 sourceFileLocation.ValueKind == JsonValueKind.Array)
                             {
                                 foreach (var locElem in sourceFileLocation.EnumerateArray())
                                 {
                                     var part = new PartLocation();
                                     if (locElem.TryGetProperty("hotInkTaskID", out var idElem))
+                                    {
                                         part.HotInkTaskID = idElem.GetString();
-                                    
+                                    }
+
                                     if (locElem.TryGetProperty("relativeCenterX", out var cxElem))
+                                    {
                                         part.RelativeCenterX = cxElem.GetDouble();
-                                        
+                                    }
+
                                     if (locElem.TryGetProperty("relativeCenterY", out var cyElem))
+                                    {
                                         part.RelativeCenterY = cyElem.GetDouble();
-                                        
+                                    }
+
                                     if (locElem.TryGetProperty("relativeTopLeftX", out var tlxElem))
+                                    {
                                         part.RelativeTopLeftX = tlxElem.GetDouble();
-                                        
+                                    }
+
                                     if (locElem.TryGetProperty("relativeTopLeftY", out var tlyElem))
+                                    {
                                         part.RelativeTopLeftY = tlyElem.GetDouble();
-                                        
+                                    }
+
                                     if (locElem.TryGetProperty("relativeBottomRightX", out var brxElem))
+                                    {
                                         part.RelativeBottomRightX = brxElem.GetDouble();
-                                        
+                                    }
+
                                     if (locElem.TryGetProperty("relativeBottomRightY", out var bryElem))
+                                    {
                                         part.RelativeBottomRightY = bryElem.GetDouble();
-                                        
+                                    }
+
                                     layoutInfo.Parts.Add(part);
                                 }
                             }
-                            
+
                             return layoutInfo;
                         }
                     }
@@ -131,7 +145,11 @@ namespace CIS_WebInspector.Services
 
         private static string GetBaseFilename(string fullPath)
         {
-            if (string.IsNullOrEmpty(fullPath)) return string.Empty;
+            if (string.IsNullOrEmpty(fullPath))
+            {
+                return string.Empty;
+            }
+
             int lastSlash = fullPath.LastIndexOfAny(new char[] { '\\', '/' });
             if (lastSlash >= 0 && lastSlash < fullPath.Length - 1)
             {

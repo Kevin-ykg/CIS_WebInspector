@@ -59,7 +59,7 @@ namespace CIS_WebInspector.Services
         // 坐标单位始终是 DownscaleFactor 处理后的行；写日志/映射原图时再统一换算，避免混用尺度。
         private long _globalProcessedRows = 0;
         private long _lastQrGlobalY = -999999;
-        
+
         // ---- 异常监控 ----
         private int _framesSinceLastQr = 0;
 
@@ -101,7 +101,9 @@ namespace CIS_WebInspector.Services
             AppConfig configSnapshot)
         {
             if (configSnapshot == null)
+            {
                 throw new ArgumentNullException(nameof(configSnapshot));
+            }
 
             _width = width;
             _height = height;
@@ -141,13 +143,20 @@ namespace CIS_WebInspector.Services
         public void ProcessOwnedFrame(byte[] dataArray, int width, int height, int stride, int bpp)
         {
             if (dataArray == null)
+            {
                 throw new ArgumentNullException(nameof(dataArray));
+            }
+
             if (width <= 0 || height <= 0 || stride <= 0)
+            {
                 throw new ArgumentException("帧尺寸或步长无效。", nameof(dataArray));
+            }
 
             int requiredBytes = checked(stride * height);
             if (dataArray.Length < requiredBytes)
+            {
                 throw new ArgumentException("托管帧缓冲区长度不足。", nameof(dataArray));
+            }
 
             ProcessFrameCore(dataArray, width, height, stride, bpp);
         }
@@ -233,7 +242,7 @@ namespace CIS_WebInspector.Services
                     if (globalY - _lastQrGlobalY > 1000) // 防重复检测
                     {
                         int cutRow = fResult.CenterY + QrOffsetRows;
-                        
+
                         // 如果切割点超出了当前帧的高度，说明段的结尾在下一帧。
                         // 我们在这里拒绝采纳，它将在下一帧的重叠区域被 Detection 2 捕获并切割。
                         if (cutRow <= height)
@@ -265,7 +274,9 @@ namespace CIS_WebInspector.Services
                 int overlapH = _prevTailRows + currTopRows;
                 int overlapBytes = checked(_stride * overlapH);
                 if (_overlapBuffer == null || _overlapBuffer.Length != overlapBytes)
+                {
                     _overlapBuffer = new byte[overlapBytes];
+                }
 
                 Buffer.BlockCopy(_prevTail, 0, _overlapBuffer, 0, _stride * _prevTailRows);
                 Buffer.BlockCopy(frameData, 0, _overlapBuffer, _stride * _prevTailRows, _stride * currTopRows);
@@ -343,7 +354,9 @@ namespace CIS_WebInspector.Services
                     // 否则恢复采集后仍会沿用旧首码继续累积，最终可能生成高度异常的大图并耗尽内存。
                     // 这里立即丢弃当前未闭合段；下一次有效二维码将按 Scanning 状态重新作为首码。
                     if (abandonedCollectingSegment)
+                    {
                         AbandonCurrentSegmentAfterQrTimeout();
+                    }
 
                     string msg = abandonedCollectingSegment
                         ? $"连续 {missingFrameCount} 张图像未识别到二维码！当前未闭合拼接段已放弃，下一次识别到的二维码将作为新的起始二维码。"
@@ -380,7 +393,10 @@ namespace CIS_WebInspector.Services
                         else
                         {
                             int rows = height - cutRowInCurr;
-                            if (rows > 0) AddChunk(frameData, cutRowInCurr, rows);
+                            if (rows > 0)
+                            {
+                                AddChunk(frameData, cutRowInCurr, rows);
+                            }
                         }
                         _state = State.Collecting;
                     }
@@ -401,7 +417,10 @@ namespace CIS_WebInspector.Services
                         }
                         else
                         {
-                            if (cutRowInCurr > 0) AddChunk(frameData, 0, cutRowInCurr);
+                            if (cutRowInCurr > 0)
+                            {
+                                AddChunk(frameData, 0, cutRowInCurr);
+                            }
                         }
 
                         // 当前结束二维码同时作为下一段的起始二维码，连续材料段之间不会产生空洞。
@@ -425,7 +444,10 @@ namespace CIS_WebInspector.Services
                         else
                         {
                             int rows = height - cutRowInCurr;
-                            if (rows > 0) AddChunk(frameData, cutRowInCurr, rows);
+                            if (rows > 0)
+                            {
+                                AddChunk(frameData, cutRowInCurr, rows);
+                            }
                         }
                     }
                     break;
@@ -433,7 +455,7 @@ namespace CIS_WebInspector.Services
 
             // ======== 保存当前帧尾部用于下一帧的重叠检测 ========
             SaveTail(frameData, height);
-            
+
             _globalProcessedRows += height;
         }
 
@@ -487,7 +509,10 @@ namespace CIS_WebInspector.Services
         /// <summary>回溯裁剪：跨帧重叠检测发现切点位于上一帧时，去掉最后一个 chunk 末尾的多余行。</summary>
         private void TrimLastChunkTail(int discardRows)
         {
-            if (_segChunks.Count == 0 || discardRows <= 0) return;
+            if (_segChunks.Count == 0 || discardRows <= 0)
+            {
+                return;
+            }
 
             var last = _segChunks[_segChunks.Count - 1];
             int newRows = last.Rows - discardRows;
@@ -512,7 +537,9 @@ namespace CIS_WebInspector.Services
             _prevTailRows = Math.Min(OverlapRows, frameHeight);
             int tailBytes = _stride * _prevTailRows;
             if (_prevTail == null || _prevTail.Length != tailBytes)
+            {
                 _prevTail = new byte[tailBytes];
+            }
 
             int srcOffset = (frameHeight - _prevTailRows) * _stride;
             Buffer.BlockCopy(frameData, srcOffset, _prevTail, 0, tailBytes);
@@ -524,7 +551,10 @@ namespace CIS_WebInspector.Services
         /// </summary>
         private void EmitSegment(QrDetectionResult endQrResult, long endQrGlobalY)
         {
-            if (_segTotalRows <= 0 || _segChunks.Count == 0) return;
+            if (_segTotalRows <= 0 || _segChunks.Count == 0)
+            {
+                return;
+            }
 
             if (endQrResult == null || endQrGlobalY == long.MinValue || _segStartGlobalY == long.MinValue)
             {

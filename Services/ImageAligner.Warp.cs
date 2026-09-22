@@ -18,23 +18,35 @@ namespace CIS_WebInspector.Services
         {
             if (cisMat == null || cisMat.Empty() ||
                 inspection == null || !inspection.IsEnabled)
+            {
                 return null;
+            }
 
             double scale = Math.Min(1.0, Math.Max(1, maximumWidth) / (double)cisMat.Width);
             using (var resized = new Mat())
             using (var canvas = new Mat())
             {
                 if (scale < 1.0)
+                {
                     Cv2.Resize(cisMat, resized, new Size(), scale, scale, InterpolationFlags.Area);
+                }
                 else
+                {
                     cisMat.CopyTo(resized);
+                }
 
                 if (resized.Channels() == 1)
+                {
                     Cv2.CvtColor(resized, canvas, ColorConversionCodes.GRAY2BGR);
+                }
                 else if (resized.Channels() == 4)
+                {
                     Cv2.CvtColor(resized, canvas, ColorConversionCodes.BGRA2BGR);
+                }
                 else
+                {
                     resized.CopyTo(canvas);
+                }
 
                 Scalar statusColor = inspection.RequiresWarning
                     ? new Scalar(0, 0, 255)
@@ -46,11 +58,19 @@ namespace CIS_WebInspector.Services
                     Math.Max(1, (int)Math.Round(sourceRegion.Width * scale)),
                     Math.Max(1, (int)Math.Round(sourceRegion.Height * scale)));
                 if (scaledRegion.X + scaledRegion.Width > canvas.Width)
+                {
                     scaledRegion.Width = canvas.Width - scaledRegion.X;
+                }
+
                 if (scaledRegion.Y + scaledRegion.Height > canvas.Height)
+                {
                     scaledRegion.Height = canvas.Height - scaledRegion.Y;
+                }
+
                 if (scaledRegion.Width > 0 && scaledRegion.Height > 0)
+                {
                     Cv2.Rectangle(canvas, scaledRegion, new Scalar(255, 255, 0), 2);
+                }
 
                 foreach (WhiteInkMarkSample sample in inspection.Samples)
                 {
@@ -108,12 +128,27 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public static Mat WarpToTiffSpace(Mat cisMat, AlignmentResult alignment, Size tiffSize)
         {
-            if (cisMat == null || cisMat.Empty()) throw new ArgumentException("CIS 图像为空。", nameof(cisMat));
-            if (alignment == null) throw new ArgumentNullException(nameof(alignment));
+            if (cisMat == null || cisMat.Empty())
+            {
+                throw new ArgumentException("CIS 图像为空。", nameof(cisMat));
+            }
+
+            if (alignment == null)
+            {
+                throw new ArgumentNullException(nameof(alignment));
+            }
+
             var handle = alignment.NativeResource as AlignmentNativeInterop.ResultHandle;
             if (handle == null || handle.IsClosed || handle.IsInvalid)
+            {
                 throw new ObjectDisposedException(nameof(alignment), "对准结果已释放或缺少原生计算结果。");
-            if (tiffSize.Width <= 0 || tiffSize.Height <= 0) throw new ArgumentOutOfRangeException(nameof(tiffSize));
+            }
+
+            if (tiffSize.Width <= 0 || tiffSize.Height <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(tiffSize));
+            }
+
             var output = new Mat(tiffSize, cisMat.Type());
             try
             {

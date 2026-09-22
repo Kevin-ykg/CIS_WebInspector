@@ -118,12 +118,17 @@ namespace CIS_WebInspector.Models
         /// <param name="filePath">目标文件完整路径（如 D:\output\segment_001.bmp）</param>
         public void SaveToFile(string filePath)
         {
-            if (Data == null || Data.Length == 0) return;
+            if (Data == null || Data.Length == 0)
+            {
+                return;
+            }
 
             int requiredBytes = checked(Stride * Height);
             if (Width <= 0 || Height <= 0 || Stride <= 0 ||
                 (BitsPerPixel != 8 && BitsPerPixel != 24) || Data.Length < requiredBytes)
+            {
                 throw new InvalidOperationException("拼接图像缓冲区尺寸无效，无法保存。");
+            }
 
             GCHandle handle = GCHandle.Alloc(Data, GCHandleType.Pinned);
             try

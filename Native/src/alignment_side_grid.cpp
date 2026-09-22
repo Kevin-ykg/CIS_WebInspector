@@ -5,15 +5,23 @@ namespace alignment
 static int previous_valid(const std::vector<bool> &valid, int row)
 {
     for (; row >= 0; --row)
+    {
         if (valid[row])
+        {
             return row;
+        }
+    }
     return -1;
 }
 static int next_valid(const std::vector<bool> &valid, int row)
 {
     for (; row < static_cast<int>(valid.size()); ++row)
+    {
         if (valid[row])
+        {
             return row;
+        }
+    }
     return -1;
 }
 static double distance_mm(cv::Point2d a, cv::Point2d b, double ppmX, double ppmY)
@@ -29,10 +37,14 @@ static std::vector<std::pair<int, double>> prediction_errors(const Result &grid,
     for (int row = 1; row < static_cast<int>(valid.size()) - 1; ++row)
     {
         if (!valid[row])
+        {
             continue;
+        }
         int prev = previous_valid(valid, row - 1), next = next_valid(valid, row + 1);
         if (prev < 0 || next < 0)
+        {
             continue;
+        }
         double t = (grid.GridY[row] - grid.GridY[prev]) / std::max(grid.GridY[next] - grid.GridY[prev], 1e-6);
         errors.emplace_back(row,
                             distance_mm(grid.Residuals[row][col],
@@ -44,38 +56,54 @@ static int remove_outliers(Result &grid, int col, std::vector<bool> &valid, doub
 {
     auto errors = prediction_errors(grid, col, valid, ppmX, ppmY);
     if (errors.size() < 5)
+    {
         return 0;
+    }
     std::vector<double> values;
     for (auto e : errors)
+    {
         values.push_back(e.second);
+    }
     double center = median(values);
     for (auto &v : values)
+    {
         v = std::abs(v - center);
+    }
     double threshold = std::max(2.0, center + 3 * std::max(median(values), .25));
     int count = 0;
     // 先计算完整误差集合，再统一剔除；不能边剔除边改邻居，会改变原来的 MAD 判定。
     for (auto e : errors)
+    {
         if (e.second > threshold)
         {
             valid[e.first] = false;
             grid.Residuals[e.first][col] = {0, 0};
             ++count;
         }
+    }
     return count;
 }
 static int internal_count(const std::vector<bool> &valid)
 {
     int count = 0;
     for (size_t i = 1; i + 1 < valid.size(); ++i)
+    {
         if (valid[i])
+        {
             ++count;
+        }
+    }
     return count;
 }
 static bool consecutive_missing(const std::vector<bool> &valid)
 {
     for (size_t i = 1; i + 2 < valid.size(); ++i)
+    {
         if (!valid[i] && !valid[i + 1])
+        {
             return true;
+        }
+    }
     return false;
 }
 static void fill_missing(Result &grid, int col, const std::vector<bool> &valid)
@@ -83,10 +111,14 @@ static void fill_missing(Result &grid, int col, const std::vector<bool> &valid)
     for (int row = 1; row < static_cast<int>(valid.size()) - 1; ++row)
     {
         if (valid[row])
+        {
             continue;
+        }
         int prev = previous_valid(valid, row - 1), next = next_valid(valid, row + 1);
         if (prev < 0 || next < 0)
+        {
             continue;
+        }
         double t = (grid.GridY[row] - grid.GridY[prev]) / std::max(grid.GridY[next] - grid.GridY[prev], 1e-6);
         auto residual = lerp(grid.Residuals[prev][col], grid.Residuals[next][col], t);
         grid.Residuals[row][col] = residual;
@@ -119,6 +151,7 @@ static bool valid_topology(const Result &grid, std::string &error)
     int rows = static_cast<int>(grid.GridY.size());
     std::vector<std::array<cv::Point2d, 3>> source(rows);
     for (int row = 0; row < rows; ++row)
+    {
         for (int col = 0; col < 3; ++col)
         {
             source[row][col] = project(grid.Inverse, {grid.GridX[col], grid.GridY[row]}) + grid.Residuals[row][col];
@@ -128,22 +161,30 @@ static bool valid_topology(const Result &grid, std::string &error)
                 return false;
             }
         }
+    }
     for (int row = 0; row < rows; ++row)
+    {
         if (!(source[row][0].x < source[row][1].x && source[row][1].x < source[row][2].x))
         {
             error = cv::format("第 %d 层控制点左右顺序发生翻转。", row);
             return false;
         }
+    }
     for (int col = 0; col < 3; ++col)
+    {
         for (int row = 0; row + 1 < rows; ++row)
+        {
             if (source[row + 1][col].y <= source[row][col].y)
             {
                 error = cv::format("第 %d 列第 %d/%d 层控制点 Y 顺序发生翻转。", col, row, row + 1);
                 return false;
             }
+        }
+    }
     std::vector<std::array<double, 2>> scales(rows - 1);
     // 与原实现相同的网格单元有向面积/相邻尺度门控，不在迁移时更换为另一套 Jacobian 阈值。
     for (int row = 0; row + 1 < rows; ++row)
+    {
         for (int col = 0; col < 2; ++col)
         {
             double x = grid.GridX[col], xx = grid.GridX[col + 1], y = grid.GridY[row], yy = grid.GridY[row + 1];
@@ -158,7 +199,9 @@ static bool valid_topology(const Result &grid, std::string &error)
             }
             scales[row][col] = ratio;
         }
+    }
     for (int row = 0; row + 1 < rows; ++row)
+    {
         for (int col = 0; col < 2; ++col)
         {
             if (row > 0 && abrupt(scales[row][col], scales[row - 1][col]))
@@ -172,6 +215,7 @@ static bool valid_topology(const Result &grid, std::string &error)
                 return false;
             }
         }
+    }
     return true;
 }
 
@@ -225,7 +269,9 @@ bool build_side_grid(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anch
     grid.Controls.resize(rows * 3);
     double step = (bottom - top) / (pairs + 1.0);
     for (int row = 0; row < rows; ++row)
+    {
         grid.GridY[row] = (top + row * step) * ppm;
+    }
     if (grid.GridX[0] < 0 || grid.GridX[2] >= tiff.cols || grid.GridY[0] < 0 || grid.GridY.back() >= tiff.rows)
     {
         error = "侧边控制网格预测位置超出 TIFF 图像范围。";
@@ -236,8 +282,11 @@ bool build_side_grid(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anch
                             right - project(grid.Inverse, {grid.GridX[2], grid.GridY.back()}).x};
     std::array<std::vector<bool>, 2> valid = {std::vector<bool>(rows), std::vector<bool>(rows)};
     for (auto &v : valid)
+    {
         v[0] = v[rows - 1] = true;
+    }
     for (int row = 0; row < rows; ++row)
+    {
         for (int col = 0; col < 3; ++col)
         {
             auto &record = grid.Controls[row * 3 + col];
@@ -250,6 +299,7 @@ bool build_side_grid(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anch
             record.coarse_x = record.detected_cis_x = coarse.x;
             record.coarse_y = record.detected_cis_y = coarse.y;
         }
+    }
     std::string details;
     for (int row = 1; row <= pairs; ++row)
     {
@@ -351,8 +401,12 @@ bool build_side_grid(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anch
     }
     std::vector<double> errors;
     for (int side = 0; side < 2; ++side)
+    {
         for (auto e : prediction_errors(grid, side * 2, valid[side], ppmX, ppmY))
+        {
             errors.push_back(e.second);
+        }
+    }
     output.LooMedian = median(errors);
     output.LooMaximum = errors.empty() ? 0 : *std::max_element(errors.begin(), errors.end());
     // 留一指标仅记录，不新增门槛。本轮保持中心列与上下边界为零，不推测中心非线性形变。
@@ -360,6 +414,7 @@ bool build_side_grid(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anch
                        pairs, counts[1], pairs, removed[0], removed[1], output.LooMedian, output.LooMaximum) +
             details + " | Final: ";
     for (int row = 1; row <= pairs; ++row)
+    {
         for (int col : {0, 2})
         {
             auto &r = grid.Controls[row * 3 + col];
@@ -370,6 +425,7 @@ bool build_side_grid(const cv::Mat &cis, const cv::Mat &tiff, const Anchor &anch
                                 point_text({r.detected_cis_x, r.detected_cis_y}).c_str(),
                                 point_text({r.residual_x, r.residual_y}).c_str());
         }
+    }
     output.GridX = grid.GridX;
     output.GridY = std::move(grid.GridY);
     output.Residuals = std::move(grid.Residuals);

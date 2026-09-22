@@ -49,9 +49,9 @@ namespace CIS_WebInspector.ViewModels
                 bool success = _cameraEngine.SetProperty(model.Name, model.Value);
                 if (!success)
                 {
-                    MessageBox.Show($"修改属性 {model.Name} 失败！可能是该参数在当前模式下为只读，或者超出了允许的范围。", 
+                    MessageBox.Show($"修改属性 {model.Name} 失败！可能是该参数在当前模式下为只读，或者超出了允许的范围。",
                         "设置失败", MessageBoxButton.OK, MessageBoxImage.Error);
-                    
+
                     // 恢复旧值，这里简单处理，重新读取底层值覆盖
                     var props = _cameraEngine.GetAllProperties();
                     if (props.TryGetValue(model.Name, out uint oldVal))

@@ -1,7 +1,7 @@
 #include "qr_detector.h"
 #include <limits>
 
-namespace cis
+namespace qr
 {
 namespace
 {
@@ -19,13 +19,21 @@ double iou(cv::Rect a, cv::Rect b)
 void add_scale(std::vector<Scale> &list, double target, double side, double relative)
 {
     if (list.size() >= 8 || side <= 0)
+    {
         return;
+    }
     double x = target / side, y = x * clamp(relative, .55, 1.80);
     if (x < .35 || x > 1.75 || y < .35 || y > 1.75)
+    {
         return;
+    }
     for (const auto &item : list)
+    {
         if (std::abs(item.x - x) < .01 && std::abs(item.y - y) < .01)
+        {
             return;
+        }
+    }
     list.push_back({target, x, y});
 }
 cv::Point2f center(const Finder &f, int x, int y)
@@ -52,7 +60,9 @@ std::vector<Finder> finder_evidence(const cv::Mat &source)
         double aspect = box.width / static_cast<double>(std::max(1, box.height));
         if (std::min(box.width, box.height) < min_side || std::max(box.width, box.height) > max_side || aspect < .65 ||
             aspect > 1.50)
+        {
             continue;
+        }
         // 至少向下存在两层子轮廓，才保留为定位框的弱证据。
         int depth = 0, child = hierarchy[i][2];
         while (child >= 0 && child < static_cast<int>(hierarchy.size()) && depth < 4)
@@ -61,8 +71,10 @@ std::vector<Finder> finder_evidence(const cv::Mat &source)
             child = hierarchy[child][2];
         }
         if (depth >= 2)
+        {
             raw.push_back({box, box.x + box.width * .5, box.y + box.height * .5,
                            std::sqrt(static_cast<double>(box.width) * box.height)});
+        }
     }
     // 外层优先；一个定位框的多层轮廓不能当作多个独立证据。
     std::sort(raw.begin(), raw.end(),
@@ -80,7 +92,9 @@ std::vector<Finder> finder_evidence(const cv::Mat &source)
             }
         }
         if (!duplicate)
+        {
             distinct.push_back(f);
+        }
     }
     return distinct;
 }
@@ -97,18 +111,23 @@ bool adaptive_scales(const std::vector<Finder> &evidence, std::vector<Scale> &ca
     int first = -1, second = -1;
     double best = std::numeric_limits<double>::max();
     for (size_t i = 0; i < evidence.size(); ++i)
+    {
         for (size_t j = i + 1; j < evidence.size(); ++j)
         {
             const auto &a = evidence[i];
             const auto &b = evidence[j];
             double small = std::min(a.side, b.side), large = std::max(a.side, b.side);
             if (small <= 0 || large / small > 1.65)
+            {
                 continue;
+            }
             double x = b.x - a.x, y = b.y - a.y, length = std::sqrt(x * x + y * y), average = (a.side + b.side) * .5;
             double deviation = std::min(std::abs(x), std::abs(y)) / std::max(1.0, std::max(std::abs(x), std::abs(y)));
             double separation = length / std::max(1.0, average);
             if (separation < 1.60 || separation > 8.50 || deviation > .45)
+            {
                 continue;
+            }
             double score = std::abs(std::log(large / small)) + deviation * .50 + average / std::max(1.0, length) * .05;
             if (score < best)
             {
@@ -117,8 +136,11 @@ bool adaptive_scales(const std::vector<Finder> &evidence, std::vector<Scale> &ca
                 second = static_cast<int>(j);
             }
         }
+    }
     if (first < 0)
+    {
         return false;
+    }
     std::vector<Finder> coherent{evidence[first], evidence[second]};
     double pair_side = (coherent[0].side + coherent[1].side) * .5;
     int third = -1;
@@ -126,20 +148,28 @@ bool adaptive_scales(const std::vector<Finder> &evidence, std::vector<Scale> &ca
     for (int i = 0; i < static_cast<int>(evidence.size()); ++i)
     {
         if (i == first || i == second)
+        {
             continue;
+        }
         double ratio = evidence[i].side / pair_side;
         if (ratio < .67 || ratio > 1.50)
+        {
             continue;
+        }
         for (int c = 0; c < 2; ++c)
         {
             double px = coherent[1 - c].x - coherent[c].x, py = coherent[1 - c].y - coherent[c].y;
             double tx = evidence[i].x - coherent[c].x, ty = evidence[i].y - coherent[c].y;
             double p = std::sqrt(px * px + py * py), t = std::sqrt(tx * tx + ty * ty);
             if (p <= 0 || t <= pair_side * 1.60)
+            {
                 continue;
+            }
             double cosine = std::abs((px * tx + py * ty) / (p * t)), legs = std::max(p, t) / std::min(p, t);
             if (cosine > .35 || legs > 1.50)
+            {
                 continue;
+            }
             double score = cosine + std::abs(std::log(legs)) + std::abs(std::log(ratio));
             if (score < best)
             {
@@ -150,7 +180,9 @@ bool adaptive_scales(const std::vector<Finder> &evidence, std::vector<Scale> &ca
     }
     // 第三个定位框必须同时满足尺寸、直角和两条边长度约束，不能只因大小相近就加入。
     if (third >= 0)
+    {
         coherent.push_back(evidence[third]);
+    }
     std::vector<double> widths, heights;
     double min_x = DBL_MAX, min_y = DBL_MAX, max_x = -DBL_MAX, max_y = -DBL_MAX;
     for (const auto &f : coherent)
@@ -169,15 +201,21 @@ bool adaptive_scales(const std::vector<Finder> &evidence, std::vector<Scale> &ca
     };
     double width = median(widths), height = median(heights);
     if (width <= 0 || height <= 0)
+    {
         return false;
+    }
     // 定位框的宽高比给出线扫方向的相对形变；三点外包范围估算完整二维码边长。
     relative = clamp(width / height, .55, 1.80);
     side = std::max(max_x - min_x + width, (max_y - min_y + height) * relative);
     if (side < std::sqrt(width * height) * 2.20)
+    {
         return false;
+    }
     coherent_count = static_cast<int>(coherent.size());
     for (double target : {544., 512., 576.})
+    {
         add_scale(candidates, target, side, relative);
+    }
     if (coherent.size() >= 3)
     {
         add_scale(candidates, 544, side, 1);
@@ -195,21 +233,29 @@ std::vector<Scale> local_scales(const Region &r)
     // 保留模块结构。靠近图像边界、需要补静区的候选允许额外一组尺度。
     std::vector<Scale> result;
     for (double relative : {r.relative_y * (r.padded() ? 1.30 : 1.15), r.relative_y})
+    {
         for (double target : {300., 320., 280.})
         {
             add_scale(result, target, r.side, relative);
             if (result.size() >= 7)
+            {
                 return result;
+            }
         }
+    }
     if (r.padded())
+    {
         add_scale(result, 576, r.side, r.relative_y * .70);
+    }
     return result;
 }
 
 bool candidate_region(const cv::Mat &source, Region &region, bool low_contrast)
 {
     if (source.empty() || source.cols < 64 || source.rows < 64)
+    {
         return false;
+    }
     cv::Mat blurred, binary, input = source;
     if (low_contrast)
     {
@@ -224,19 +270,25 @@ bool candidate_region(const cv::Mat &source, Region &region, bool low_contrast)
     {
         cv::QRCodeDetector locator;
         if (!locator.detect(input, points))
+        {
             return false;
+        }
     }
     catch (const cv::Exception &)
     {
         return false;
     }
     if (points.size() < 4)
+    {
         return false;
+    }
     double x0 = DBL_MAX, y0 = DBL_MAX, x1 = -DBL_MAX, y1 = -DBL_MAX;
     for (auto p : points)
     {
         if (!std::isfinite(p.x) || !std::isfinite(p.y))
+        {
             return false;
+        }
         x0 = std::min(x0, static_cast<double>(p.x));
         y0 = std::min(y0, static_cast<double>(p.y));
         x1 = std::max(x1, static_cast<double>(p.x));
@@ -244,7 +296,9 @@ bool candidate_region(const cv::Mat &source, Region &region, bool low_contrast)
     }
     double width = x1 - x0, height = y1 - y0;
     if (width < 32 || height < 32)
+    {
         return false;
+    }
     // 在定位四边形外预留约 20% 静区。若理论静区越过传感器边界，记录所需补白量；
     // 不扩大原始 ROI 访问范围，也不会生成二维码的数据模块。
     int quiet = std::max(8, round_even(std::max(width, height) * .20));
@@ -252,11 +306,15 @@ bool candidate_region(const cv::Mat &source, Region &region, bool low_contrast)
     int raw_right = static_cast<int>(std::ceil(x1)) + quiet, raw_bottom = static_cast<int>(std::ceil(y1)) + quiet;
     int raw_width = raw_right - raw_left, raw_height = raw_bottom - raw_top;
     if (raw_width < 64 || raw_height < 64 || raw_width > source.cols * 2 || raw_height > source.rows * 2)
+    {
         return false;
+    }
     int left = std::max(0, raw_left), top = std::max(0, raw_top), right = std::min(source.cols, raw_right),
         bottom = std::min(source.rows, raw_bottom);
     if (right - left < 64 || bottom - top < 64)
+    {
         return false;
+    }
     region = {{left, top, right - left, bottom - top},
               left - raw_left,
               top - raw_top,
@@ -307,14 +365,18 @@ std::vector<Perspective> perspective_candidates(const std::vector<Finder> &evide
     std::vector<Perspective> result;
     int count = std::min(static_cast<int>(evidence.size()), 12);
     for (int a = 0; a < count - 2; ++a)
+    {
         for (int b = a + 1; b < count - 1; ++b)
+        {
             for (int c = b + 1; c < count; ++c)
             {
                 std::array<Finder, 3> triple{evidence[a], evidence[b], evidence[c]};
                 double small = std::min({triple[0].side, triple[1].side, triple[2].side});
                 double large = std::max({triple[0].side, triple[1].side, triple[2].side});
                 if (small <= 0 || large / small > 1.50)
+                {
                     continue;
+                }
                 int corner = -1;
                 double best = DBL_MAX, leg1 = 0, leg2 = 0;
                 for (int i = 0; i < 3; ++i)
@@ -325,17 +387,23 @@ std::vector<Perspective> perspective_candidates(const std::vector<Finder> &evide
                     double l1 = std::sqrt(static_cast<double>(v1.x * v1.x + v1.y * v1.y)),
                            l2 = std::sqrt(static_cast<double>(v2.x * v2.x + v2.y * v2.y));
                     if (l1 <= 1 || l2 <= 1)
+                    {
                         continue;
+                    }
                     double cosine = std::abs((v1.x * v2.x + v1.y * v2.y) / (l1 * l2));
                     if (cosine >= best)
+                    {
                         continue;
+                    }
                     best = cosine;
                     corner = i;
                     leg1 = l1;
                     leg2 = l2;
                 }
                 if (corner < 0 || best > .25 || std::max(leg1, leg2) / std::min(leg1, leg2) > 1.35)
+                {
                     continue;
+                }
                 auto origin = center(triple[corner], ox, oy);
                 int first = (corner + 1) % 3, second = (corner + 2) % 3;
                 int h = std::abs(triple[first].x - triple[corner].x) >= std::abs(triple[second].x - triple[corner].x)
@@ -349,7 +417,9 @@ std::vector<Perspective> perspective_candidates(const std::vector<Finder> &evide
                 double estimate = (leg1 + leg2) * .5 / (sizes[1] / 7.0) + 7.0;
                 int modules = 21 + 4 * std::max(0, round_even((estimate - 21.0) / 4.0));
                 if (modules > 177 || std::abs(modules - estimate) > 2.25)
+                {
                     continue;
+                }
                 // 这里除以 int，保留原 Point2f 单精度运算；不得改为提前使用 double。
                 auto horizontal = center(triple[h], ox, oy), vertical = center(triple[v], ox, oy);
                 float span = static_cast<float>(modules - 7);
@@ -362,42 +432,45 @@ std::vector<Perspective> perspective_candidates(const std::vector<Finder> &evide
                 double outside = std::max(width, height) * .15;
                 bool invalid = false;
                 for (auto p : corners)
+                {
                     if (p.x < -outside || p.y < -outside || p.x > width + outside || p.y > height + outside)
+                    {
                         invalid = true;
+                    }
+                }
                 if (invalid)
+                {
                     continue;
+                }
                 result.push_back({corners, modules, best,
                                   best + std::abs(std::log(leg1 / leg2)) + std::abs(std::log(large / small)) +
                                       std::abs(modules - estimate) * .05});
             }
+        }
+    }
     std::sort(result.begin(), result.end(),
               [](const Perspective &a, const Perspective &b) { return a.score < b.score; });
     if (result.size() > 3)
+    {
         result.resize(3);
+    }
     return result;
 }
 
 Result from_hit(const Hit &hit, double x, double y, double sx, double sy, bool positive)
 {
-    // 撤销中间工作图缩放，统一返回输入帧坐标；positive 用于边缘补白候选的零边界保护。
-    int ix = round_even(x), iy = round_even(y);
-    return {true,
-            positive ? std::max(0, ix) : ix,
-            positive ? std::max(0, iy) : iy,
-            hit.width / sx,
-            hit.height / sy,
-            hit.text,
-            {}};
+    // 撤销工作图缩放，保留输入图浮点坐标；positive 交由业务出口在加回父图偏移后夹零。
+    return {true, x, y, hit.width / sx, hit.height / sy, hit.text, {}, positive};
 }
-Result from_region(const Hit &hit, int offset, const Region &r, double sx, double sy)
+Result from_region(const Hit &hit, const Region &r, double sx, double sy)
 {
-    // 恢复顺序：工作图缩放 -> 临时静区补白 -> 局部 ROI -> 帧级横向 ROI。
-    return from_hit(hit, offset + r.roi.x + hit.x / sx - r.left, r.roi.y + hit.y / sy - r.top, sx, sy, true);
+    // 恢复到本次输入图；外部父图偏移由调用者加回，取整与夹零也延迟到父图空间。
+    return from_hit(hit, r.roi.x + hit.x / sx - r.left, r.roi.y + hit.y / sy - r.top, sx, sy, true);
 }
-Result from_corners(const Hit &hit, const Quad &c, int offset, bool float_sum)
+Result from_corners(const Hit &hit, const Quad &c, bool float_sum)
 {
     // 透视展开后的检测框仅用于证明解码成功；位置和物理尺寸应由原图四角计算，
-    // 否则会把标准化工作图的大小错误地带回拼接与 Mark 比例换算。
+    // 否则会把标准化工作图的大小误当成输入图上真实的二维码尺寸。
     double x = 0, y = 0;
     if (float_sum)
     {
@@ -415,11 +488,13 @@ Result from_corners(const Hit &hit, const Quad &c, int offset, bool float_sum)
         y /= 4;
     }
     return {true,
-            std::max(0, round_even(x + offset)),
-            std::max(0, round_even(y)),
+            x,
+            y,
             (distance(c[0], c[1]) + distance(c[3], c[2])) * .5,
             (distance(c[0], c[3]) + distance(c[1], c[2])) * .5,
             hit.text,
-            {}};
+            {},
+            true,
+            true};
 }
-} // namespace cis
+} // namespace qr

@@ -38,7 +38,11 @@ namespace CIS_WebInspector.Services
 
         public BoundedImageSaveQueue(int capacity, Action<string> log)
         {
-            if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+            if (capacity <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(capacity));
+            }
+
             _queue = new BlockingCollection<SaveRequest>(capacity);
             _log = log;
             _worker = Task.Factory.StartNew(
@@ -63,14 +67,19 @@ namespace CIS_WebInspector.Services
         {
             if (data == null || string.IsNullOrWhiteSpace(filePath) ||
                 Volatile.Read(ref _disposed) != 0 || _queue.IsAddingCompleted)
+            {
                 return false;
+            }
 
             int requiredBytes;
-            try { requiredBytes = checked(stride * height); }
+            try
+            { requiredBytes = checked(stride * height); }
             catch (OverflowException) { return false; }
 
             if (width <= 0 || height <= 0 || stride <= 0 || data.Length < requiredBytes)
+            {
                 return false;
+            }
 
             var request = new SaveRequest
             {
@@ -106,7 +115,9 @@ namespace CIS_WebInspector.Services
                 {
                     string directory = Path.GetDirectoryName(request.FilePath);
                     if (!string.IsNullOrEmpty(directory))
+                    {
                         Directory.CreateDirectory(directory);
+                    }
 
                     MatType matType = request.BitsPerPixel == 8 ? MatType.CV_8UC1 : MatType.CV_8UC3;
                     GCHandle handle = GCHandle.Alloc(request.Data, GCHandleType.Pinned);
@@ -129,7 +140,9 @@ namespace CIS_WebInspector.Services
                     }
 
                     if (!string.IsNullOrWhiteSpace(request.SuccessMessage))
+                    {
                         _log?.Invoke(request.SuccessMessage);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -141,7 +154,11 @@ namespace CIS_WebInspector.Services
         /// <summary>停止接收新请求并最多等待 10 秒写完已入队任务；完成后释放队列资源。</summary>
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
             _queue.CompleteAdding();
             try
             {
@@ -154,7 +171,9 @@ namespace CIS_WebInspector.Services
             }
 
             if (_worker.IsCompleted)
+            {
                 _queue.Dispose();
+            }
         }
     }
 }

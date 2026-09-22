@@ -37,12 +37,21 @@ namespace CIS_WebInspector.Services
         /// <summary>按会话复制参数；同一把锁串行化配置、检测和释放，避免悬空原生句柄。</summary>
         public void Configure(AppConfig snapshot)
         {
-            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            if (snapshot == null)
+            {
+                throw new ArgumentNullException(nameof(snapshot));
+            }
+
             lock (_sync)
             {
-                if (_disposed) throw new ObjectDisposedException(nameof(QrCodeDetector));
+                if (_disposed)
+                {
+                    throw new ObjectDisposedException(nameof(QrCodeDetector));
+                }
+
                 int factor = Math.Max(1, snapshot.DownscaleFactor);
-                RoiX = snapshot.BaseRoiX / factor; RoiWidth = snapshot.BaseRoiWidth / factor;
+                RoiX = snapshot.BaseRoiX / factor;
+                RoiWidth = snapshot.BaseRoiWidth / factor;
                 _invert = snapshot.QrInvertPolarity;
                 _scales = snapshot.QrScaleYCandidates == null ? Array.Empty<float>() : (float[])snapshot.QrScaleYCandidates.Clone();
                 _needsConfiguration = true;
@@ -54,7 +63,8 @@ namespace CIS_WebInspector.Services
             lock (_sync)
             {
                 ResetDiagnostics();
-                if (_disposed) { LastError = "二维码检测器已经释放。"; return false; }
+                if (_disposed)
+                { LastError = "二维码检测器已经释放。"; return false; }
                 try
                 {
                     EnsureConfigured();
@@ -73,7 +83,8 @@ namespace CIS_WebInspector.Services
             lock (_sync)
             {
                 ResetDiagnostics();
-                if (_disposed) { LastError = "二维码检测器已经释放。"; return QrDetectionResult.NotFound; }
+                if (_disposed)
+                { LastError = "二维码检测器已经释放。"; return QrDetectionResult.NotFound; }
                 int channels = bitsPerPixel == 8 ? 1 : bitsPerPixel == 24 ? 3 : bitsPerPixel == 32 ? 4 : 0;
                 if (width <= 0 || height <= 0 || stride <= 0 || channels == 0 || stride < (long)width * channels)
                 { LastError = $"无效图像参数：{width}x{height}, stride={stride}, bpp={bitsPerPixel}。"; return QrDetectionResult.NotFound; }
@@ -91,13 +102,27 @@ namespace CIS_WebInspector.Services
                             width, height, (ulong)stride, channels, ref result,
                             _text, (uint)_text.Length, _strategy, (uint)_strategy.Length, _error, (uint)_error.Length);
                         LastDecodeAttemptCount = checked((int)result.Attempts);
-                        if (status == 1) return QrDetectionResult.NotFound;
+                        if (status == 1)
+                        {
+                            return QrDetectionResult.NotFound;
+                        }
+
                         Check(status);
-                        if (result.Found == 0) return QrDetectionResult.NotFound;
+                        if (result.Found == 0)
+                        {
+                            return QrDetectionResult.NotFound;
+                        }
                         // 使用 DLL 返回的字节数，而非扫描第一个 NUL；不截断合法载荷中的嵌入零字符。
                         LastDecodeStrategy = ReadUtf8Result(_strategy, result.StrategyBytes);
-                        return new QrDetectionResult { Found = true, DecodedText = ReadUtf8Result(_text, result.TextBytes),
-                            CenterX = result.X, CenterY = result.Y, PixelWidth = result.Width, PixelHeight = result.Height };
+                        return new QrDetectionResult
+                        {
+                            Found = true,
+                            DecodedText = ReadUtf8Result(_text, result.TextBytes),
+                            CenterX = result.X,
+                            CenterY = result.Y,
+                            PixelWidth = result.Width,
+                            PixelHeight = result.Height
+                        };
                     }
                     finally { pin.Free(); }
                 }
@@ -109,17 +134,36 @@ namespace CIS_WebInspector.Services
             if (_handle == null)
             {
                 if (Native.cis_qr_abi_version() != 2)
+                {
                     throw new InvalidOperationException("CISVisionCore.dll 接口版本不匹配，请部署本版本生成的 DLL。");
+                }
+
                 Check(Native.cis_qr_create(_modelDirectory, out IntPtr pointer, _error, (uint)_error.Length));
-                if (pointer == IntPtr.Zero) throw new InvalidOperationException("原生实例为空。");
-                _handle = new QrHandle(pointer); _needsConfiguration = true;
+                if (pointer == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException("原生实例为空。");
+                }
+
+                _handle = new QrHandle(pointer);
+                _needsConfiguration = true;
             }
-            if (!_needsConfiguration) return;
+            if (!_needsConfiguration)
+            {
+                return;
+            }
+
             var pin = GCHandle.Alloc(_scales, GCHandleType.Pinned);
             try
             {
-                var config = new NativeConfig { Size = 32, X = RoiX, Width = RoiWidth, Invert = _invert ? 1 : 0,
-                    Scales = _scales.Length == 0 ? IntPtr.Zero : pin.AddrOfPinnedObject(), Count = (uint)_scales.Length };
+                var config = new NativeConfig
+                {
+                    Size = 32,
+                    X = RoiX,
+                    Width = RoiWidth,
+                    Invert = _invert ? 1 : 0,
+                    Scales = _scales.Length == 0 ? IntPtr.Zero : pin.AddrOfPinnedObject(),
+                    Count = (uint)_scales.Length
+                };
                 Check(Native.cis_qr_configure(_handle, ref config, _error, (uint)_error.Length));
                 _needsConfiguration = false;
             }
@@ -127,7 +171,12 @@ namespace CIS_WebInspector.Services
         }
         private void ResetDiagnostics() { LastError = null; LastDecodeStrategy = null; LastDecodeAttemptCount = 0; }
         private void Check(int status)
-        { if (status != 0) throw new InvalidOperationException($"Native status={status}: {ReadUtf8(_error)}"); }
+        {
+            if (status != 0)
+            {
+                throw new InvalidOperationException($"Native status={status}: {ReadUtf8(_error)}");
+            }
+        }
         private static string ReadUtf8(byte[] bytes)
         {
             int count = Array.IndexOf(bytes, (byte)0);
@@ -136,15 +185,24 @@ namespace CIS_WebInspector.Services
         private static string ReadUtf8Result(byte[] bytes, uint lengthIncludingNull)
         {
             if (lengthIncludingNull == 0 || lengthIncludingNull > bytes.Length || bytes[lengthIncludingNull - 1] != 0)
+            {
                 throw new InvalidOperationException("原生返回的文本长度无效。");
+            }
+
             return Encoding.UTF8.GetString(bytes, 0, checked((int)lengthIncludingNull - 1));
         }
         public void Dispose()
         {
             lock (_sync)
             {
-                if (_disposed) return;
-                _handle?.Dispose(); _handle = null; _disposed = true;
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _handle?.Dispose();
+                _handle = null;
+                _disposed = true;
             }
         }
         private sealed class QrHandle : SafeHandleZeroOrMinusOneIsInvalid

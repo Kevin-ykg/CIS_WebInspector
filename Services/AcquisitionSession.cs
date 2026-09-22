@@ -36,11 +36,19 @@ namespace CIS_WebInspector.Services
             out string errorMessage)
         {
             if (sourceFactory == null)
+            {
                 throw new ArgumentNullException(nameof(sourceFactory));
+            }
+
             if (configSnapshot == null)
+            {
                 throw new ArgumentNullException(nameof(configSnapshot));
+            }
+
             if (_disposed)
+            {
                 throw new ObjectDisposedException(nameof(AcquisitionSession));
+            }
 
             Close();
 
@@ -93,12 +101,19 @@ namespace CIS_WebInspector.Services
                 if (candidate != null)
                 {
                     if (frameSubscribed)
+                    {
                         candidate.FrameReady -= frameReadyHandler;
+                    }
+
                     if (errorSubscribed)
+                    {
                         candidate.ErrorOccurred -= errorHandler;
+                    }
 
                     // 构造或初始化到一半的设备也可能已经持有 Timer、SDK 句柄或原生缓冲区。
-                    try { candidate.Dispose(); } catch { }
+                    try
+                    { candidate.Dispose(); }
+                    catch { }
                 }
             }
         }
@@ -119,12 +134,19 @@ namespace CIS_WebInspector.Services
             ConfigSnapshot = null;
 
             if (source == null)
+            {
                 return;
+            }
 
             if (frameReadyHandler != null)
+            {
                 source.FrameReady -= frameReadyHandler;
+            }
+
             if (errorHandler != null)
+            {
                 source.ErrorOccurred -= errorHandler;
+            }
 
             source.Dispose();
         }
@@ -132,7 +154,9 @@ namespace CIS_WebInspector.Services
         public void Dispose()
         {
             if (_disposed)
+            {
                 return;
+            }
 
             _disposed = true;
             Close();

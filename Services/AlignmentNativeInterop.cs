@@ -22,7 +22,9 @@ namespace CIS_WebInspector.Services
                 Marshal.SizeOf(typeof(Anchor)) != 48 || Marshal.SizeOf(typeof(Config)) != 192 ||
                 Marshal.SizeOf(typeof(Summary)) != 296 || Marshal.SizeOf(typeof(Mark)) != 40 ||
                 Marshal.SizeOf(typeof(Control)) != 96 || Marshal.SizeOf(typeof(Sample)) != 64)
+            {
                 throw new InvalidOperationException("CISVisionCore.dll 全局对准接口版本/布局不匹配，请重新构建并部署 DLL。");
+            }
         }
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct Anchor
@@ -31,9 +33,15 @@ namespace CIS_WebInspector.Services
             public double CenterX;
             public long GlobalCenterY, SegmentStartGlobalY;
             public double PixelWidth, PixelHeight;
-            public static Anchor From(CisQrAnchor a) => new Anchor { Size = 48, CenterX = a.CenterX,
-                GlobalCenterY = a.GlobalCenterY, SegmentStartGlobalY = a.SegmentStartGlobalY,
-                PixelWidth = a.PixelWidth, PixelHeight = a.PixelHeight };
+            public static Anchor From(CisQrAnchor a) => new Anchor
+            {
+                Size = 48,
+                CenterX = a.CenterX,
+                GlobalCenterY = a.GlobalCenterY,
+                SegmentStartGlobalY = a.SegmentStartGlobalY,
+                PixelWidth = a.PixelWidth,
+                PixelHeight = a.PixelHeight
+            };
         }
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct Config
@@ -54,17 +62,29 @@ namespace CIS_WebInspector.Services
                 Size = 192,
                 EnableWhiteInkInspection = c.EnableWhiteInkInspection ? 1 : 0,
                 EnableSideMarkNonlinearAlignment = c.EnableSideMarkNonlinearAlignment ? 1 : 0,
-                SideMarkPairCount = c.SideMarkPairCount, SideMarkMinValidPerColumn = c.SideMarkMinValidPerColumn,
+                SideMarkPairCount = c.SideMarkPairCount,
+                SideMarkMinValidPerColumn = c.SideMarkMinValidPerColumn,
                 NonlinearRemapStripeRows = c.NonlinearRemapStripeRows,
-                LayoutDpi = c.LayoutDpi, TiffHeightMm = c.TiffHeightMm, TiffTopCenterYmm = c.TiffTopCenterYmm,
-                TiffBottomOffsetMm = c.TiffBottomOffsetMm, MarkDiameterMm = c.MarkDiameterMm,
-                CisRowSpacingMm = c.CisRowSpacingMm, QrPhysicalHeightMm = c.QrPhysicalHeightMm, QrPhysicalWidthMm = c.QrPhysicalWidthMm,
-                InitialSearchMarginMm = c.InitialSearchMarginMm, ExpandedSearchMarginMm = c.ExpandedSearchMarginMm,
-                MinCircularityTiff = c.MinCircularityTiff, MinCircularityCis = c.MinCircularityCis,
-                WhiteInkNormalGray = c.WhiteInkNormalGray, WhiteInkStreakStdDevThreshold = c.WhiteInkStreakStdDevThreshold,
-                SideMarkDiameterMm = c.SideMarkDiameterMm, SheetWidthMm = c.SheetWidthMm,
-                TiffSideMarkEdgeOffsetMm = c.TiffSideMarkEdgeOffsetMm, CisQrToLeftMarkMm = c.CisQrToLeftMarkMm,
-                CisSideMarkSpanMm = c.CisSideMarkSpanMm, SideMarkInitialSearchMarginMm = c.SideMarkInitialSearchMarginMm,
+                LayoutDpi = c.LayoutDpi,
+                TiffHeightMm = c.TiffHeightMm,
+                TiffTopCenterYmm = c.TiffTopCenterYmm,
+                TiffBottomOffsetMm = c.TiffBottomOffsetMm,
+                MarkDiameterMm = c.MarkDiameterMm,
+                CisRowSpacingMm = c.CisRowSpacingMm,
+                QrPhysicalHeightMm = c.QrPhysicalHeightMm,
+                QrPhysicalWidthMm = c.QrPhysicalWidthMm,
+                InitialSearchMarginMm = c.InitialSearchMarginMm,
+                ExpandedSearchMarginMm = c.ExpandedSearchMarginMm,
+                MinCircularityTiff = c.MinCircularityTiff,
+                MinCircularityCis = c.MinCircularityCis,
+                WhiteInkNormalGray = c.WhiteInkNormalGray,
+                WhiteInkStreakStdDevThreshold = c.WhiteInkStreakStdDevThreshold,
+                SideMarkDiameterMm = c.SideMarkDiameterMm,
+                SheetWidthMm = c.SheetWidthMm,
+                TiffSideMarkEdgeOffsetMm = c.TiffSideMarkEdgeOffsetMm,
+                CisQrToLeftMarkMm = c.CisQrToLeftMarkMm,
+                CisSideMarkSpanMm = c.CisSideMarkSpanMm,
+                SideMarkInitialSearchMarginMm = c.SideMarkInitialSearchMarginMm,
                 SideMarkExpandedSearchMarginMm = c.SideMarkExpandedSearchMarginMm
             };
         }
@@ -104,33 +124,47 @@ namespace CIS_WebInspector.Services
         }
         internal static void Check(int status, byte[] error = null)
         {
-            if (status == 0) return;
+            if (status == 0)
+            {
+                return;
+            }
+
             string detail = "";
-            if (error != null) { int end = Array.IndexOf(error, (byte)0); detail = Encoding.UTF8.GetString(error, 0, end < 0 ? error.Length : end); }
+            if (error != null)
+            { int end = Array.IndexOf(error, (byte)0); detail = Encoding.UTF8.GetString(error, 0, end < 0 ? error.Length : end); }
             throw new InvalidOperationException("C++ 全局对准/白墨检测 status=" + status + ": " + detail);
         }
         internal static ResultHandle Compute(Mat cis, Mat tiff, CisQrAnchor anchor, MarkAlignmentOptions options, bool whiteOnly)
         {
             ValidateAbi();
             Image source = Image.Borrow(cis), layout = whiteOnly ? default(Image) : Image.Borrow(tiff);
-            Anchor a = Anchor.From(anchor); Config c = Config.From(options); var error = new byte[4096];
+            Anchor a = Anchor.From(anchor);
+            Config c = Config.From(options);
+            var error = new byte[4096];
             IntPtr pointer;
             int status = cis_alignment_compute(ref source, ref layout, ref a, ref c, whiteOnly ? 1 : 0, out pointer, error, (uint)error.Length);
             // 输入 Mat 在整个同步原生调用结束后才能释放；不让 GC 因只剩 Data 指针而提前终结对象。
-            GC.KeepAlive(cis); GC.KeepAlive(tiff);
+            GC.KeepAlive(cis);
+            GC.KeepAlive(tiff);
             var result = new ResultHandle(pointer);
-            try { Check(status, error); return result; }
+            try
+            { Check(status, error); return result; }
             catch { result.Dispose(); throw; }
         }
         internal static Summary ReadSummary(ResultHandle handle)
         {
             var s = new Summary { Size = 296, Homography = new double[9], Inverse = new double[9] };
-            Check(cis_alignment_summary(handle, ref s)); return s;
+            Check(cis_alignment_summary(handle, ref s));
+            return s;
         }
         internal static string ReadLog(ResultHandle result, bool white = false)
         {
             int status = cis_alignment_log(result, white ? 1 : 0, null, 0, out uint required);
-            if (status != -3 && status != 0) Check(status);
+            if (status != -3 && status != 0)
+            {
+                Check(status);
+            }
+
             var bytes = new byte[checked((int)required)];
             Check(cis_alignment_log(result, white ? 1 : 0, bytes, required, out required));
             return Encoding.UTF8.GetString(bytes, 0, checked((int)required - 1));
@@ -140,14 +174,34 @@ namespace CIS_WebInspector.Services
             var samples = new Sample[checked((int)summary.SampleCount)];
             Check(cis_alignment_samples(handle, samples, summary.SampleCount));
             var list = new List<WhiteInkMarkSample>(samples.Length);
-            foreach (var s in samples) list.Add(new WhiteInkMarkSample { Index = s.Index, Center = new Point2d(s.X, s.Y),
-                DisplayRadius = s.Radius, UsedDetectedCenter = s.Detected != 0, MarkMean = s.Mean,
-                MarkVariance = s.Variance, BackgroundMean = s.Background, Contrast = s.Contrast });
-            return new WhiteInkInspectionResult { Status = (WhiteInkInspectionStatus)summary.WhiteStatus,
-                InkLevelPercent = summary.InkPercent, MarkMean = summary.MarkMean, MarkVariance = summary.MarkVariance,
-                BackgroundMean = summary.BackgroundMean, Contrast = summary.Contrast, HasStreaking = summary.Streaking != 0,
+            foreach (var s in samples)
+            {
+                list.Add(new WhiteInkMarkSample
+                {
+                    Index = s.Index,
+                    Center = new Point2d(s.X, s.Y),
+                    DisplayRadius = s.Radius,
+                    UsedDetectedCenter = s.Detected != 0,
+                    MarkMean = s.Mean,
+                    MarkVariance = s.Variance,
+                    BackgroundMean = s.Background,
+                    Contrast = s.Contrast
+                });
+            }
+
+            return new WhiteInkInspectionResult
+            {
+                Status = (WhiteInkInspectionStatus)summary.WhiteStatus,
+                InkLevelPercent = summary.InkPercent,
+                MarkMean = summary.MarkMean,
+                MarkVariance = summary.MarkVariance,
+                BackgroundMean = summary.BackgroundMean,
+                Contrast = summary.Contrast,
+                HasStreaking = summary.Streaking != 0,
                 SearchRegion = new Rect(summary.WhiteX, summary.WhiteY, summary.WhiteWidth, summary.WhiteHeight),
-                Samples = list.AsReadOnly(), Diagnostic = ReadLog(handle, true) };
+                Samples = list.AsReadOnly(),
+                Diagnostic = ReadLog(handle, true)
+            };
         }
         internal static AlignmentResult ReadAlignment(ResultHandle handle, Summary summary)
         {
@@ -156,38 +210,65 @@ namespace CIS_WebInspector.Services
             Check(cis_alignment_marks(handle, marks, summary.MarkCount));
             Check(cis_alignment_controls(handle, controls, summary.ControlCount));
             var globalList = new List<AlignmentGlobalMarkPoint>();
-            foreach (var m in marks) globalList.Add(new AlignmentGlobalMarkPoint { RowName = m.Row == 0 ? "Top" : "Bottom", Index = m.Index,
-                TiffPoint = new Point2d(m.TiffX, m.TiffY), CisPoint = new Point2d(m.CisX, m.CisY) });
+            foreach (var m in marks)
+            {
+                globalList.Add(new AlignmentGlobalMarkPoint
+                {
+                    RowName = m.Row == 0 ? "Top" : "Bottom",
+                    Index = m.Index,
+                    TiffPoint = new Point2d(m.TiffX, m.TiffY),
+                    CisPoint = new Point2d(m.CisX, m.CisY)
+                });
+            }
+
             var controlList = new List<AlignmentControlPoint>();
             double[] gridX = summary.GridRows == 0 ? null : new double[3];
             double[] gridY = summary.GridRows == 0 ? null : new double[checked((int)summary.GridRows)];
             Point2d[,] residuals = summary.GridRows == 0 ? null : new Point2d[checked((int)summary.GridRows), 3];
             foreach (var c in controls)
             {
-                var point = new AlignmentControlPoint { RowIndex = c.Row, Column = (AlignmentControlColumn)c.Column,
-                    ExpectedTiffPoint = new Point2d(c.ExpectedX, c.ExpectedY), DetectedTiffPoint = new Point2d(c.DetectedTiffX, c.DetectedTiffY),
-                    CoarseCisPoint = new Point2d(c.CoarseX, c.CoarseY), DetectedCisPoint = new Point2d(c.DetectedCisX, c.DetectedCisY),
-                    Residual = new Point2d(c.ResidualX, c.ResidualY), IsDetected = (c.Flags & 1) != 0,
-                    IsInterpolated = (c.Flags & 2) != 0, IsVirtual = (c.Flags & 4) != 0 };
-                controlList.Add(point); gridX[c.Column] = c.ExpectedX; gridY[c.Row] = c.ExpectedY; residuals[c.Row, c.Column] = point.Residual;
+                var point = new AlignmentControlPoint
+                {
+                    RowIndex = c.Row,
+                    Column = (AlignmentControlColumn)c.Column,
+                    ExpectedTiffPoint = new Point2d(c.ExpectedX, c.ExpectedY),
+                    DetectedTiffPoint = new Point2d(c.DetectedTiffX, c.DetectedTiffY),
+                    CoarseCisPoint = new Point2d(c.CoarseX, c.CoarseY),
+                    DetectedCisPoint = new Point2d(c.DetectedCisX, c.DetectedCisY),
+                    Residual = new Point2d(c.ResidualX, c.ResidualY),
+                    IsDetected = (c.Flags & 1) != 0,
+                    IsInterpolated = (c.Flags & 2) != 0,
+                    IsVirtual = (c.Flags & 4) != 0
+                };
+                controlList.Add(point);
+                gridX[c.Column] = c.ExpectedX;
+                gridY[c.Row] = c.ExpectedY;
+                residuals[c.Row, c.Column] = point.Residual;
             }
             // 小型矩阵复制给原公共模型供诊断；实际 Warp 使用 SafeHandle 中的原生矩阵/网格。
             Mat h = null, inverse = null;
             try
             {
-                h = new Mat(3, 3, MatType.CV_64FC1); inverse = new Mat(3, 3, MatType.CV_64FC1);
-                Marshal.Copy(summary.Homography, 0, h.Data, 9); Marshal.Copy(summary.Inverse, 0, inverse.Data, 9);
+                h = new Mat(3, 3, MatType.CV_64FC1);
+                inverse = new Mat(3, 3, MatType.CV_64FC1);
+                Marshal.Copy(summary.Homography, 0, h.Data, 9);
+                Marshal.Copy(summary.Inverse, 0, inverse.Data, 9);
                 var result = new AlignmentResult(h, inverse, (AlignmentMode)summary.Mode, (AlignmentQualityStatus)summary.Quality,
                     gridX, gridY, residuals, controlList, globalList, summary.StripeRows);
-                h = inverse = null; return result;
+                h = inverse = null;
+                return result;
             }
             finally { h?.Dispose(); inverse?.Dispose(); }
         }
         internal static void Warp(ResultHandle handle, Mat source, Mat target)
         {
-            var src = Image.Borrow(source); var dst = Image.Borrow(target); var error = new byte[4096];
+            var src = Image.Borrow(source);
+            var dst = Image.Borrow(target);
+            var error = new byte[4096];
             int status = cis_alignment_warp(handle, ref src, ref dst, error, (uint)error.Length);
-            GC.KeepAlive(source); GC.KeepAlive(target); Check(status, error);
+            GC.KeepAlive(source);
+            GC.KeepAlive(target);
+            Check(status, error);
         }
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] internal static extern uint cis_alignment_abi_version();
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] internal static extern int cis_alignment_compute(ref Image cis, ref Image tiff, ref Anchor anchor, ref Config config, int mode, out IntPtr result, [Out] byte[] error, uint capacity);

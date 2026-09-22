@@ -29,11 +29,19 @@ namespace CIS_WebInspector.Services
                     Cv2.CvtColor(difMerged, difRgb, ColorConversionCodes.GRAY2BGR);
 
                     foreach (Rect rect in innerRects)
+                    {
                         Cv2.Rectangle(comRgb, rect, new Scalar(0, 165, 255), 2);
+                    }
+
                     foreach (Rect rect in outerRects)
+                    {
                         Cv2.Rectangle(comRgb, rect, new Scalar(0, 0, 255), 2);
+                    }
+
                     foreach (Rect rect in fineLineRects)
+                    {
                         Cv2.Rectangle(comRgb, rect, new Scalar(255, 0, 255), 2);
+                    }
 
                     double fontScale = Math.Max(0.5, orgBin.Width / 300.0);
                     int thickness = Math.Max(1, (int)(fontScale * 2));
