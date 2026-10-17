@@ -136,11 +136,14 @@ cmake --build build --config Release --parallel 2
 | 通用公开类型 / 结果含义 | `include/qr/qr_detector.h` |
 | 识别流程 / 模型复用 / WeChat 调用 | `src/qr_detector.cpp` |
 | 定位框几何 / 动态尺度 / 坐标还原 | `src/qr_geometry.cpp` |
-| 透视 / 低对比 / 黑码 / 严重模糊恢复 | `src/qr_recovery.cpp` |
+| 透视 / 低对比 / 黑码 / 严重模糊恢复调度 | `src/qr_recovery.cpp` |
+| 模糊定位框模板 / 三点组 / 模块结构检查 | `src/qr_finder_patterns.cpp` |
 | 模糊码局部取景 / 三定位框边界局部形变恢复 | `src/qr_blur_local.cpp` |
 | 稳定 DLL 接口 / 验证 / 锁 / 异常边界 | `include/qr_reader_api.h`、`src/qr_reader_api.cpp` |
 
 生产 CIS 的 ROI、保护带和最终整数坐标适配留在主工程 `src/cis_qr_adapter.*`，不放进同事的通用交付包。修改共享核心需要同时回归通用样本和 CIS 的单帧/跨帧图库。
+
+2026-10-17 仅按职责将定位框证据函数移至 `qr_finder_patterns.cpp`，`QrDetector::detect/blurred` 和对外 ABI 不变。构建源码包时须包含新文件；CMake 和交付脚本已同步。
 
 ## 6. 已验证与边界
 

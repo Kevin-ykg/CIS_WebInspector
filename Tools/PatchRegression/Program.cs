@@ -45,6 +45,11 @@ namespace PatchRegression
                 string root = Path.GetFullPath(args[0]);
                 string Option(string name)
                 { int index = Array.IndexOf(args, name); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
+                // 托管编排回归独立于算法新旧对照；不读取或改写现场 app_config.json。
+                if (Array.IndexOf(args, "--pipeline-only") >= 0)
+                {
+                    return PipelineChecks.Run(root, Option("--output") ?? "pipeline", Option("--compare"));
+                }
                 string output = Path.Combine(root, "obj", "PatchNativeValidation", Option("--output") ?? "default");
                 Directory.CreateDirectory(output);
                 AppConfig config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(Path.Combine(root, "bin/x64/Debug/net48/app_config.json")));

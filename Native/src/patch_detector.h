@@ -42,6 +42,7 @@ cv::Mat edge_exclusion(const cv::Mat &binary, int outer, int inner);
 
 struct TemplateFeatures
 {
+    // representative 拥有模板副本；发布到缓存后只读。描述子/关键点属于同一份像素，不能单独更新。
     cv::Mat representative, descriptors;
     std::vector<cv::KeyPoint> keypoints;
 };
@@ -56,6 +57,8 @@ struct TemplateCache
     std::mutex mutex;
     std::unordered_map<std::string, std::shared_ptr<TemplateBucket>> buckets;
     CisPatchCacheStats stats{sizeof(CisPatchCacheStats)};
+    // 借用当前 worker 的 SIFT 做首次提取；返回 shared_ptr 保证配准期间缓存项仍存活。
+    // 哈希碰撞验证和锁顺序的实现独立放在 patch_template_cache.cpp。
     std::shared_ptr<TemplateFeatures> get(const cv::Mat &, cv::SIFT &);
 };
 struct Worker
@@ -90,6 +93,7 @@ struct FineResult
 };
 struct PatchResult
 {
+    // C ABI 返回句柄持有本对象。C# 必须在销毁句柄前复制所需字段、数组和图像。
     CisPatchSummary summary{sizeof(CisPatchSummary)};
     std::vector<CisPatchDefect> defects;
     std::array<cv::Mat, 6> images;

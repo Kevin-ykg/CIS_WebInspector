@@ -5,6 +5,19 @@ VisualStudioVersion = 18.6.11828.311 oobstable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CIS_WebInspector", "CIS_WebInspector.csproj", "{D89EDE6A-A851-0C56-ED56-8D0DC5B3A14A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "开发文档", "开发文档", "{8A67E910-D5A6-4BA4-86A2-F175F91EB027}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+		项目全局导航与开发指南.md = 项目全局导航与开发指南.md
+		docs\README.md = docs\README.md
+		docs\职责边界与调用链.md = docs\职责边界与调用链.md
+		docs\数据接口与资源约定.md = docs\数据接口与资源约定.md
+		docs\开发调试与验证.md = docs\开发调试与验证.md
+		docs\维护记录.md = docs\维护记录.md
+		Native\README.md = Native\README.md
+		Native\QR_READER_README.md = Native\QR_READER_README.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

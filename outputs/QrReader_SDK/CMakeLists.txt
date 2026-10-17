@@ -16,7 +16,8 @@ endif()
 find_package(OpenCV 4.10.0 EXACT REQUIRED COMPONENTS ${QR_COMPONENTS})
 
 # 算法源码只编译为一个共享的静态核心。CIS 适配层和独立读码器均链接它，不复制算法。
-add_library(QrRecognition STATIC src/qr_detector.cpp src/qr_geometry.cpp src/qr_recovery.cpp src/qr_blur_local.cpp)
+add_library(QrRecognition STATIC src/qr_detector.cpp src/qr_geometry.cpp src/qr_finder_patterns.cpp
+  src/qr_recovery.cpp src/qr_blur_local.cpp)
 # 头文件显式归入原生项目，方便 VS 显示类声明及建立 C++ 浏览上下文。
 # 仅从 C# 解决方案打开 cpp 文件，不能获得这里完整的包含目录/项目索引。
 target_sources(QrRecognition PRIVATE src/qr_detector.h include/qr/qr_detector.h)
@@ -56,10 +57,13 @@ endif()
 
 if(NOT QR_READER_ONLY)
 add_library(CISVisionCore SHARED src/qr_api.cpp src/cis_qr_adapter.cpp
-  src/patch_api.cpp src/patch_detector.cpp src/patch_alignment.cpp src/patch_fine_line.cpp
+  src/patch_api.cpp src/patch_detector.cpp src/patch_alignment.cpp src/patch_template_cache.cpp src/patch_fine_line.cpp
   src/alignment_api.cpp src/alignment_global.cpp src/alignment_marks.cpp
   src/alignment_side_grid.cpp src/alignment_white_ink.cpp src/alignment_warp.cpp)
 target_compile_features(CISVisionCore PRIVATE cxx_std_17)
+# 声明与实现一起出现在 VS 原生项目中；这些头文件不独立编译。
+target_sources(CISVisionCore PRIVATE src/cis_qr_adapter.h src/patch_detector.h src/patch_constants.h
+  src/alignment_internal.h include/cis_qr_api.h include/cis_patch_api.h include/cis_alignment_api.h)
 target_compile_definitions(CISVisionCore PRIVATE CIS_VISION_EXPORTS NOMINMAX WIN32_LEAN_AND_MEAN)
 target_include_directories(CISVisionCore PUBLIC include PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(CISVisionCore PRIVATE QrRecognition ${OpenCV_LIBS})

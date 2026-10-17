@@ -1,5 +1,7 @@
 # C++ 视觉算法库 CISVisionCore
 
+项目交接入口见 [docs](../docs/README.md)。本页维护 ABI、资源和原生算法模块契约；当前职责拆分与验证见 [维护记录](../docs/维护记录.md)。
+
 ## 二维码：边界与调用关系
 
 ```text
@@ -29,7 +31,8 @@ ImageStitcher（单帧 / 跨帧组合，仍为 C#）
 | `src/qr_detector.h` | 内部模型实例、候选数据结构、坐标计算约定 |
 | `src/qr_detector.cpp` | 主流程、模型加载与复用、WeChatQRCode 调用、成功结果恢复 |
 | `src/qr_geometry.cpp` | 嵌套定位框、几何证据、自适应尺度、局部/透视候选 |
-| `src/qr_recovery.cpp` | 透视、低对比度、黑码原极性、模糊模板与模块结构校验 |
+| `src/qr_recovery.cpp` | 透视、低对比度、黑码原极性、模糊恢复调度 |
+| `src/qr_finder_patterns.cpp` | 模糊定位框模板匹配、三点几何和模块结构证据（从恢复文件独立，不改评分） |
 | `src/qr_blur_local.cpp` | 原路径失败后的局部红通道解码、三定位框外边界几何恢复；至多 4 次额外解码 |
 | `../Services/QrCodeDetector.cs` | C# 唯一入口；没有第二套算法或静默回退 |
 
@@ -107,7 +110,8 @@ PatchCropper（C#：统一 ROI、并行度、每 worker 上下文、结果汇总
 | `src/patch_detector.h` | 私有 RAII 类型、模板缓存、worker、结果所有权 |
 | `src/patch_constants.h` | 原局部配准/细线常量与原说明；不是另一份用户配置 |
 | `src/patch_detector.cpp` | 原 `DetectCore`、物理单位换算、最终 Warp、普通连通域判定与测量 |
-| `src/patch_alignment.cpp` | 原 `TryLocalAlign`、轮廓评分/精修、SIFT/RANSAC、模板缓存 |
+| `src/patch_alignment.cpp` | 原 `TryLocalAlign`、轮廓评分/精修、SIFT/RANSAC |
+| `src/patch_template_cache.cpp` | `TemplateCache::get`：签名分桶、逐像素核对、SIFT 特征复用和锁顺序 |
 | `src/patch_fine_line.cpp` | 原 `DetectFineLineBreaksAtDetailScale`、边界带、骨架/端点/抗错位证据 |
 | `../Services/PatchNativeInterop.cs` | P/Invoke 布局、SafeHandle、只读输入与输出图复制 |
 | `../Services/PatchDefectDetector.cs` | 保留原 `Detect` 调用接口，转换结果，不重复检测 |

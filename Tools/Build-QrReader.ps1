@@ -32,7 +32,7 @@ foreach ($directory in @('', 'include', 'include\qr', 'src', 'examples', 'models
 foreach ($name in @('QrReader.dll', 'QrReader.lib', 'QrRecognition.lib', 'QrReaderExample.exe', 'QrReaderCExample.exe')) {
     Copy-Item -LiteralPath (Join-Path $build "Release\$name") -Destination $OutputDirectory -Force
 }
-foreach ($name in @('qr_detector.cpp', 'qr_detector.h', 'qr_geometry.cpp', 'qr_recovery.cpp', 'qr_blur_local.cpp', 'qr_reader_api.cpp', 'qr_api_support.h')) {
+foreach ($name in @('qr_detector.cpp', 'qr_detector.h', 'qr_geometry.cpp', 'qr_finder_patterns.cpp', 'qr_recovery.cpp', 'qr_blur_local.cpp', 'qr_reader_api.cpp', 'qr_api_support.h')) {
     Copy-Item -LiteralPath (Join-Path $root "Native\src\$name") -Destination (Join-Path $OutputDirectory 'src') -Force
 }
 Copy-Item -LiteralPath (Join-Path $root 'Native\include\qr\qr_detector.h') -Destination (Join-Path $OutputDirectory 'include\qr') -Force

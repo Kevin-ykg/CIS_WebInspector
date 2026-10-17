@@ -35,7 +35,10 @@ namespace CIS_WebInspector.Models
         /// <summary>行步长（字节，含4字节对齐填充）</summary>
         public int Stride { get; set; }
 
-        /// <summary>位深（8 = 灰度，24 = RGB）</summary>
+        /// <summary>
+        /// 位深（8 = 灰度，24 = 三通道）。算法按 OpenCV BGR 顺序解释三通道像素，
+        /// 接入新数据源时需核对 SDK 的实际通道顺序，不能仅凭位深认定 RGB/BGR。
+        /// </summary>
         public int BitsPerPixel { get; set; }
     }
 
@@ -54,12 +57,13 @@ namespace CIS_WebInspector.Models
         public int CenterY { get; set; }
 
         /// <summary>
-        /// 二维码在输入图像 Y 方向上的像素高度。
-        /// 检测器内部使用过 Y 轴缩放补偿时，该值已还原到输入图像坐标系。
+        /// 已还原到输入分辨率的二维码像素高度。
+        /// 常规路径为 Y 投影范围，透视恢复路径为两条对应边的平均长度；
+        /// 这是现有 ABI 的分支约定，不能当作全路径统一的包围框高度。
         /// </summary>
         public double PixelHeight { get; set; }
 
-        /// <summary>二维码在输入图像 X 方向上的像素宽度。</summary>
+        /// <summary>已还原到输入分辨率的二维码像素宽度；投影/边长约定同 PixelHeight。</summary>
         public double PixelWidth { get; set; }
 
         /// <summary>二维码解码文本内容</summary>
@@ -103,10 +107,10 @@ namespace CIS_WebInspector.Models
         /// <summary>第二个二维码中心在当前拼接图中的 X 坐标。</summary>
         public double EndQrCenterX { get; set; }
 
-        /// <summary>第二个二维码在当前处理分辨率下的 Y 方向像素高度。</summary>
+        /// <summary>第二个二维码在当前处理分辨率下的高度，沿用 QrDetectionResult.PixelHeight 口径。</summary>
         public double EndQrPixelHeight { get; set; }
 
-        /// <summary>第二个二维码在当前处理分辨率下的 X 方向像素宽度。</summary>
+        /// <summary>第二个二维码在当前处理分辨率下的宽度，沿用 QrDetectionResult.PixelWidth 口径。</summary>
         public double EndQrPixelWidth { get; set; }
 
         /// <summary>位深（8 或 24）</summary>

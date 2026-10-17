@@ -122,6 +122,8 @@ std::vector<Scale> local_scales(const Region &);
 std::vector<Perspective> perspective_candidates(const std::vector<Finder> &, int, int, int, int);
 std::vector<BlurFinder> blurred_evidence(const cv::Mat &);
 std::vector<BlurTriple> blurred_triples(const std::vector<BlurFinder> &);
+// 以下结构分数只用于减少无效解码尝试，不是解码结果可信度；成功仍需 WeChatQRCode 返回文本。
+// 三个函数的实现都在 qr_finder_patterns.cpp，与恢复调用顺序分开维护。
 bool module_structure(const cv::Mat &, int, double &);
 
 // 本文件仅声明算法内部辅助结构。对外 C++ 使用 include/qr/qr_detector.h。

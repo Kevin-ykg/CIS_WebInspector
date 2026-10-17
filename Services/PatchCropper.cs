@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using CIS_WebInspector.Models;
@@ -12,20 +11,15 @@ namespace CIS_WebInspector.Services
 {
     /// <summary>
     /// 把排版日志中的毫米坐标映射为 TIFF 目标空间 ROI，并行执行零件级检测。
-    /// 裁切 Mat 均为父图的零拷贝视图，必须在父图释放前完成使用；本类同时负责批次诊断图和性能基线输出。
+    /// 裁切 Mat 均为父图的零拷贝视图，必须在父图释放前完成使用；诊断图与性能输出分别见 Preview、Performance 职责文件。
     /// </summary>
-    public static class PatchCropper
+    public static partial class PatchCropper
     {
-        private static readonly object PerformanceFileSync = new object();
+        // 本文件负责 ROI 和 worker/批次缓存生命周期；显示图与性能落盘分别在 Preview/Performance。
         private static readonly ImageEncodingParam[] PatchJpegParameters =
         {
             new ImageEncodingParam(ImwriteFlags.JpegQuality, 95)
         };
-        private static readonly ImageEncodingParam[] GlobalPreviewJpegParameters =
-        {
-            new ImageEncodingParam(ImwriteFlags.JpegQuality, 85)
-        };
-
         /// <summary>
         /// 根据排版坐标，从对齐后的 CIS 图、TIFF 图和 Alpha 掩膜上裁切零件小图，
         /// 同时执行缺陷检测并返回结果列表。
@@ -35,9 +29,10 @@ namespace CIS_WebInspector.Services
         /// <param name="alphaMask">从 TIFF 原图分离出的 Alpha 通道掩膜 (单通道)，可为 null</param>
         /// <param name="parts">零件排版坐标列表</param>
         /// <param name="outputDir">输出目录</param>
-        /// <param name="scale">DPI换算系数 (例如 300/25.4)</param>
+        /// <param name="scale">排版像素密度 px/mm (例如 300/25.4)，不是 DefectDetectScale 缩放比例</param>
         /// <param name="originXmm">X 原点偏移 (mm)</param>
         /// <param name="originYmm">Y 原点偏移 (mm)</param>
+        /// <param name="cisBaseThresh">已叠加 DefectCisThreshOffset 并限幅的最终 CIS 二值化阈值</param>
         /// <param name="config">全局配置（用于裁切/检测参数）</param>
         /// <returns>每个零件的缺陷检测结果列表</returns>
         public static (List<PatchDefectResult> Results, string GlobalImagePath, byte[] GlobalImageBytes) CropAndSave(Mat cisWarped, Mat tiffMat, Mat alphaMask,
@@ -261,148 +256,8 @@ namespace CIS_WebInspector.Services
                     $"[PatchCropper] 共成功处理 {count} 个零件，返回 {results.Count} 个结果，" +
                     $"其中工程异常 {processingErrors} 个。");
 
-                // --- 全局缺陷可视化保存与显示 ---
-                // 下列缩放和绘框仅服务于 UI/报告，不回流到检测算法，避免预览分辨率影响判定。
-                // UI 仍使用 TIFF + CIS 的左右对照图；磁盘则分别保存 TIFF 基准图和带标注 CIS 图，
-                // 方便直接打开、核对或用于报告，不必再从横向合成图中人工裁切。
-                byte[] globalImageBytes = null;
-                string combinedPath = null;
-                try
-                {
-                    // 动态计算显示缩放比例，限制最大高度以降低内存消耗和处理耗时
-                    double displayScale = 1.0;
-                    int maxDisplayHeight = 3000;
-                    if (flippedCis.Height > maxDisplayHeight)
-                    {
-                        displayScale = (double)maxDisplayHeight / flippedCis.Height;
-                    }
-
-                    using (var cisSmall = new Mat())
-                    using (var cisCanvas = new Mat())
-                    using (var tiffSmall = new Mat())
-                    using (var tiffCanvas = new Mat())
-                    {
-                        if (displayScale < 1.0)
-                        {
-                            Cv2.Resize(flippedCis, cisSmall, new Size(), displayScale, displayScale, InterpolationFlags.Nearest);
-                        }
-                        else
-                        {
-                            flippedCis.CopyTo(cisSmall);
-                        }
-
-                        if (cisSmall.Channels() == 1)
-                        {
-                            Cv2.CvtColor(cisSmall, cisCanvas, ColorConversionCodes.GRAY2BGR);
-                        }
-                        else
-                        {
-                            cisSmall.CopyTo(cisCanvas);
-                        }
-
-                        int partThick = Math.Max(2, (int)(5 * displayScale));
-                        int defectThick = Math.Max(2, (int)(9 * displayScale));
-                        foreach (PatchDefectResult res in results)
-                        {
-                            Rect scaledRoi = new Rect(
-                                (int)(res.GlobalRoi.X * displayScale),
-                                (int)(res.GlobalRoi.Y * displayScale),
-                                (int)(res.GlobalRoi.Width * displayScale),
-                                (int)(res.GlobalRoi.Height * displayScale));
-                            // 工程异常使用黄色，与产品 NG 的红色分开，避免全局图把算法失败误报成缺陷。
-                            Scalar partColor = res.HasProcessingError
-                                ? new Scalar(0, 255, 255)
-                                : (res.IsPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255));
-                            Cv2.Rectangle(cisCanvas, scaledRoi, partColor, partThick);
-
-                            foreach (Rect rect in res.InnerRects)
-                            {
-                                Rect scaledDefectRect = new Rect(
-                                    (int)((res.GlobalRoi.X + rect.X) * displayScale),
-                                    (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
-                                    (int)(rect.Width * displayScale),
-                                    (int)(rect.Height * displayScale));
-                                Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 165, 255), defectThick);
-                            }
-
-                            foreach (Rect rect in res.OuterRects)
-                            {
-                                Rect scaledDefectRect = new Rect(
-                                    (int)((res.GlobalRoi.X + rect.X) * displayScale),
-                                    (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
-                                    (int)(rect.Width * displayScale),
-                                    (int)(rect.Height * displayScale));
-                                Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(0, 0, 255), defectThick);
-                            }
-
-                            // 与零件级缺陷图保持同一颜色约定：细线断裂使用洋红色，
-                            // 不再借用内部缺陷的橙色矩形，便于从全局图直接判断缺陷类型。
-                            foreach (Rect rect in res.FineLineBreakRects)
-                            {
-                                Rect scaledDefectRect = new Rect(
-                                    (int)((res.GlobalRoi.X + rect.X) * displayScale),
-                                    (int)((res.GlobalRoi.Y + rect.Y) * displayScale),
-                                    (int)(rect.Width * displayScale),
-                                    (int)(rect.Height * displayScale));
-                                Cv2.Rectangle(cisCanvas, scaledDefectRect, new Scalar(255, 0, 255), defectThick);
-                            }
-                        }
-
-                        if (displayScale < 1.0)
-                        {
-                            Cv2.Resize(flippedTiff, tiffSmall, new Size(), displayScale, displayScale, InterpolationFlags.Nearest);
-                        }
-                        else
-                        {
-                            flippedTiff.CopyTo(tiffSmall);
-                        }
-
-                        if (tiffSmall.Channels() == 1)
-                        {
-                            Cv2.CvtColor(tiffSmall, tiffCanvas, ColorConversionCodes.GRAY2BGR);
-                        }
-                        else if (tiffSmall.Channels() == 4)
-                        {
-                            Cv2.CvtColor(tiffSmall, tiffCanvas, ColorConversionCodes.BGRA2BGR);
-                        }
-                        else
-                        {
-                            tiffSmall.CopyTo(tiffCanvas);
-                        }
-
-                        if (tiffCanvas.Channels() == 3 && cisCanvas.Channels() == 3)
-                        {
-                            if (config.SaveCroppedImages && config.SaveDefectResultImages)
-                            {
-                                string tiffReferencePath = Path.Combine(outputDir, "GlobalTiffReference.jpg");
-                                string cisDefectPath = Path.Combine(outputDir, "GlobalCisDefectResult.jpg");
-
-                                Cv2.ImWrite(tiffReferencePath, tiffCanvas, GlobalPreviewJpegParameters);
-                                Cv2.ImWrite(cisDefectPath, cisCanvas, GlobalPreviewJpegParameters);
-
-                                // 兼容现有返回值：全局结果路径指向最有诊断价值的带标注 CIS 图。
-                                combinedPath = cisDefectPath;
-                                AppLog.Write(
-                                    logger,
-                                    $"[PatchCropper] 全局结果已分开保存：TIFF={tiffReferencePath}；CIS={cisDefectPath}");
-                            }
-
-                            // 左右合成图只编码到内存，继续供主界面“全局缺陷图”页签对照显示，
-                            // 不再写入 GlobalDefectResult.jpg，避免磁盘结果含义不清。
-                            using (var combined = new Mat())
-                            {
-                                Cv2.HConcat(new[] { tiffCanvas, cisCanvas }, combined);
-                                Cv2.ImEncode(".jpg", combined, out globalImageBytes, GlobalPreviewJpegParameters);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    AppLog.Write(logger, $"[PatchCropper][ERROR] 生成全局缺陷图异常: {ex.Message}");
-                }
-
-                return (results, combinedPath, globalImageBytes);
+                var preview = CreateGlobalPreview(flippedCis, flippedTiff, results, outputDir, config, logger);
+                return (results, preview.GlobalImagePath, preview.GlobalImageBytes);
             }
             finally
             {
@@ -410,105 +265,6 @@ namespace CIS_WebInspector.Services
                 flippedTiff.Dispose();
                 flippedCis.Dispose();
             }
-        }
-
-        /// <summary>从已排序耗时数组读取 nearest-rank 分位数；空数组返回 0。</summary>
-        private static long Percentile(long[] sortedValues, double percentile)
-        {
-            if (sortedValues == null || sortedValues.Length == 0)
-            {
-                return 0;
-            }
-
-            int index = (int)Math.Ceiling(percentile * sortedValues.Length) - 1;
-            index = Math.Max(0, Math.Min(sortedValues.Length - 1, index));
-            return sortedValues[index];
-        }
-
-        /// <summary>读取进程 Private Bytes，失败时返回 0；该数据只用于趋势诊断。</summary>
-        private static long GetPrivateBytes()
-        {
-            try
-            {
-                using (Process process = Process.GetCurrentProcess())
-                {
-                    return process.PrivateMemorySize64;
-                }
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-
-        /// <summary>
-        /// 追加跨批次性能 CSV。每批次的耗时明细仍写入运行日志，不再在时间戳目录重复保存
-        /// PerformanceBaseline.csv。任何文件错误都只记录日志，不影响已经完成的缺陷结果。
-        /// </summary>
-        private static void TryAppendPerformanceBaseline(
-            string outputDir,
-            int partCount,
-            int resultCount,
-            long totalElapsedMilliseconds,
-            int maxParallelism,
-            long[] sortedDurations,
-            PatchSiftTemplateCache templateCache,
-            long managedBytesDelta,
-            long privateBytesDelta,
-            IAppLogger logger)
-        {
-            try
-            {
-                string parentDirectory = Directory.GetParent(outputDir)?.FullName;
-                string aggregatePath = string.IsNullOrWhiteSpace(parentDirectory)
-                    ? null
-                    : Path.Combine(parentDirectory, "PerformanceBaselines.csv");
-                if (string.IsNullOrWhiteSpace(aggregatePath))
-                {
-                    return;
-                }
-
-                Directory.CreateDirectory(parentDirectory);
-                string header =
-                    "Timestamp,Parts,Results,ElapsedMs,Parallelism,P50Ms,P95Ms,MaxMs," +
-                    "CacheUnique,CacheHits,CacheMisses,CacheExactComparisons,CacheKeyMs,CacheCompareMs," +
-                    "ManagedDeltaMB,PrivateDeltaMB" + Environment.NewLine;
-                string row = string.Join(",", new[]
-                {
-                    DateTime.Now.ToString("O", CultureInfo.InvariantCulture),
-                    partCount.ToString(CultureInfo.InvariantCulture),
-                    resultCount.ToString(CultureInfo.InvariantCulture),
-                    totalElapsedMilliseconds.ToString(CultureInfo.InvariantCulture),
-                    maxParallelism.ToString(CultureInfo.InvariantCulture),
-                    Percentile(sortedDurations, 0.50).ToString(CultureInfo.InvariantCulture),
-                    Percentile(sortedDurations, 0.95).ToString(CultureInfo.InvariantCulture),
-                    Percentile(sortedDurations, 1.00).ToString(CultureInfo.InvariantCulture),
-                    (templateCache?.Count ?? 0).ToString(CultureInfo.InvariantCulture),
-                    (templateCache?.HitCount ?? 0).ToString(CultureInfo.InvariantCulture),
-                    (templateCache?.MissCount ?? 0).ToString(CultureInfo.InvariantCulture),
-                    (templateCache?.ExactComparisonCount ?? 0).ToString(CultureInfo.InvariantCulture),
-                    (templateCache?.QuickKeyElapsedMilliseconds ?? 0.0).ToString("F3", CultureInfo.InvariantCulture),
-                    (templateCache?.ExactComparisonElapsedMilliseconds ?? 0.0).ToString("F3", CultureInfo.InvariantCulture),
-                    (managedBytesDelta / 1048576.0).ToString("F3", CultureInfo.InvariantCulture),
-                    (privateBytesDelta / 1048576.0).ToString("F3", CultureInfo.InvariantCulture)
-                }) + Environment.NewLine;
-
-                lock (PerformanceFileSync)
-                {
-                    AppendPerformanceRow(aggregatePath, header, row);
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLog.Write(logger, $"[PatchCropper][WARN] 写入性能基线失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>首次创建时写表头，后续只追加一行；外层锁负责同进程并发写入互斥。</summary>
-        private static void AppendPerformanceRow(string path, string header, string row)
-        {
-            bool writeHeader = !File.Exists(path);
-            File.AppendAllText(path, (writeHeader ? header : string.Empty) + row);
         }
     }
 }

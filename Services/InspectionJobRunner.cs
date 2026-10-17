@@ -1,21 +1,18 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using CIS_WebInspector.Models;
 using OpenCvSharp;
 
 namespace CIS_WebInspector.Services
 {
     /// <summary>
-    /// 执行一次完整的拼接段检测作业：排版日志解析 → TIFF/Alpha 加载 → 全局对准 →
+    /// 执行一次完整的拼接段检测作业：独立白墨检查 → 排版解析/Alpha 加载 → 全局对准 →
     /// 零件裁切与缺陷检测 → 汇总输出。该类不依赖 WPF，UI 只负责启动、取消和展示结果。
+    /// 排版像素准备见 LayoutImage 分文件，日志/状态组装见 Reporting；本文件只编排阶段及资源边界。
     /// </summary>
-    public sealed class InspectionJobRunner : IInspectionJobRunner
+    public sealed partial class InspectionJobRunner : IInspectionJobRunner
     {
         private readonly string _baseDirectory;
         private readonly IAppLogger _logger;
@@ -239,82 +236,7 @@ namespace CIS_WebInspector.Services
                         outputDirectory);
                 }
 
-                if (tiffMat.Channels() == 4)
-                {
-                    int h = tiffMat.Height;
-                    int w = tiffMat.Width;
-                    // 只提取后续真正需要的 Alpha 通道。Cv2.Split 会额外创建 B/G/R/A 四张
-                    // 全尺寸 Mat，对约 300 MB TIFF 会显著抬高峰值内存。
-                    alphaMask = new Mat();
-                    Cv2.ExtractChannel(tiffMat, alphaMask, 3);
-
-                    // Alpha 是后续零件设计轮廓的判定依据，必须在 TIFF 合成白底前独立保留。
-                    int nonZero = Cv2.CountNonZero(alphaMask);
-                    Log(log, $"  提取Alpha通道: 非零像素={nonZero}, 覆盖率={nonZero * 100.0 / (h * w):F1}%");
-
-                    // 设计图的透明区域按白底合成，保证其灰度语义与白色膜片背景一致。
-                    Mat composited = new Mat(h, w, MatType.CV_8UC3);
-                    try
-                    {
-                        var parallelOptions = new ParallelOptions
-                        {
-                            CancellationToken = cancellationToken
-                        };
-
-                        unsafe
-                        {
-                            Parallel.For(0, h, parallelOptions, row =>
-                            {
-                                byte* srcRow = (byte*)tiffMat.Ptr(row);
-                                byte* dstRow = (byte*)composited.Ptr(row);
-
-                                for (int col = 0; col < w; col++)
-                                {
-                                    byte sb = srcRow[0];
-                                    byte sg = srcRow[1];
-                                    byte sr = srcRow[2];
-                                    byte sa = srcRow[3];
-
-                                    if (sa == 255)
-                                    {
-                                        dstRow[0] = sb;
-                                        dstRow[1] = sg;
-                                        dstRow[2] = sr;
-                                    }
-                                    else if (sa == 0)
-                                    {
-                                        dstRow[0] = 255;
-                                        dstRow[1] = 255;
-                                        dstRow[2] = 255;
-                                    }
-                                    else
-                                    {
-                                        float a = sa * (1f / 255f);
-                                        float inverseAlpha = 1f - a;
-                                        dstRow[0] = (byte)(sb * a + 255f * inverseAlpha);
-                                        dstRow[1] = (byte)(sg * a + 255f * inverseAlpha);
-                                        dstRow[2] = (byte)(sr * a + 255f * inverseAlpha);
-                                    }
-
-                                    srcRow += 4;
-                                    dstRow += 3;
-                                }
-                            });
-                        }
-
-                        tiffMat.Dispose();
-                        tiffMat = composited;
-                        composited = null;
-                    }
-                    finally
-                    {
-                        composited?.Dispose();
-                    }
-                }
-                else
-                {
-                    Log(log, "  [WARN] TIFF无Alpha通道，将使用统一阈值检测。");
-                }
+                PrepareLayoutImage(ref tiffMat, ref alphaMask, log, cancellationToken);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 Log(log, "正在计算图像对齐变换矩阵...");
@@ -413,70 +335,8 @@ namespace CIS_WebInspector.Services
                             config,
                             log);
 
-                        int passCount = 0;
-                        int failCount = 0;
-                        int processingErrorCount = 0;
-                        long defectDetailLogTicks = 0;
-                        int loggedDefectDetailCount = 0;
-                        foreach (PatchDefectResult defectResult in defectTaskResult.Results)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            if (defectResult.HasProcessingError)
-                            {
-                                processingErrorCount++;
-                                Log(
-                                    log,
-                                    $"  [⚠ 处理异常] {defectResult.PartId} — " +
-                                    $"未生成产品缺陷结论：{defectResult.ProcessingError}");
-                                continue;
-                            }
-
-                            if (defectResult.IsPass)
-                            {
-                                passCount++;
-                            }
-                            else
-                            {
-                                failCount++;
-                            }
-
-                            string status = defectResult.IsPass ? "✓ Pass" : "✗ FAIL";
-                            string fineLineSummary = defectResult.FineLineBreakCount > 0
-                                ? $" | 细线断裂: {defectResult.FineLineBreakCount}个 " +
-                                  $"(最长 {defectResult.MaxFineLineBreakLengthMm:F2}mm，" +
-                                  $"最大宽度 {defectResult.MaxFineLineBreakWidthMm:F2}mm)"
-                                : string.Empty;
-                            Log(log,
-                                $"  [{status}] {defectResult.PartId} — 内部缺陷: {defectResult.InnerDefectCount}个 " +
-                                $"(最大 {defectResult.MaxAreaInnerMm2:F3}mm² / 阈值 {config.DefectAreaThreshInner:F3}mm²) | " +
-                                $"外部缺陷: {defectResult.OuterDefectCount}个 " +
-                                $"(最大 {defectResult.MaxAreaOuterMm2:F3}mm² / 阈值 {config.DefectAreaThreshOuter:F3}mm²)" +
-                                $"{fineLineSummary}");
-
-                            // 单独计时新增的逐缺陷尺寸日志，便于判断该追溯功能是否需要配置开关。
-                            // 明细集合均来自最终检测结果，不会记录未通过面积/长度/线宽门槛的候选。
-                            long detailStartTicks = Stopwatch.GetTimestamp();
-                            string defectDetail = BuildDefectMeasurementLog(
-                                defectResult,
-                                out int partDetailCount);
-                            if (!string.IsNullOrEmpty(defectDetail))
-                            {
-                                Log(log, defectDetail);
-                            }
-
-                            defectDetailLogTicks += Stopwatch.GetTimestamp() - detailStartTicks;
-                            loggedDefectDetailCount += partDetailCount;
-                        }
-
-                        double defectDetailLogMilliseconds =
-                            defectDetailLogTicks * 1000.0 / Stopwatch.Frequency;
-                        Log(
-                            log,
-                            $"[缺陷尺寸统计] 共记录 {loggedDefectDetailCount} 个最终缺陷，" +
-                            $"新增统计与日志耗时 {defectDetailLogMilliseconds:F1}ms" +
-                            (defectDetailLogMilliseconds > 500
-                                ? "（超过 500ms，建议启用可配置开关）"
-                                : "（未超过 500ms，无需增加控制开关）"));
+                        var (passCount, failCount, processingErrorCount) = LogPartResults(
+                            defectTaskResult.Results, config, log, cancellationToken);
 
                         int totalParts = defectTaskResult.Results.Count;
                         string outputSummary = config.SaveCroppedImages
@@ -554,117 +414,6 @@ namespace CIS_WebInspector.Services
                 alphaMask?.Dispose();
                 tiffMat?.Dispose();
             }
-        }
-
-        /// <summary>
-        /// 生成一个零件的最终缺陷尺寸明细。用单次日志写入承载多行内容，减少磁盘 Flush 和
-        /// UI 消息发布次数；每个缺陷仍按类型和序号独立列出，便于现场追溯。
-        /// </summary>
-        private static string BuildDefectMeasurementLog(
-            PatchDefectResult result,
-            out int defectCount)
-        {
-            defectCount = 0;
-            var builder = new StringBuilder();
-            AppendDefectMeasurements(
-                builder,
-                "内部缺陷",
-                result.InnerDefectMeasurements,
-                ref defectCount);
-            AppendDefectMeasurements(
-                builder,
-                "外部缺陷",
-                result.OuterDefectMeasurements,
-                ref defectCount);
-            AppendDefectMeasurements(
-                builder,
-                "细线断裂",
-                result.FineLineBreakMeasurements,
-                ref defectCount);
-
-            if (defectCount == 0)
-            {
-                return string.Empty;
-            }
-
-            return $"  [缺陷尺寸] {result.PartId}（外接矩形尺寸 + 缺陷实际面积）{Environment.NewLine}" +
-                   builder.ToString().TrimEnd();
-        }
-
-        private static void AppendDefectMeasurements(
-            StringBuilder builder,
-            string defectType,
-            IReadOnlyList<DefectGeometryMeasurement> measurements,
-            ref int totalCount)
-        {
-            if (measurements == null)
-            {
-                return;
-            }
-
-            for (int index = 0; index < measurements.Count; index++)
-            {
-                DefectGeometryMeasurement measurement = measurements[index];
-                builder.Append("    ")
-                    .Append(defectType)
-                    .Append(" #")
-                    .Append(index + 1)
-                    .Append(": 宽=")
-                    .Append(measurement.WidthMm.ToString("F3"))
-                    .Append("mm，高=")
-                    .Append(measurement.HeightMm.ToString("F3"))
-                    .Append("mm，缺陷实际面积=")
-                    .Append(measurement.AreaMm2.ToString("F3"))
-                    .Append("mm²")
-                    .AppendLine();
-                totalCount++;
-            }
-        }
-
-        /// <summary>
-        /// 统一创建提前结束结果。Skipped 表示外部资料尚未就绪，Failed 表示本作业自身无法完成；
-        /// 两者都不会抛到采集线程，也不会丢失已完成的白墨检查和预览。
-        /// </summary>
-        private static InspectionJobResult CreateEarlyResult(
-            IAppLogger log,
-            InspectionJobStatus status,
-            InspectionJobIssueCode issueCode,
-            string message,
-            WhiteInkInspectionResult whiteInkInspection = null,
-            byte[] whiteInkPreviewBytes = null,
-            string outputDirectory = null)
-        {
-            Log(log, message);
-            return new InspectionJobResult
-            {
-                Status = status,
-                IssueCode = issueCode,
-                Message = message,
-                WhiteInkInspection = whiteInkInspection ?? WhiteInkInspectionResult.Disabled(),
-                WhiteInkPreviewBytes = whiteInkPreviewBytes,
-                OutputDirectory = outputDirectory
-            };
-        }
-
-        /// <summary>记录白墨原始量化数据，便于现场按批次追溯和重新标定。</summary>
-        private static void LogWhiteInk(IAppLogger log, WhiteInkInspectionResult result)
-        {
-            string prefix = result.RequiresWarning ? "[白墨检测][WARN]" : "[白墨检测]";
-            Log(
-                log,
-                $"{prefix} 状态={result.StatusDisplayName}，相对白墨={result.InkLevelPercent:F1}% " +
-                $"(估算缺少={result.EstimatedMissingPercent:F1}%)，Mark均值={result.MarkMean:F1}，" +
-                $"背景均值={result.BackgroundMean:F1}，对比度={result.Contrast:F1}，" +
-                $"标准差={result.MarkStandardDeviation:F1}，方差={result.MarkVariance:F1}，" +
-                $"拉丝={(result.HasStreaking ? "是" : "否")}，样本={result.Samples.Count}，" +
-                $"ROI=({result.SearchRegion.X},{result.SearchRegion.Y}," +
-                $"{result.SearchRegion.Width},{result.SearchRegion.Height})。");
-        }
-
-        /// <summary>日志回调异常不得反向中断检测流水线。</summary>
-        private static void Log(IAppLogger log, string message)
-        {
-            AppLog.Write(log, message);
         }
     }
 }

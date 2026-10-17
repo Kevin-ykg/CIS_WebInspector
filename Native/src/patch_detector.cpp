@@ -212,6 +212,8 @@ PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfi
     FineResult fine;
     // 细线至少使用 0.5 倍细节尺度，且不放大超过原图；这不是普通面积通道的 scale。
     // 两条通道共享已求出的局部矩阵，不会各自独立配准产生矛盾坐标。
+    // 独立的是普通通道的面积/形态学容差；细线仍以边缘屏蔽带为候选范围，
+    // 也仍使用实拍阈值。因此不能把“与 DefectToleranceInner 解耦”理解为所有参数互不影响。
     double fine_scale = std::min(1., std::max(.5, scale));
     cv::Size fine_size;
     if (config.enable_fine_line && config.fine_min_length_mm > 0 && cv::countNonZero(exclusion) > 0)

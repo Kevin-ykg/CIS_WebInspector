@@ -11,13 +11,22 @@ CIS_WebInspector 是面向连续烫画膜/CIS 线扫图像的 WPF 工业视觉�
 
 在线与离线数据源共用 `MainViewModel.Acquisition.InitializeDataSource`；数据源生命周期由 `AcquisitionSession` 管理，有序帧消费由 `OrderedFrameProcessor` 保证。拼接后的作业由 `InspectionJobCoordinator` 串行协调，视觉主线位于 `InspectionJobRunner`，WPF 对象只在 UI Dispatcher 中创建和发布。
 
+## 开发交接入口
+
+第一次接手先读 [docs/README.md](docs/README.md)；已有完整算法说明继续保留在 [项目全局导航与开发指南](项目全局导航与开发指南.md)。
+
+- [职责边界与调用链](docs/职责边界与调用链.md)：从输入帧到作业、零件和结果，明确各文件该做/不该做什么。
+- [数据接口与资源约定](docs/数据接口与资源约定.md)：坐标、mm/mm²、三种工作尺度、Mat/句柄所有权、取消语义。
+- [开发调试与验证](docs/开发调试与验证.md)：构建、C#→C++ 断点、故障定位及结构修改前后比较。
+- [维护记录](docs/维护记录.md)：本轮职责拆分、验证结果与未覆盖范围。
+
 ## 当前正式能力与关键口径
 
 - 二维码：WeChatQRCode 常规识别结合定位框、自适应尺度、透视、反极性和模糊恢复；单帧和跨帧组合共用同一检测器。对于白墨完全缺失后形成的低对比度黑码，只有在模板确认三个定位框满足直角、尺寸和间距约束后，才保留原始极性并做一次灰度动态范围拉伸解码，不会在所有无二维码帧上无条件执行双极性全流程。
 - 拼接保护：收集第二个二维码期间连续 `MaxFramesWithoutQr` 帧未命中，会放弃旧首码和累计段，防止拼接高度与内存无限增长。
 - 全局对准：上下两排 20 mm Mark 使用单遍条带候选、倾斜行拟合、允许缺点的序列配对和 RANSAC Homography 质量门控。
 - 侧边增强：左右 9 对 4 mm Mark 仅描述全局变换无法解释的边缘残差；由开关控制，失败时明确降级为全局对准。
-- 局部配准：固定约 700 px 工作宽度，先尝试轮廓距离场平移，困难样本再使用双向 SIFT 匹配、RANSAC 相似变换和小范围边缘精修；失败继续使用全局对准裁图。
+- 局部配准：独立工作宽度最多 700 px（小图不放大），先尝试轮廓距离场平移，困难样本再使用双向 SIFT 匹配、RANSAC 相似变换和小范围边缘精修；失败继续使用全局对准裁图。
 - 缺陷检测：内部缺陷、外部缺陷和细线断裂保持独立计数、颜色和结果集合。
 - 面积口径：内部/外部面积门槛和日志面积均使用真实连通域像素数换算的 mm²；日志中的外接矩形宽高用于定位，`宽×高` 不作为缺陷面积。
 - 结果语义：产品 Pass/Fail 与工程处理异常分开。`PatchProcessingStatus` 表示零件处理异常，`InspectionJobStatus/InspectionJobIssueCode` 表示段级执行状态。
@@ -62,7 +71,7 @@ CIS_WebInspector 是面向连续烫画膜/CIS 线扫图像的 WPF 工业视觉�
 
 ## 配置、输出与单位
 
-- 正式运行参数保存在可执行文件目录的 `app_config.json`；数据源加载和检测作业分别使用不可变快照。
+- 正式运行参数保存在可执行文件目录的 `app_config.json`；数据源加载和检测作业分别使用独立深拷贝，运行期间按只读快照使用。
 - 长度、边缘容差和线宽配置使用 mm；内部/外部面积阈值使用 mm²；进入算法后按 `LayoutDpi` 和当前检测尺度换算像素。
 - `SaveCroppedImages` 是检测作业图像落盘总开关；Mark 诊断图、白墨预览、零件图、屏蔽图和全局结果图均受它控制。
 - 常用诊断包括 `AlignmentMarks_CIS_Source.jpg`、`AlignmentMarks_TIFF_Layout.jpg`、`WhiteInk_BottomMarks_Preview.jpg`、`GlobalTiffReference.jpg` 和 `GlobalCisDefectResult.jpg`。
@@ -90,6 +99,12 @@ dotnet build CIS_WebInspector.sln --no-restore -c Release -p:Platform=x64
 | 全局/侧边对准与白墨 | `Tools/AlignmentRegression` | Release 合计 5346 项字段、矩阵、像素和 ABI 检查通过；真实 Warp/Remap 输出逐像素一致 | [Regression/AlignmentNative/README.md](Regression/AlignmentNative/README.md) |
 
 这些结果证明的是迁移前后等价性和接口边界，不等于所有生产样本的检出率、长期稳定性或节拍已经完成验收。
+
+## 本轮职责整理（2026-10-17）
+
+`InspectionJobRunner` 保留阶段编排，排版像素准备与结果日志分别进入 `.LayoutImage.cs`、`.Reporting.cs`；`PatchCropper` 保留 ROI/并行调度，全局预览与性能记录分别进入 `.Preview.cs`、`.Performance.cs`。原生定位框证据移至 `qr_finder_patterns.cpp`，模板缓存移至 `patch_template_cache.cpp`。公有入口、C ABI、配置字段、阈值与算法顺序不变。
+
+注意：当前作业采用“最新优先”而非每段 FIFO；无 Alpha 原图不会执行零件差分。上述现状已补注释/说明，本轮没有修改业务策略。核验范围见 [维护记录](docs/维护记录.md)。
 
 ## 修改前后的最低动作
 

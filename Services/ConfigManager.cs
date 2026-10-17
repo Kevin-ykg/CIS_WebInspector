@@ -51,6 +51,7 @@ namespace CIS_WebInspector.Services
         /// <summary>
         /// 创建与全局配置完全断开的深拷贝。采集和检测作业只读取该快照，
         /// 参数窗口后续保存的新值不会在一次运行过程中改变算法条件。
+        /// AppConfig 本身仍是可变类型；只读是调用约定，不要把快照再次交给设置页编辑。
         /// </summary>
         public static AppConfig CaptureSnapshot()
         {

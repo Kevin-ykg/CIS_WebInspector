@@ -4,7 +4,8 @@ using CIS_WebInspector.ViewModels;
 namespace CIS_WebInspector.Views
 {
     /// <summary>
-    /// MainWindow code-behind：仅负责 ViewModel 生命周期管理，不包含业务逻辑。
+    /// 主窗口负责 ViewModel 生命周期和图像缩放/拖动交互，不执行视觉算法。
+    /// 鼠标操作只改变 WPF 显示变换，不回写检测图像、ROI 或缺陷坐标。
     /// </summary>
     public partial class MainWindow : Window
     {
