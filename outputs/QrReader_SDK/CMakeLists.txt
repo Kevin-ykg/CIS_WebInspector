@@ -57,7 +57,7 @@ endif()
 
 if(NOT QR_READER_ONLY)
 add_library(CISVisionCore SHARED src/qr_api.cpp src/cis_qr_adapter.cpp
-  src/patch_api.cpp src/patch_detector.cpp src/patch_alignment.cpp src/patch_template_cache.cpp src/patch_fine_line.cpp
+  src/patch_api.cpp src/patch_detector.cpp src/patch_unified_alignment.cpp src/patch_periodicity.cpp src/patch_template_cache.cpp src/patch_fine_line.cpp
   src/alignment_api.cpp src/alignment_global.cpp src/alignment_marks.cpp
   src/alignment_side_grid.cpp src/alignment_white_ink.cpp src/alignment_warp.cpp)
 target_compile_features(CISVisionCore PRIVATE cxx_std_17)

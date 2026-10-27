@@ -16,6 +16,8 @@ void message(char *output, uint32_t capacity, const char *text) noexcept
     std::memcpy(output, text, count);
     output[count] = 0;
 }
+// C ABI 边界不传播 C++ 异常；错误文本写入调用方缓冲区，返回值决定调用是否成功。
+// 句柄必须来自本 DLL；空值检查无法验证任意悬空指针，生命周期由 SafeHandle 配合保证。
 template <class Action> int32_t guarded(char *error, uint32_t capacity, Action action) noexcept
 {
     message(error, capacity, "");
@@ -54,6 +56,8 @@ void check_layout(uint32_t actual, size_t expected)
         throw std::invalid_argument("C#/C++ patch ABI layout mismatch");
     }
 }
+// 仅借用 C# 的像素地址和实际行步长，不复制、不取得缓冲区所有权。
+// 该视图不得逃逸到异步任务；调用方须保持输入存活到 cis_patch_detect 同步返回。
 cv::Mat image_view(const CisPatchImage *image)
 {
     if (!image)
@@ -109,12 +113,13 @@ cv::Mat &output_image(void *handle, int kind)
 } // namespace
 
 // x64 / pack=8：固定布局与 C# Marshal.SizeOf 双向核对，升级字段需提升 patch ABI。
-static_assert(sizeof(CisPatchImage) == 40 && sizeof(CisPatchConfig) == 112 && sizeof(CisPatchDefect) == 64 &&
-                  sizeof(CisPatchSummary) == 80 && sizeof(CisPatchCacheStats) == 48,
+static_assert(sizeof(CisPatchImage) == 40 && sizeof(CisPatchConfig) == 128 && sizeof(CisPatchDefect) == 64 &&
+                  sizeof(CisPatchSummary) == 80 && sizeof(CisPatchCacheStats) == 48 &&
+                  sizeof(CisPatchAlignmentInfo) == 72,
               "Patch ABI layout changed");
 uint32_t __cdecl cis_patch_abi_version(void)
 {
-    return 1;
+    return 2;
 }
 int32_t __cdecl cis_patch_cache_create(void **handle, char *error, uint32_t capacity)
 {
@@ -201,6 +206,18 @@ int32_t __cdecl cis_patch_result_summary(void *handle, CisPatchSummary *summary,
         }
         check_layout(summary->struct_size, sizeof(*summary));
         *summary = required<PatchResult>(handle).summary;
+        return CIS_QR_OK;
+    });
+}
+int32_t __cdecl cis_patch_result_alignment(void *handle, CisPatchAlignmentInfo *info, char *error, uint32_t capacity)
+{
+    return guarded(error, capacity, [&]() {
+        if (!info)
+        {
+            throw std::invalid_argument("Null alignment info");
+        }
+        check_layout(info->struct_size, sizeof(*info));
+        *info = required<PatchResult>(handle).alignment;
         return CIS_QR_OK;
     });
 }

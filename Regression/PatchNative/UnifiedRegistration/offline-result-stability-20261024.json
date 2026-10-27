@@ -1,0 +1,1875 @@
+{
+  "prototype": "standalone; no production DLL or defect decision changed",
+  "dpiAssumption": 300,
+  "opencv": "4.13.0",
+  "manualClickUncertaintyApproxPxPerImage": 3.0,
+  "provisionalAlignmentTargetOriginalPx": 6.0,
+  "uncertaintyCaveat": "Approximate, not a hard error bound; no case can certify 5-6px true geometry from these labels alone.",
+  "cases": [
+    {
+      "set": "img2",
+      "partId": "04200c88c8634c2388bc931c65cdb1cb",
+      "status": "Review",
+      "candidateModel": null,
+      "externalVerdict": "NoCandidate",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 40.31945140600104,
+        "p95": 99.64707937163408,
+        "max": 104.60289327137876
+      },
+      "workSize": [
+        774,
+        984
+      ],
+      "templateFeatures": 25,
+      "movingFeatures": 31,
+      "matches": 9,
+      "rejectedModels": {
+        "similarity": "InsufficientInliers",
+        "affine": "InsufficientMatches"
+      },
+      "manualBeforePx": {
+        "p50": 46.31945140600104,
+        "p95": 105.64707937163408,
+        "max": 110.60289327137876
+      },
+      "manualAfterPx": {
+        "p50": 46.31945140600104,
+        "p95": 105.64707937163408,
+        "max": 110.60289327137876
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            112.0,
+            167.0
+          ],
+          "cis": [
+            92.0,
+            160.0
+          ],
+          "beforePx": 21.18962010041709,
+          "afterPx": 21.18962010041709,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            564.0,
+            164.0
+          ],
+          "cis": [
+            580.0,
+            160.0
+          ],
+          "beforePx": 16.492422502470642,
+          "afterPx": 16.492422502470642,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            92.0,
+            3706.0
+          ],
+          "cis": [
+            120.0,
+            3599.0
+          ],
+          "beforePx": 110.60289327137876,
+          "afterPx": 110.60289327137876,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            588.0,
+            3706.0
+          ],
+          "cis": [
+            624.0,
+            3611.0
+          ],
+          "beforePx": 101.59232254457027,
+          "afterPx": 101.59232254457027,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1288.0,
+            168.0
+          ],
+          "cis": [
+            1280.0,
+            163.0
+          ],
+          "beforePx": 9.433981132056603,
+          "afterPx": 9.433981132056603,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1748.0,
+            165.0
+          ],
+          "cis": [
+            1756.0,
+            163.0
+          ],
+          "beforePx": 8.246211251235321,
+          "afterPx": 8.246211251235321,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1272.0,
+            3706.0
+          ],
+          "cis": [
+            1312.0,
+            3625.0
+          ],
+          "beforePx": 90.33825324855468,
+          "afterPx": 90.33825324855468,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1768.0,
+            3703.0
+          ],
+          "cis": [
+            1812.0,
+            3632.0
+          ],
+          "beforePx": 83.52843827104634,
+          "afterPx": 83.52843827104634,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2467.0,
+            165.0
+          ],
+          "cis": [
+            2463.0,
+            166.0
+          ],
+          "beforePx": 4.123105625617661,
+          "afterPx": 4.123105625617661,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2919.0,
+            164.0
+          ],
+          "cis": [
+            2939.0,
+            163.0
+          ],
+          "beforePx": 20.024984394500787,
+          "afterPx": 20.024984394500787,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2447.0,
+            3704.0
+          ],
+          "cis": [
+            2499.0,
+            3649.0
+          ],
+          "beforePx": 75.69015788066504,
+          "afterPx": 75.69015788066504,
+          "cell": [
+            2,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2943.0,
+            3704.0
+          ],
+          "cis": [
+            2995.0,
+            3655.0
+          ],
+          "beforePx": 71.449282711585,
+          "afterPx": 71.449282711585,
+          "cell": [
+            2,
+            2
+          ]
+        }
+      ],
+      "candidateModels": [],
+      "matrixCisToAlpha": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "milliseconds": 418.04929999489104
+    },
+    {
+      "set": "img2",
+      "partId": "2b72867d30ea4244a700bdca93cd8522",
+      "status": "Review",
+      "candidateModel": null,
+      "externalVerdict": "NoCandidate",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 32.482423907274224,
+        "p95": 53.42686669536042,
+        "max": 54.166435825965294
+      },
+      "workSize": [
+        684,
+        984
+      ],
+      "templateFeatures": 84,
+      "movingFeatures": 147,
+      "matches": 15,
+      "rejectedModels": {
+        "similarity": "InsufficientSpatialCoverage",
+        "affine": "GeometryOutOfBounds"
+      },
+      "manualBeforePx": {
+        "p50": 38.482423907274224,
+        "p95": 59.42686669536042,
+        "max": 60.166435825965294
+      },
+      "manualAfterPx": {
+        "p50": 38.482423907274224,
+        "p95": 59.42686669536042,
+        "max": 60.166435825965294
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            993.0,
+            165.0
+          ],
+          "cis": [
+            1001.0,
+            164.0
+          ],
+          "beforePx": 8.06225774829855,
+          "afterPx": 8.06225774829855,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1717.0,
+            166.0
+          ],
+          "cis": [
+            1725.0,
+            164.0
+          ],
+          "beforePx": 8.246211251235321,
+          "afterPx": 8.246211251235321,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1005.0,
+            1018.0
+          ],
+          "cis": [
+            1037.0,
+            1012.0
+          ],
+          "beforePx": 32.55764119219941,
+          "afterPx": 32.55764119219941,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1701.0,
+            1017.0
+          ],
+          "cis": [
+            1729.0,
+            1019.0
+          ],
+          "beforePx": 28.071337695236398,
+          "afterPx": 28.071337695236398,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            281.0,
+            1935.0
+          ],
+          "cis": [
+            325.0,
+            1911.0
+          ],
+          "beforePx": 50.11985634456667,
+          "afterPx": 50.11985634456667,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2401.0,
+            1931.0
+          ],
+          "cis": [
+            2445.0,
+            1939.0
+          ],
+          "beforePx": 44.721359549995796,
+          "afterPx": 44.721359549995796,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            561.0,
+            3147.0
+          ],
+          "cis": [
+            609.0,
+            3113.0
+          ],
+          "beforePx": 58.82176467941097,
+          "afterPx": 58.82176467941097,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2133.0,
+            3143.0
+          ],
+          "cis": [
+            2181.0,
+            3145.0
+          ],
+          "beforePx": 48.041648597857254,
+          "afterPx": 48.041648597857254,
+          "cell": [
+            2,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            997.0,
+            3703.0
+          ],
+          "cis": [
+            1053.0,
+            3681.0
+          ],
+          "beforePx": 60.166435825965294,
+          "afterPx": 60.166435825965294,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1693.0,
+            3703.0
+          ],
+          "cis": [
+            1737.0,
+            3697.0
+          ],
+          "beforePx": 44.40720662234904,
+          "afterPx": 44.40720662234904,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            288.0,
+            592.0
+          ],
+          "cis": [
+            304.0,
+            584.0
+          ],
+          "beforePx": 17.88854381999832,
+          "afterPx": 17.88854381999832,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2412.0,
+            591.0
+          ],
+          "cis": [
+            2428.0,
+            591.0
+          ],
+          "beforePx": 16.0,
+          "afterPx": 16.0,
+          "cell": [
+            2,
+            0
+          ]
+        }
+      ],
+      "candidateModels": [],
+      "matrixCisToAlpha": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "milliseconds": 424.0369000035571
+    },
+    {
+      "set": "img2",
+      "partId": "3b72867d30ea4244a700bdca93cd8522",
+      "status": "Candidate",
+      "candidateModel": "affine",
+      "externalVerdict": "UnresolvedAtLabelPrecision",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.0,
+        "p95": 0.7246680715674235,
+        "max": 0.8034173192751188
+      },
+      "workSize": [
+        864,
+        342
+      ],
+      "templateFeatures": 197,
+      "movingFeatures": 189,
+      "matches": 50,
+      "rejectedModels": {},
+      "manualBeforePx": {
+        "p50": 86.95401083331349,
+        "p95": 116.1179378824309,
+        "max": 122.2620137246234
+      },
+      "manualAfterPx": {
+        "p50": 3.6783346331462523,
+        "p95": 6.724668071567423,
+        "max": 6.803417319275119
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            557.0,
+            171.0
+          ],
+          "cis": [
+            597.0,
+            72.0
+          ],
+          "beforePx": 106.77546534667971,
+          "afterPx": 2.900929365379885,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            205.0,
+            827.0
+          ],
+          "cis": [
+            237.0,
+            709.0
+          ],
+          "beforePx": 122.2620137246234,
+          "afterPx": 5.305916435976487,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            801.0,
+            992.0
+          ],
+          "cis": [
+            833.0,
+            890.0
+          ],
+          "beforePx": 106.90182411914213,
+          "afterPx": 3.6783346331462523,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1653.0,
+            283.0
+          ],
+          "cis": [
+            1697.0,
+            208.0
+          ],
+          "beforePx": 86.95401083331349,
+          "afterPx": 3.5794179966424404,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1357.0,
+            715.0
+          ],
+          "cis": [
+            1397.0,
+            621.0
+          ],
+          "beforePx": 102.15674231297707,
+          "afterPx": 6.606544200005881,
+          "cell": [
+            1,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2025.0,
+            879.0
+          ],
+          "cis": [
+            2069.0,
+            805.0
+          ],
+          "beforePx": 86.09297300012354,
+          "afterPx": 2.5861112510749966,
+          "cell": [
+            1,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2821.0,
+            307.0
+          ],
+          "cis": [
+            2873.0,
+            251.0
+          ],
+          "beforePx": 76.4198926981712,
+          "afterPx": 4.365287741338721,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2525.0,
+            716.0
+          ],
+          "cis": [
+            2565.0,
+            649.0
+          ],
+          "beforePx": 78.03204469959762,
+          "afterPx": 6.803417319275119,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            3177.0,
+            867.0
+          ],
+          "cis": [
+            3221.0,
+            818.0
+          ],
+          "beforePx": 65.85590330410783,
+          "afterPx": 2.2626920068656093,
+          "cell": [
+            2,
+            1
+          ]
+        }
+      ],
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 36,
+          "matches": 50,
+          "cells": 8,
+          "rmsWorkPx": 1.1418442709940704,
+          "edgeBeforeWorkPx": 5.855207072363959,
+          "edgeAfterWorkPx": 0.9104206992520226,
+          "worstCellRegressionWorkPx": -4.357767105102539,
+          "leaveOutCornerChangeOriginalPx": 4.3864716763882505
+        },
+        {
+          "kind": "affine",
+          "inliers": 46,
+          "matches": 50,
+          "cells": 9,
+          "rmsWorkPx": 0.6251233862770912,
+          "edgeBeforeWorkPx": 5.855207072363959,
+          "edgeAfterWorkPx": 0.4802828762266371,
+          "worstCellRegressionWorkPx": -4.230358123779297,
+          "leaveOutCornerChangeOriginalPx": 4.074726111267734
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9957570107797671,
+          0.007021368719069498,
+          -38.30360771033088
+        ],
+        [
+          -0.021860188878378314,
+          1.0054661240925318,
+          114.53894018741258
+        ]
+      ],
+      "milliseconds": 258.591300000262
+    },
+    {
+      "set": "img2",
+      "partId": "4b72867d30ea4244a700bdca93cd8522",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "LargeResidualBeyondApproxNoise",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 4.7477507667805945,
+        "p95": 10.65599154690284,
+        "max": 12.810950927749229
+      },
+      "workSize": [
+        864,
+        984
+      ],
+      "templateFeatures": 204,
+      "movingFeatures": 151,
+      "matches": 56,
+      "rejectedModels": {
+        "affine": "SpatialModelInstability:14.5px"
+      },
+      "manualBeforePx": {
+        "p50": 28.600699292150182,
+        "p95": 55.72542676255415,
+        "max": 56.64803615307419
+      },
+      "manualAfterPx": {
+        "p50": 10.747750766780594,
+        "p95": 16.65599154690284,
+        "max": 18.81095092774923
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            1190.0,
+            175.0
+          ],
+          "cis": [
+            1243.0,
+            163.0
+          ],
+          "beforePx": 54.3415126767741,
+          "afterPx": 9.76844361364678,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2182.0,
+            875.0
+          ],
+          "cis": [
+            2235.0,
+            895.0
+          ],
+          "beforePx": 56.64803615307419,
+          "afterPx": 10.664090141618804,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1894.0,
+            1535.0
+          ],
+          "cis": [
+            1931.0,
+            1555.0
+          ],
+          "beforePx": 42.05948168962618,
+          "afterPx": 13.423552475633263,
+          "cell": [
+            1,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            1702.0,
+            2075.0
+          ],
+          "cis": [
+            1727.0,
+            2071.0
+          ],
+          "beforePx": 25.317977802344327,
+          "afterPx": 7.33894861468687,
+          "cell": [
+            1,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            1046.0,
+            1874.0
+          ],
+          "cis": [
+            1063.0,
+            1863.0
+          ],
+          "beforePx": 20.248456731316587,
+          "afterPx": 10.790705967321363,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            706.0,
+            2946.0
+          ],
+          "cis": [
+            723.0,
+            2923.0
+          ],
+          "beforePx": 28.600699292150182,
+          "afterPx": 11.0646472715305,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1718.0,
+            3322.0
+          ],
+          "cis": [
+            1723.0,
+            3342.0
+          ],
+          "beforePx": 20.615528128088304,
+          "afterPx": 18.81095092774923,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            3240.0,
+            2214.0
+          ],
+          "cis": [
+            3265.0,
+            2254.0
+          ],
+          "beforePx": 47.16990566028302,
+          "afterPx": 10.747750766780594,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2800.0,
+            3358.0
+          ],
+          "cis": [
+            2797.0,
+            3386.0
+          ],
+          "beforePx": 28.160255680657446,
+          "afterPx": 6.257159882432705,
+          "cell": [
+            2,
+            2
+          ]
+        }
+      ],
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 28,
+          "matches": 56,
+          "cells": 8,
+          "rmsWorkPx": 1.4118338304717943,
+          "edgeBeforeWorkPx": 4.221671849489212,
+          "edgeAfterWorkPx": 1.0273394510149956,
+          "worstCellRegressionWorkPx": -0.40589892864227295,
+          "leaveOutCornerChangeOriginalPx": 4.499309741456082
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          1.0008474819278146,
+          0.018513160615573215,
+          -62.99610606652758
+        ],
+        [
+          -0.01851926840038579,
+          1.0008474819278146,
+          27.114948884297963
+        ]
+      ],
+      "milliseconds": 602.5870000012219
+    },
+    {
+      "set": "img2",
+      "partId": "5b72867d30ea4244a700bdca93cd8522",
+      "status": "Review",
+      "candidateModel": null,
+      "externalVerdict": "NoCandidate",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 17.323807579381203,
+        "p95": 85.66728882272724,
+        "max": 86.34717104492157
+      },
+      "workSize": [
+        864,
+        984
+      ],
+      "templateFeatures": 240,
+      "movingFeatures": 240,
+      "matches": 119,
+      "rejectedModels": {
+        "similarity": "InsufficientSymmetricEdgeImprovement",
+        "affine": "SpatialModelInstability:9.8px"
+      },
+      "manualBeforePx": {
+        "p50": 23.323807579381203,
+        "p95": 91.66728882272724,
+        "max": 92.34717104492157
+      },
+      "manualAfterPx": {
+        "p50": 23.323807579381203,
+        "p95": 91.66728882272724,
+        "max": 92.34717104492157
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            885.0,
+            455.0
+          ],
+          "cis": [
+            909.0,
+            367.0
+          ],
+          "beforePx": 91.21403400793103,
+          "afterPx": 91.21403400793103,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2389.0,
+            795.0
+          ],
+          "cis": [
+            2421.0,
+            739.0
+          ],
+          "beforePx": 64.4980619863884,
+          "afterPx": 64.4980619863884,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1937.0,
+            479.0
+          ],
+          "cis": [
+            1969.0,
+            415.0
+          ],
+          "beforePx": 71.55417527999327,
+          "afterPx": 71.55417527999327,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            781.0,
+            1263.0
+          ],
+          "cis": [
+            789.0,
+            1171.0
+          ],
+          "beforePx": 92.34717104492157,
+          "afterPx": 92.34717104492157,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2701.0,
+            1363.0
+          ],
+          "cis": [
+            2721.0,
+            1311.0
+          ],
+          "beforePx": 55.71355310873648,
+          "afterPx": 55.71355310873648,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            1869.0,
+            2071.0
+          ],
+          "cis": [
+            1869.0,
+            2047.0
+          ],
+          "beforePx": 24.0,
+          "afterPx": 24.0,
+          "cell": [
+            1,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            509.0,
+            2359.0
+          ],
+          "cis": [
+            497.0,
+            2339.0
+          ],
+          "beforePx": 23.323807579381203,
+          "afterPx": 23.323807579381203,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            3089.0,
+            2207.0
+          ],
+          "cis": [
+            3093.0,
+            2191.0
+          ],
+          "beforePx": 16.492422502470642,
+          "afterPx": 16.492422502470642,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            205.0,
+            3103.0
+          ],
+          "cis": [
+            193.0,
+            3103.0
+          ],
+          "beforePx": 12.0,
+          "afterPx": 12.0,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1261.0,
+            3343.0
+          ],
+          "cis": [
+            1249.0,
+            3351.0
+          ],
+          "beforePx": 14.422205101855956,
+          "afterPx": 14.422205101855956,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2513.0,
+            3669.0
+          ],
+          "cis": [
+            2505.0,
+            3671.0
+          ],
+          "beforePx": 8.246211251235321,
+          "afterPx": 8.246211251235321,
+          "cell": [
+            2,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2581.0,
+            2793.0
+          ],
+          "cis": [
+            2585.0,
+            2783.0
+          ],
+          "beforePx": 10.770329614269007,
+          "afterPx": 10.770329614269007,
+          "cell": [
+            2,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            3051.0,
+            3329.0
+          ],
+          "cis": [
+            3043.0,
+            3339.0
+          ],
+          "beforePx": 12.806248474865697,
+          "afterPx": 12.806248474865697,
+          "cell": [
+            2,
+            2
+          ]
+        }
+      ],
+      "candidateModels": [],
+      "matrixCisToAlpha": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "milliseconds": 580.9268000011798
+    },
+    {
+      "set": "img3_origin62",
+      "partId": "04200c88c8634c2388bc931c65cdb1cb",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "UnresolvedAtLabelPrecision",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.007101378506862321,
+        "p95": 5.092319587114799,
+        "max": 7.010689729102296
+      },
+      "workSize": [
+        774,
+        984
+      ],
+      "templateFeatures": 9,
+      "movingFeatures": 20,
+      "matches": 8,
+      "rejectedModels": {
+        "affine": "InsufficientMatches"
+      },
+      "manualBeforePx": {
+        "p50": 14.422205101855956,
+        "p95": 20.396078054371138,
+        "max": 20.396078054371138
+      },
+      "manualAfterPx": {
+        "p50": 5.676007556762409,
+        "p95": 11.0923195871148,
+        "max": 13.010689729102296
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            44.0,
+            71.0
+          ],
+          "cis": [
+            32.0,
+            79.0
+          ],
+          "beforePx": 14.422205101855956,
+          "afterPx": 1.660074127555838,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            636.0,
+            91.0
+          ],
+          "cis": [
+            628.0,
+            103.0
+          ],
+          "beforePx": 14.422205101855956,
+          "afterPx": 6.528391509224882,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            92.0,
+            3561.0
+          ],
+          "cis": [
+            88.0,
+            3581.0
+          ],
+          "beforePx": 20.396078054371138,
+          "afterPx": 3.130169381590696,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            580.0,
+            3561.0
+          ],
+          "cis": [
+            584.0,
+            3581.0
+          ],
+          "beforePx": 20.396078054371138,
+          "afterPx": 6.82211069863871,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1264.0,
+            3563.0
+          ],
+          "cis": [
+            1276.0,
+            3577.0
+          ],
+          "beforePx": 18.439088914585774,
+          "afterPx": 13.010689729102296,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1764.0,
+            3559.0
+          ],
+          "cis": [
+            1772.0,
+            3577.0
+          ],
+          "beforePx": 19.697715603592208,
+          "afterPx": 5.337812356511093,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1220.0,
+            91.0
+          ],
+          "cis": [
+            1208.0,
+            99.0
+          ],
+          "beforePx": 14.422205101855956,
+          "afterPx": 4.99857648115844,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1816.0,
+            95.0
+          ],
+          "cis": [
+            1812.0,
+            91.0
+          ],
+          "beforePx": 5.656854249492381,
+          "afterPx": 7.355171591312303,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2463.0,
+            26.0
+          ],
+          "cis": [
+            2463.0,
+            27.0
+          ],
+          "beforePx": 1.0,
+          "afterPx": 2.819309795451354,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2923.0,
+            19.0
+          ],
+          "cis": [
+            2931.0,
+            23.0
+          ],
+          "beforePx": 8.94427190999916,
+          "afterPx": 9.52274401639776,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2447.0,
+            3559.0
+          ],
+          "cis": [
+            2455.0,
+            3573.0
+          ],
+          "beforePx": 16.1245154965971,
+          "afterPx": 3.9122254592668346,
+          "cell": [
+            2,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2939.0,
+            3559.0
+          ],
+          "cis": [
+            2947.0,
+            3569.0
+          ],
+          "beforePx": 12.806248474865697,
+          "afterPx": 6.014202757013725,
+          "cell": [
+            2,
+            2
+          ]
+        }
+      ],
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 6,
+          "matches": 8,
+          "cells": 5,
+          "rmsWorkPx": 0.8683456317169372,
+          "edgeBeforeWorkPx": 1.3813707927862804,
+          "edgeAfterWorkPx": 0.5659040576881833,
+          "worstCellRegressionWorkPx": 0.10134270787239075,
+          "leaveOutCornerChangeOriginalPx": 3.6245621547899582
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9955176133619081,
+          -0.0024335880507824967,
+          13.907413386035321
+        ],
+        [
+          0.0024339581863900292,
+          0.9955176133619082,
+          -7.1894269526354435
+        ]
+      ],
+      "milliseconds": 422.8374000012991
+    },
+    {
+      "set": "batch171315",
+      "partId": "d73d865b7e2d47f5904c9e5a67ca84bf",
+      "status": "Candidate",
+      "candidateModel": "affine",
+      "externalVerdict": "LargeResidualBeyondApproxNoise",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.20386917676747585,
+        "p95": 12.925029954253638,
+        "max": 12.998749873207345
+      },
+      "workSize": [
+        834,
+        1044
+      ],
+      "templateFeatures": 151,
+      "movingFeatures": 151,
+      "matches": 70,
+      "rejectedModels": {
+        "similarity": "SpatialModelInstability:6.8px"
+      },
+      "manualBeforePx": {
+        "p50": 26.222656339864436,
+        "p95": 35.40625433720685,
+        "max": 37.53664875824692
+      },
+      "manualAfterPx": {
+        "p50": 5.315326578321915,
+        "p95": 18.925029954253638,
+        "max": 18.998749873207345
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            312.0,
+            192.0
+          ],
+          "cis": [
+            328.0,
+            184.0
+          ],
+          "beforePx": 17.88854381999832,
+          "afterPx": 3.6092287442656508,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1036.0,
+            884.0
+          ],
+          "cis": [
+            1060.0,
+            872.0
+          ],
+          "beforePx": 26.832815729997478,
+          "afterPx": 4.2229148031088775,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            1760.0,
+            124.0
+          ],
+          "cis": [
+            1784.0,
+            116.0
+          ],
+          "beforePx": 25.298221281347036,
+          "afterPx": 3.2296377342827935,
+          "cell": [
+            1,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            3225.0,
+            120.0
+          ],
+          "cis": [
+            3242.0,
+            116.0
+          ],
+          "beforePx": 17.46424919657298,
+          "afterPx": 6.407738353534952,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            745.0,
+            2534.0
+          ],
+          "cis": [
+            762.0,
+            2506.0
+          ],
+          "beforePx": 32.7566787083184,
+          "afterPx": 4.210359419312833,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2473.0,
+            2542.0
+          ],
+          "cis": [
+            2498.0,
+            2514.0
+          ],
+          "beforePx": 37.53664875824692,
+          "afterPx": 8.156843968111014,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            565.0,
+            1673.0
+          ],
+          "cis": [
+            581.0,
+            1651.0
+          ],
+          "beforePx": 27.202941017470888,
+          "afterPx": 4.145472757960569,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2685.0,
+            1697.0
+          ],
+          "cis": [
+            2705.0,
+            1671.0
+          ],
+          "beforePx": 32.802438933713454,
+          "afterPx": 11.595447075779896,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            53.0,
+            3879.0
+          ],
+          "cis": [
+            73.0,
+            3863.0
+          ],
+          "beforePx": 25.612496949731394,
+          "afterPx": 18.834927831087995,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            3149.0,
+            3879.0
+          ],
+          "cis": [
+            3161.0,
+            3867.0
+          ],
+          "beforePx": 16.97056274847714,
+          "afterPx": 18.998749873207345,
+          "cell": [
+            2,
+            2
+          ]
+        }
+      ],
+      "candidateModels": [
+        {
+          "kind": "affine",
+          "inliers": 54,
+          "matches": 70,
+          "cells": 7,
+          "rmsWorkPx": 0.8428082872644201,
+          "edgeBeforeWorkPx": 4.101707249879837,
+          "edgeAfterWorkPx": 1.3695187605917454,
+          "worstCellRegressionWorkPx": -0.47325658798217773,
+          "leaveOutCornerChangeOriginalPx": 3.6589353974498406
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.998496328040851,
+          0.00025870234937724077,
+          -18.520152839937126
+        ],
+        [
+          -0.0021792665504672478,
+          1.0065432685469802,
+          9.567734565588527
+        ]
+      ],
+      "milliseconds": 564.7729999982403
+    },
+    {
+      "set": "batch171315",
+      "partId": "ed18db0a1fdb4102b95e9dddb742bc28",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "UnresolvedAtLabelPrecision",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.0,
+        "p95": 3.390576678926222,
+        "max": 3.537282070894987
+      },
+      "workSize": [
+        834,
+        1044
+      ],
+      "templateFeatures": 173,
+      "movingFeatures": 179,
+      "matches": 99,
+      "rejectedModels": {},
+      "manualBeforePx": {
+        "p50": 20.602365050527975,
+        "p95": 26.151138662553556,
+        "max": 26.832815729997478
+      },
+      "manualAfterPx": {
+        "p50": 5.003427307884735,
+        "p95": 9.390576678926223,
+        "max": 9.537282070894987
+      },
+      "manualPointErrors": [
+        {
+          "alpha": [
+            124.0,
+            155.0
+          ],
+          "cis": [
+            140.0,
+            147.0
+          ],
+          "beforePx": 17.88854381999832,
+          "afterPx": 9.211270088742177,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            848.0,
+            499.0
+          ],
+          "cis": [
+            872.0,
+            491.0
+          ],
+          "beforePx": 25.298221281347036,
+          "afterPx": 3.34210251820921,
+          "cell": [
+            0,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2245.0,
+            439.0
+          ],
+          "cis": [
+            2268.0,
+            443.0
+          ],
+          "beforePx": 23.345235059857504,
+          "afterPx": 4.215598271515419,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            2880.0,
+            895.0
+          ],
+          "cis": [
+            2900.0,
+            899.0
+          ],
+          "beforePx": 20.396078054371138,
+          "afterPx": 5.040174350614484,
+          "cell": [
+            2,
+            0
+          ]
+        },
+        {
+          "alpha": [
+            560.0,
+            1872.0
+          ],
+          "cis": [
+            584.0,
+            1860.0
+          ],
+          "beforePx": 26.832815729997478,
+          "afterPx": 9.537282070894987,
+          "cell": [
+            0,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            320.0,
+            3103.0
+          ],
+          "cis": [
+            336.0,
+            3095.0
+          ],
+          "beforePx": 17.88854381999832,
+          "afterPx": 5.205920996244436,
+          "cell": [
+            0,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            1140.0,
+            3789.0
+          ],
+          "cis": [
+            1152.0,
+            3789.0
+          ],
+          "beforePx": 12.0,
+          "afterPx": 1.629165860768182,
+          "cell": [
+            1,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2610.0,
+            3495.0
+          ],
+          "cis": [
+            2627.0,
+            3507.0
+          ],
+          "beforePx": 20.808652046684813,
+          "afterPx": 6.759407962509839,
+          "cell": [
+            2,
+            2
+          ]
+        },
+        {
+          "alpha": [
+            2794.0,
+            1731.0
+          ],
+          "cis": [
+            2819.0,
+            1735.0
+          ],
+          "beforePx": 25.317977802344327,
+          "afterPx": 3.947592924764472,
+          "cell": [
+            2,
+            1
+          ]
+        },
+        {
+          "alpha": [
+            2678.0,
+            2901.0
+          ],
+          "cis": [
+            2691.0,
+            2903.0
+          ],
+          "beforePx": 13.152946437965905,
+          "afterPx": 4.966680265154986,
+          "cell": [
+            2,
+            2
+          ]
+        }
+      ],
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 67,
+          "matches": 99,
+          "cells": 7,
+          "rmsWorkPx": 0.9240319719391801,
+          "edgeBeforeWorkPx": 3.3229328989982605,
+          "edgeAfterWorkPx": 0.7414857260882854,
+          "worstCellRegressionWorkPx": -1.6946726441383362,
+          "leaveOutCornerChangeOriginalPx": 3.7495159447364896
+        },
+        {
+          "kind": "affine",
+          "inliers": 82,
+          "matches": 99,
+          "cells": 8,
+          "rmsWorkPx": 0.8505796198143367,
+          "edgeBeforeWorkPx": 3.3229328989982605,
+          "edgeAfterWorkPx": 0.6803429089486599,
+          "worstCellRegressionWorkPx": -1.5802048444747925,
+          "leaveOutCornerChangeOriginalPx": 3.891699817148363
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9988817661085311,
+          0.00438031417594725,
+          -25.694058834092264
+        ],
+        [
+          -0.004381050340003965,
+          0.9988817661085311,
+          9.067679868529234
+        ]
+      ],
+      "milliseconds": 578.7347000004956
+    }
+  ]
+}

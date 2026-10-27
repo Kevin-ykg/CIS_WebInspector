@@ -21,11 +21,16 @@ namespace PatchRegression
         private sealed class Log : IAppLogger
         {
             public readonly List<string> Measurements = new List<string>();
+            public readonly List<string> AlignmentWarnings = new List<string>();
             public void Write(string message)
             {
                 if (message.StartsWith("  [缺陷尺寸]", StringComparison.Ordinal))
                 {
                     Measurements.Add(message);
+                }
+                if (message.Contains("配准待复核"))
+                {
+                    AlignmentWarnings.Add(message);
                 }
             }
             public void WriteDiagnostic(string message) { }
@@ -106,7 +111,7 @@ namespace PatchRegression
                     EndQrPixelHeight = 60
                 };
                 string inputHash = Hash(pixels);
-                foreach (string name in new[] { "saved", "unsaved", "missing-layout", "cancelled", "no-alpha" })
+                foreach (string name in new[] { "saved", "unsaved", "alignment-review", "alignment-review-pass", "missing-layout", "cancelled", "no-alpha" })
                 {
                     var config = new AppConfig
                     {
@@ -126,7 +131,7 @@ namespace PatchRegression
                         WhiteInkNormalGray = 210,
                         WhiteInkStreakStdDevThreshold = 12,
                         EnableSideMarkNonlinearAlignment = false,
-                        EnableSiftLocalAlign = false,
+                        EnableSiftLocalAlign = name.StartsWith("alignment-review", StringComparison.Ordinal),
                         EnableFineLineBreakDetection = false,
                         DefectDetectScale = 1,
                         DefectMaxParallelism = 1,
@@ -142,6 +147,12 @@ namespace PatchRegression
                     {
                         config.DebugLogPath = "";
                     }
+                    if (name == "alignment-review-pass")
+                    {
+                        // 只改变产品面积阈值以构造 Pass+配准警示；验证警示不改产品结论。
+                        config.DefectAreaThreshInner = 10000;
+                        config.DefectAreaThreshOuter = 10000;
+                    }
                     if (name == "no-alpha")
                     {
                         using (var bgr = new Mat())
@@ -156,22 +167,45 @@ namespace PatchRegression
                     if (name == "cancelled")
                     {
                         Require(result.Status == InspectionJobStatus.Cancelled, "Cancelled result lost");
+                        Require(result.ProductStatus == ProductInspectionStatus.Review, "Cancelled product cannot pass");
                     }
                     else if (name == "missing-layout")
                     {
                         Require(result.Status == InspectionJobStatus.Skipped, "Missing layout must skip");
+                        Require(result.ProductStatus == ProductInspectionStatus.Review, "Skipped product cannot pass");
                         Require(result.WhiteInkPreviewBytes?.Length > 0, "White ink preview must survive skip");
                         checks++;
                     }
                     else
                     {
                         // 锁定已有行为，而非认可无 Alpha 为合格：当前只裁图，结果列表确实为空。
-                        Require(result.Status == InspectionJobStatus.Completed, name + ": " + result.Message);
+                        Require(result.Status == (name.StartsWith("alignment-review", StringComparison.Ordinal)
+                            ? InspectionJobStatus.CompletedWithReview : InspectionJobStatus.Completed),
+                            name + ": " + result.Message);
                         Require(result.TotalParts == (name == "no-alpha" ? 0 : 1), "Unexpected part count");
+                        Require(result.ProductStatus == (name == "no-alpha"
+                            ? ProductInspectionStatus.Review : name == "alignment-review-pass"
+                            ? ProductInspectionStatus.Pass : ProductInspectionStatus.Ng),
+                            "Product status must separate NG and uninspected segment");
                         Require(result.GlobalImageBytes?.Length > 0, "Global UI preview missing");
                         if (name == "saved")
                         {
                             Require(result.FailCount == 1 && log.Measurements.Count > 0, "Fixture defect lost");
+                        }
+                        if (name == "alignment-review")
+                        {
+                            Require(result.AlignmentReviewCount == 1 && result.FailCount == 1,
+                                "Alignment warning must not suppress product NG");
+                            Require(log.AlignmentWarnings.Count > 0 && log.Measurements.Count > 0,
+                                "Alignment warning and defect details must both be logged");
+                            checks += 2;
+                        }
+                        if (name == "alignment-review-pass")
+                        {
+                            Require(result.AlignmentReviewCount == 1 && result.PassCount == 1 &&
+                                result.FailCount == 0 && log.AlignmentWarnings.Count > 0,
+                                "Alignment warning must not suppress product Pass");
+                            checks++;
                         }
                         if (name == "unsaved")
                         {
@@ -194,6 +228,8 @@ namespace PatchRegression
                         result.TotalParts,
                         result.PassCount,
                         result.FailCount,
+                        result.ProductStatus,
+                        result.AlignmentReviewCount,
                         result.ProcessingErrorCount,
                         result.AlignmentMode,
                         result.AlignmentQualityStatus,

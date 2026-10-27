@@ -10,7 +10,43 @@ namespace CIS_WebInspector.Services
     public enum PatchProcessingStatus
     {
         Completed,
-        ProcessingError
+        ProcessingError,
+        AlignmentReview
+    }
+
+    public enum LocalAlignmentStatus
+    {
+        Disabled = 0,
+        NotNeeded = 1,
+        Applied = 2,
+        Review = 3,
+        Error = 4,
+        /// <summary>已采用局部矩阵且整体优于全局，但部分区域仍需人工复核。</summary>
+        AppliedDegraded = 5
+    }
+
+    public enum LocalAlignmentModel
+    {
+        None = 0,
+        Similarity = 1,
+        ConstrainedAffine = 2,
+        Homography = 3
+    }
+
+    /// <summary>与 cis_patch_api.h 的拒绝原因码逐项对应，日志不依赖诊断字符串解析。</summary>
+    public enum LocalAlignmentRejectionReason
+    {
+        None = 0,
+        InsufficientContext = 1,
+        InsufficientFeatures = 2,
+        InsufficientMatches = 3,
+        InvalidGeometry = 4,
+        EdgeQualityRejected = 5,
+        PeriodAmbiguous = 6,
+        ModelInstability = 7,
+        NativeException = 8,
+        /// <summary>局部矩阵已应用且整体改善，但最差区或改善幅度提示人工复核。</summary>
+        EdgeQualityDegraded = 9
     }
 
     /// <summary>
@@ -40,6 +76,19 @@ namespace CIS_WebInspector.Services
         /// <summary>仅在 ProcessingStatus=ProcessingError 时填写，不参与产品缺陷判定。</summary>
         public string ProcessingError { get; set; }
         public bool HasProcessingError => ProcessingStatus == PatchProcessingStatus.ProcessingError;
+        /// <summary>局部候选虽改善整体但质量降级，或完全未通过而回退全局；缺陷均继续正常检测和统计。</summary>
+        public bool NeedsAlignmentReview => ProcessingStatus == PatchProcessingStatus.AlignmentReview;
+        public LocalAlignmentStatus AlignmentStatus { get; set; } = LocalAlignmentStatus.Disabled;
+        public LocalAlignmentModel AlignmentModel { get; set; } = LocalAlignmentModel.None;
+        public int AlignmentReasonCode { get; set; }
+        public LocalAlignmentRejectionReason AlignmentReason =>
+            (LocalAlignmentRejectionReason)AlignmentReasonCode;
+        public int AlignmentMatches { get; set; }
+        public int AlignmentInliers { get; set; }
+        public double AlignmentRmsOriginalPx { get; set; }
+        public double AlignmentEdgeBeforeWorkPx { get; set; }
+        public double AlignmentEdgeAfterWorkPx { get; set; }
+        public double AlignmentStabilityOriginalPx { get; set; }
         /// <summary>普通内部缺陷的最大连通域物理面积，单位 mm²。</summary>
         public double MaxAreaInnerMm2 { get; set; }
         /// <summary>普通外部缺陷的最大连通域物理面积，单位 mm²。</summary>
@@ -113,7 +162,8 @@ namespace CIS_WebInspector.Services
     }
 
     /// <summary>
-    /// Parallel.ForEach 每个 worker 独占一个原生上下文。SIFT/BFMatcher 按需创建并复用；
+    /// Parallel.ForEach 每个 worker 独占一个原生上下文。SIFT 按需创建并复用；
+    /// 当前空间约束匹配直接比较描述子距离，不再创建 BFMatcher。
     /// 普通差分也使用该上下文，但关闭局部配准不会创建 SIFT 对象。
     /// </summary>
     internal sealed class PatchSiftWorker : IDisposable

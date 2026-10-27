@@ -95,7 +95,7 @@ namespace CIS_WebInspector.Services
                     System.Threading.Tasks.Parallel.ForEach<PartLocation, PatchSiftWorker>(
                         parts,
                         parallelOptions,
-                        // SIFT/Matcher 不是跨线程共享对象；每个并行 worker 独占一组，只共享只读模板特征缓存。
+                        // SIFT 不是跨线程共享对象；每个并行 worker 独占原生上下文，只共享只读模板特征缓存。
                         () => new PatchSiftWorker(templateCache),
                         (part, _, worker) =>
                         {
@@ -168,20 +168,33 @@ namespace CIS_WebInspector.Services
                                                 ? Path.Combine(outputDir, $"{part.HotInkTaskID}_edge_exclusion.png")
                                                 : null;
 
-                                            PatchDefectResult defectResult = PatchDefectDetector.Detect(
-                                                alphaPatch,
-                                                cisPatch,
-                                                cisBaseThresh,
-                                                config,
-                                                defectPath,
-                                                cisName,
-                                                edgeExclusionPath,
-                                                worker,
-                                                part.HotInkTaskID,
-                                                logger);
-                                            defectResult.PartId = part.HotInkTaskID;
-                                            defectResult.GlobalRoi = roi;
-                                            resultsBag.Add(defectResult);
+                                            // 搜索余量只给局部配准：缺陷与输出继续使用 core。
+                                            // 相同核心目标在不同裁框原点下仍具有可用的真实外围像素。
+                                            int padding = 0;
+                                            if (config.EnableSiftLocalAlign && !double.IsNaN(config.LocalAlignmentPaddingMm) &&
+                                                !double.IsInfinity(config.LocalAlignmentPaddingMm))
+                                            {
+                                                // 用户配置可能异常大；先限制数值再转 int，防止溢出造成负 ROI。
+                                                padding = Math.Max(16, (int)Math.Min(2000,
+                                                    Math.Ceiling(Math.Max(0, config.LocalAlignmentPaddingMm) * scale)));
+                                            }
+                                            int left = Math.Max(0, roi.X - padding);
+                                            int top = Math.Max(0, roi.Y - padding);
+                                            int right = Math.Min(imgWidth, roi.Right + padding);
+                                            int bottom = Math.Min(imgHeight, roi.Bottom + padding);
+                                            Rect searchRoi = new Rect(left, top, right - left, bottom - top);
+                                            Rect coreInSearch = new Rect(roi.X - left, roi.Y - top, roi.Width, roi.Height);
+                                            using (Mat alphaSearch = new Mat(flippedAlpha, searchRoi))
+                                            using (Mat cisSearch = new Mat(flippedCis, searchRoi))
+                                            {
+                                                PatchDefectResult defectResult = PatchDefectDetector.Detect(
+                                                    alphaSearch, cisSearch, cisBaseThresh, config, defectPath,
+                                                    cisName, edgeExclusionPath, worker, part.HotInkTaskID, logger,
+                                                    coreInSearch);
+                                                defectResult.PartId = part.HotInkTaskID;
+                                                defectResult.GlobalRoi = roi;
+                                                resultsBag.Add(defectResult);
+                                            }
                                         }
                                     }
 
@@ -251,10 +264,27 @@ namespace CIS_WebInspector.Services
                 // 并行汇总顺序不稳定，但每个结果都带 PartId 和 GlobalRoi，不依赖列表下标关联零件。
                 var results = new List<PatchDefectResult>(resultsBag);
                 int processingErrors = results.Count(result => result.HasProcessingError);
+                int alignmentReviews = results.Count(result => result.NeedsAlignmentReview);
+                int similarityCount = results.Count(result =>
+                    (result.AlignmentStatus == LocalAlignmentStatus.Applied ||
+                     result.AlignmentStatus == LocalAlignmentStatus.AppliedDegraded) &&
+                    result.AlignmentModel == LocalAlignmentModel.Similarity);
+                int affineCount = results.Count(result =>
+                    (result.AlignmentStatus == LocalAlignmentStatus.Applied ||
+                     result.AlignmentStatus == LocalAlignmentStatus.AppliedDegraded) &&
+                    result.AlignmentModel == LocalAlignmentModel.ConstrainedAffine);
+                int homographyCount = results.Count(result =>
+                    (result.AlignmentStatus == LocalAlignmentStatus.Applied ||
+                     result.AlignmentStatus == LocalAlignmentStatus.AppliedDegraded) &&
+                    result.AlignmentModel == LocalAlignmentModel.Homography);
+                int degradedCount = results.Count(result => result.AlignmentStatus == LocalAlignmentStatus.AppliedDegraded);
+                int notNeededCount = results.Count(result => result.AlignmentStatus == LocalAlignmentStatus.NotNeeded);
                 AppLog.Write(
                     logger,
                     $"[PatchCropper] 共成功处理 {count} 个零件，返回 {results.Count} 个结果，" +
-                    $"其中工程异常 {processingErrors} 个。");
+                    $"局部相似 {similarityCount}、受约束仿射 {affineCount}、单应性 {homographyCount}、" +
+                    $"无需二次 {notNeededCount}、局部已用但降级 {degradedCount}、" +
+                    $"待复核合计 {alignmentReviews}、工程异常 {processingErrors}。");
 
                 var preview = CreateGlobalPreview(flippedCis, flippedTiff, results, outputDir, config, logger);
                 return (results, preview.GlobalImagePath, preview.GlobalImageBytes);

@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>局部配准独立真值标注</title>
+<style>
+  :root { color-scheme: dark; font-family: "Microsoft YaHei", sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #111a28; color: #e8edf4; }
+  header { padding: 14px 20px; background: #1c2b40; border-bottom: 1px solid #41536c; }
+  h1 { margin: 0 0 8px; font-size: 21px; }
+  p { margin: 6px 0; line-height: 1.5; }
+  .hint { color: #a9c5ee; }
+  .warning { color: #ffce73; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 20px; }
+  select, button, textarea { font: inherit; color: #e8edf4; background: #263b54; border: 1px solid #57769a; border-radius: 5px; padding: 6px 9px; }
+  button { cursor: pointer; }
+  button:hover { background: #365777; }
+  button.primary { background: #1476ac; border-color: #4aaddc; }
+  button.danger { background: #693743; }
+  label { display: inline-flex; align-items: center; gap: 5px; }
+  main { padding: 0 16px 20px; }
+  .viewers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .panel { min-width: 0; background: #172336; border: 1px solid #40546d; }
+  .panel h2 { font-size: 16px; padding: 8px 12px; margin: 0; border-bottom: 1px solid #40546d; }
+  .viewport { height: min(57vh, 600px); min-height: 350px; overflow: auto; background: #0a0f17; }
+  canvas { display: block; cursor: crosshair; image-rendering: auto; }
+  .details { display: grid; grid-template-columns: minmax(300px, 430px) 1fr; gap: 14px; margin-top: 12px; }
+  .card { background: #1a293c; padding: 12px; border: 1px solid #40546d; border-radius: 5px; }
+  .card h2 { margin: 0 0 10px; font-size: 16px; }
+  .field { margin: 8px 0; }
+  .field > label { display: flex; margin-bottom: 4px; }
+  .field select, textarea { width: 100%; }
+  textarea { min-height: 84px; resize: vertical; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 5px 7px; border-bottom: 1px solid #40546d; text-align: left; }
+  .lists { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .small { color: #aab8ca; font-size: 12px; }
+  #message { min-height: 24px; color: #ffce73; }
+  @media (max-width: 1000px) { .viewers, .details, .lists { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>局部配准：人工对应点与真实缺陷标注</h1>
+  <p>选择零件 → 在左图点一个清晰的模板结构 → 在右图点<strong>同一结构</strong>。编号成对保存。真实缺陷切换为“框选缺陷”，只在右图拖框。</p>
+  <p class="warning">做精度验收时请放大到 100%～200% 再点；缩小总览图适合找位置，但点位误差可能超过 2 个原图像素。重复纹理请优先选有独特邻域的角点，不能仅凭外形相似就配对。</p>
+  <p class="hint">页面可直接双击打开，无需安装或联网。数据临时保存在本机浏览器；完成或中途暂停时请点“导出标注 JSON”备份并发给我。</p>
+</header>
+<div class="toolbar">
+  <label>零件 <select id="caseSelect"></select></label>
+  <label>操作 <select id="mode"><option value="pair">对应点：先左后右</option><option value="inner">框选真实内部缺陷</option><option value="outer">框选真实外部缺陷</option><option value="fine">框选真实细线断裂</option><option value="uncertain">框选待确认区域</option></select></label>
+  <label>显示比例 <select id="zoom"><option value="0.25" selected>25%</option><option value="0.5">50%</option><option value="1">100%</option><option value="2">200%</option></select></label>
+  <button id="undo">撤销上一步</button>
+  <button id="import">导入已有 JSON 继续修改</button><input id="importFile" type="file" accept="application/json,.json" hidden>
+  <button id="export" class="primary">导出标注 JSON</button>
+  <span id="message" role="status"></span>
+</div>
+<main>
+  <div class="viewers">
+    <section class="panel"><h2>左：TIFF Alpha 模板（点击基准点）</h2><div class="viewport" id="alphaViewport"><canvas id="alphaCanvas"></canvas></div></section>
+    <section class="panel"><h2>右：CIS 原始裁图（点击同名点；或拖框缺陷）</h2><div class="viewport" id="cisViewport"><canvas id="cisCanvas"></canvas></div></section>
+  </div>
+  <div class="details">
+    <section class="card">
+      <h2>逐件核对结论</h2>
+      <div class="field"><label for="complete">目标图案是否完整且归属明确</label><select id="complete"><option value="uncertain">待确认</option><option value="yes">是</option><option value="no">否</option></select></div>
+      <div class="field"><label for="geometry">变形形态（人工初判）</label><select id="geometry"><option value="uncertain">待确认</option><option value="similarity">平移 / 旋转 / 等比缩放可解释</option><option value="affine">需要轻微非等比或剪切</option><option value="nonlinear">明显局部非线性</option></select></div>
+      <div class="field"><label for="structures">至少三个分散区域能确认同名结构</label><select id="structures"><option value="uncertain">待确认</option><option value="yes">是</option><option value="no">否</option></select></div>
+      <div class="field"><label for="notes">备注：疑似邻居、失焦、真实缺陷等</label><textarea id="notes" placeholder="如：右上角是真实断线；左侧花纹为相邻零件；某处过暗，无法可靠配点……"></textarea></div>
+      <p class="small">所有坐标均为对应 PNG 的原尺寸像素坐标，从左上角起算；右图未经局部二次配准。</p>
+    </section>
+    <section class="card">
+      <div class="lists">
+        <div><h2>已确认对应点 <span id="pointCount">0</span></h2><table><thead><tr><th>#</th><th>Alpha (x,y)</th><th>CIS (x,y)</th><th></th></tr></thead><tbody id="pointRows"></tbody></table></div>
+        <div><h2>真实缺陷 / 待确认区域 <span id="defectCount">0</span></h2><table><thead><tr><th>#</th><th>类型</th><th>CIS 框 (x,y,w,h)</th><th></th></tr></thead><tbody id="defectRows"></tbody></table></div>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+// 图像均在本目录 inputs 下；不使用 fetch，保证直接从 file:// 打开也能加载。
+const cases = [
+  ["img2", "04200c88c8634c2388bc931c65cdb1cb"],
+  ["img2", "2b72867d30ea4244a700bdca93cd8522"],
+  ["img2", "3b72867d30ea4244a700bdca93cd8522"],
+  ["img2", "4b72867d30ea4244a700bdca93cd8522"],
+  ["img2", "5b72867d30ea4244a700bdca93cd8522"],
+  ["img3_origin62", "04200c88c8634c2388bc931c65cdb1cb"],
+  ["batch171315", "d73d865b7e2d47f5904c9e5a67ca84bf"],
+  ["batch171315", "ed18db0a1fdb4102b95e9dddb742bc28"]
+];
+const storageKey = "CIS_UnifiedRegistration_Annotations_v1";
+const byId = id => document.getElementById(id);
+const caseKey = item => item[0] + "/" + item[1];
+const blank = () => ({ complete: "uncertain", geometry: "uncertain", structures: "uncertain", notes: "", points: [], defects: [] });
+let records = {};
+try { records = JSON.parse(localStorage.getItem(storageKey) || "{}") || {}; } catch (_) { records = {}; }
+let active = cases[0], alpha = new Image(), cis = new Image(), pending = null, dragStart = null, preview = null, lastAction = null;
+let scale = 0.25;
+let loadToken = 0;
+const names = { inner: "内部缺陷", outer: "外部缺陷", fine: "细线断裂", uncertain: "待确认" };
+function notify(message) { byId("message").textContent = message; }
+function data() { const key = caseKey(active); if (!records[key]) records[key] = blank(); return records[key]; }
+function persist() {
+  try { localStorage.setItem(storageKey, JSON.stringify(records)); }
+  catch (_) { notify("浏览器未允许本地暂存；请及时导出 JSON，避免标注丢失。"); }
+}
+function imagePath(item, suffix) { return "inputs/" + item[0] + "/" + item[1] + "_" + suffix + ".png"; }
+function setCanvasSize(canvas, image) {
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  canvas.style.width = (image.naturalWidth * scale) + "px";
+  canvas.style.height = (image.naturalHeight * scale) + "px";
+}
+function cross(ctx, x, y, color, label) {
+  const radius = 7 / scale;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2 / scale;
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x-radius*1.7, y); ctx.lineTo(x+radius*1.7, y);
+  ctx.moveTo(x, y-radius*1.7); ctx.lineTo(x, y+radius*1.7); ctx.stroke();
+  ctx.font = `${14/scale}px Microsoft YaHei`;
+  ctx.fillText(label, x + 10/scale, y - 10/scale);
+}
+function box(ctx, rect, color, label) {
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2 / scale;
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  ctx.font = `${14/scale}px Microsoft YaHei`;
+  ctx.fillText(label, rect.x + 3/scale, Math.max(16/scale, rect.y - 4/scale));
+}
+function draw() {
+  const a = byId("alphaCanvas"), c = byId("cisCanvas");
+  if (!alpha.complete || !cis.complete || !alpha.naturalWidth || !cis.naturalWidth) return;
+  setCanvasSize(a, alpha); setCanvasSize(c, cis);
+  const ac = a.getContext("2d"), cc = c.getContext("2d");
+  ac.drawImage(alpha, 0, 0); cc.drawImage(cis, 0, 0);
+  data().points.forEach((point, index) => {
+    cross(ac, point.alphaX, point.alphaY, "#00e6a8", String(index+1));
+    cross(cc, point.cisX, point.cisY, "#00e6a8", String(index+1));
+  });
+  if (pending) cross(ac, pending.x, pending.y, "#ffce73", "待匹配");
+  data().defects.forEach((rect, index) => box(cc, rect, rect.type === "uncertain" ? "#ffce73" : "#ff6375", (index+1)+" "+names[rect.type]));
+  if (preview) box(cc, preview, "#ffce73", "拖动中");
+}
+function refreshList() {
+  byId("pointCount").textContent = data().points.length;
+  byId("defectCount").textContent = data().defects.length;
+  const points = byId("pointRows"), defects = byId("defectRows");
+  points.replaceChildren(); defects.replaceChildren();
+  data().points.forEach((p, index) => {
+    const row = points.insertRow();
+    [String(index+1), `(${p.alphaX},${p.alphaY})`, `(${p.cisX},${p.cisY})`].forEach(value => { const cell = row.insertCell(); cell.textContent = value; });
+    const button = document.createElement("button"); button.textContent = "删除";
+    button.onclick = () => { data().points.splice(index, 1); pending = null; persist(); refreshList(); draw(); };
+    row.insertCell().append(button);
+  });
+  data().defects.forEach((r, index) => {
+    const row = defects.insertRow();
+    [String(index+1), names[r.type], `(${r.x},${r.y},${r.w},${r.h})`].forEach(value => { const cell = row.insertCell(); cell.textContent = value; });
+    const button = document.createElement("button"); button.textContent = "删除";
+    button.onclick = () => { data().defects.splice(index, 1); persist(); refreshList(); draw(); };
+    row.insertCell().append(button);
+  });
+}
+function loadCase() {
+  const token = ++loadToken;
+  active = cases[Number(byId("caseSelect").value)];
+  pending = null; dragStart = null; preview = null; lastAction = null;
+  alpha = new Image(); cis = new Image();
+  byId("alphaCanvas").width = 1; byId("cisCanvas").width = 1;
+  byId("complete").value = data().complete;
+  byId("geometry").value = data().geometry;
+  byId("structures").value = data().structures;
+  byId("notes").value = data().notes;
+  refreshList();
+  notify("正在加载两张原尺寸图像……");
+  const loading = [new Image(), new Image()];
+  let loaded = 0;
+  loading.forEach((image, index) => {
+    image.onload = () => {
+      if (token !== loadToken) return;
+      if (++loaded === 2) {
+        alpha = loading[0]; cis = loading[1];
+        draw();
+        byId("alphaViewport").scrollTo(0, 0); byId("cisViewport").scrollTo(0, 0);
+        notify(`已加载：${active[0]} / ${active[1]}；Alpha ${alpha.width}×${alpha.height}，CIS ${cis.width}×${cis.height}`);
+      }
+    };
+    image.onerror = () => notify("图片加载失败：" + image.src + "。请保留 annotate.html 与 inputs 目录的相对位置。 ");
+    image.src = imagePath(active, index === 0 ? "alpha" : "raw");
+  });
+}
+function pixel(event, canvas) {
+  const bounds = canvas.getBoundingClientRect();
+  return { x: Math.max(0, Math.min(canvas.width-1, Math.round((event.clientX - bounds.left) / bounds.width * canvas.width))),
+           y: Math.max(0, Math.min(canvas.height-1, Math.round((event.clientY - bounds.top) / bounds.height * canvas.height))) };
+}
+function makeRect(p, q) { return { x: Math.min(p.x,q.x), y: Math.min(p.y,q.y), w: Math.abs(p.x-q.x), h: Math.abs(p.y-q.y) }; }
+byId("alphaCanvas").addEventListener("click", event => {
+  if (byId("mode").value !== "pair" || !alpha.naturalWidth) return;
+  pending = pixel(event, event.currentTarget);
+  notify(`模板点 (${pending.x}, ${pending.y}) 已选；请在右图点同一结构。`);
+  draw();
+});
+byId("cisCanvas").addEventListener("click", event => {
+  if (byId("mode").value !== "pair" || !cis.naturalWidth) return;
+  if (!pending) { notify("请先点左图模板中的结构，再点右图对应结构。"); return; }
+  const q = pixel(event, event.currentTarget);
+  data().points.push({ alphaX: pending.x, alphaY: pending.y, cisX: q.x, cisY: q.y });
+  pending = null; lastAction = "point"; persist(); refreshList(); draw();
+  notify("对应点已记录；请继续选择下一个分散、可确认的同名结构。");
+});
+byId("cisCanvas").addEventListener("pointerdown", event => {
+  if (byId("mode").value === "pair" || !cis.naturalWidth) return;
+  dragStart = pixel(event, event.currentTarget);
+  event.currentTarget.setPointerCapture(event.pointerId);
+});
+byId("cisCanvas").addEventListener("pointermove", event => {
+  if (!dragStart) return;
+  preview = makeRect(dragStart, pixel(event, event.currentTarget)); draw();
+});
+byId("cisCanvas").addEventListener("pointerup", event => {
+  if (!dragStart) return;
+  const rect = makeRect(dragStart, pixel(event, event.currentTarget));
+  dragStart = null; preview = null;
+  if (rect.w >= 2 && rect.h >= 2) {
+    rect.type = byId("mode").value;
+    data().defects.push(rect); lastAction = "defect"; persist(); refreshList();
+    notify("区域已记录。请在备注里补充具体缺陷含义；不确定的区域应选“待确认”。");
+  }
+  draw();
+});
+byId("mode").onchange = () => { pending = null; dragStart = null; preview = null; draw(); };
+byId("zoom").onchange = () => { scale = Number(byId("zoom").value); draw(); };
+byId("caseSelect").onchange = loadCase;
+for (const field of ["complete", "geometry", "structures", "notes"]) {
+  byId(field).addEventListener(field === "notes" ? "input" : "change", () => { data()[field] = byId(field).value; persist(); });
+}
+byId("undo").onclick = () => {
+  if (pending) { pending = null; draw(); notify("已撤销待匹配的模板点。"); return; }
+  if (lastAction === "defect" && data().defects.length) data().defects.pop();
+  else if (data().points.length) data().points.pop();
+  else if (data().defects.length) data().defects.pop();
+  else { notify("当前零件没有可撤销的标注。"); return; }
+  lastAction = null; persist(); refreshList(); draw(); notify("已撤销最近一项标注。");
+};
+byId("import").onclick = () => byId("importFile").click();
+byId("importFile").onchange = async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const input = JSON.parse(await file.text());
+    if (input.schema !== "CIS.UnifiedRegistration.ManualReview.v1" || !Array.isArray(input.cases)) {
+      throw new Error("不是本标注页导出的 JSON 格式");
+    }
+    const imported = {};
+    for (const item of input.cases) {
+      const key = item.set + "/" + item.partId;
+      if (!cases.some(c => caseKey(c) === key) || !Array.isArray(item.points) || !Array.isArray(item.defects)) {
+        throw new Error("零件编号或点位格式不符：" + key);
+      }
+      imported[key] = { complete: item.complete || "uncertain", geometry: item.geometry || "uncertain",
+        structures: item.structures || "uncertain", notes: item.notes || "", points: item.points,
+        defects: item.defects };
+    }
+    records = imported;
+    persist(); loadCase();
+    notify("已导入 " + input.cases.length + " 件标注。修改完毕后请再次导出 JSON。");
+  } catch (error) { notify("导入失败：" + error.message); }
+  event.target.value = "";
+};
+byId("export").onclick = () => {
+  const payload = { schema: "CIS.UnifiedRegistration.ManualReview.v1", exportedAt: new Date().toISOString(),
+    coordinateSystem: "original ROI pixels; top-left origin", cases: cases.map(item => ({ set: item[0], partId: item[1], ...records[caseKey(item)] || blank() })) };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url; link.download = "UnifiedRegistrationAnnotations.json"; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  notify("已导出标注 JSON。请把下载的文件发给我；如继续修改，之后需重新导出。");
+};
+cases.forEach((item, index) => {
+  const option = document.createElement("option"); option.value = String(index);
+  option.textContent = `${index+1}. ${item[0]} / ${item[1]}`;
+  byId("caseSelect").append(option);
+});
+loadCase();
+</script>
+</body>
+</html>

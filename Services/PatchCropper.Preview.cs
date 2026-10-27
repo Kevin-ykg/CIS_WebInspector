@@ -70,11 +70,27 @@ namespace CIS_WebInspector.Services
                             (int)(res.GlobalRoi.Y * displayScale),
                             (int)(res.GlobalRoi.Width * displayScale),
                             (int)(res.GlobalRoi.Height * displayScale));
-                        // 工程异常使用黄色，与产品 NG 的红色分开，避免全局图把算法失败误报成缺陷。
-                        Scalar partColor = res.HasProcessingError
-                            ? new Scalar(0, 255, 255)
+                        // 零件框始终表示缺陷检测结论：Pass 绿、NG 红。只有真正的
+                        // 处理异常才无产品结论而使用黄色；局部配准警示另行标注。
+                        Scalar partColor = res.HasProcessingError ? new Scalar(0, 255, 255)
                             : (res.IsPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255));
                         Cv2.Rectangle(cisCanvas, scaledRoi, partColor, partThick);
+
+                        if (res.HasProcessingError)
+                        {
+                            continue;
+                        }
+
+                        if (res.NeedsAlignmentReview)
+                        {
+                            // 黄色短标签只提示“请核对对准”；不覆盖正常的三类缺陷框。
+                            var label = scaledRoi.Width >= 70 ? "ALIGN?" : "A?";
+                            var labelPoint = new Point(
+                                Math.Max(0, scaledRoi.X + partThick + 2),
+                                Math.Min(cisCanvas.Height - 2, Math.Max(16, scaledRoi.Y + 18)));
+                            Cv2.PutText(cisCanvas, label, labelPoint, HersheyFonts.HersheySimplex,
+                                0.45, new Scalar(0, 255, 255), 1);
+                        }
 
                         foreach (Rect rect in res.InnerRects)
                         {

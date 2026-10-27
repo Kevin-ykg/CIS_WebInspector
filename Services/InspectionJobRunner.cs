@@ -335,16 +335,18 @@ namespace CIS_WebInspector.Services
                             config,
                             log);
 
-                        var (passCount, failCount, processingErrorCount) = LogPartResults(
+                        var (passCount, failCount, processingErrorCount, reviewCount) = LogPartResults(
                             defectTaskResult.Results, config, log, cancellationToken);
 
                         int totalParts = defectTaskResult.Results.Count;
+                        string productStatus = failCount > 0 ? "NG" : totalParts == 0 || processingErrorCount > 0
+                            ? "待复核" : "Pass";
                         string outputSummary = config.SaveCroppedImages
                             ? $"图像结果保存在: {outputDirectory}"
                             : "图像保存已关闭，检测结果仅用于界面显示和日志汇总";
                         string completedMessage =
-                            $"[缺陷流水线] 全部完成！共 {totalParts} 个零件 | 合格 {passCount} | " +
-                            $"不合格 {failCount} | 处理异常 {processingErrorCount} | " +
+                            $"[缺陷流水线] 全部完成！产品结论 {productStatus} | 共 {totalParts} 个零件 | 合格 {passCount} | " +
+                            $"不合格 {failCount} | 配准待复核 {reviewCount} | 处理异常 {processingErrorCount} | " +
                             $"全局对准={alignment.Mode}/{alignment.QualityStatus} | " +
                             $"检测={alignment.DetectionMilliseconds:F1}ms, 建图={alignment.MapGenerationMilliseconds:F1}ms, " +
                             $"变换={alignment.RemapMilliseconds:F1}ms | {outputSummary}";
@@ -352,11 +354,11 @@ namespace CIS_WebInspector.Services
 
                         return new InspectionJobResult
                         {
-                            Status = processingErrorCount > 0
-                                ? InspectionJobStatus.CompletedWithProcessingErrors
+                            Status = processingErrorCount > 0 ? InspectionJobStatus.CompletedWithProcessingErrors
+                                : reviewCount > 0 ? InspectionJobStatus.CompletedWithReview
                                 : InspectionJobStatus.Completed,
-                            IssueCode = processingErrorCount > 0
-                                ? InspectionJobIssueCode.PartProcessingError
+                            IssueCode = processingErrorCount > 0 ? InspectionJobIssueCode.PartProcessingError
+                                : reviewCount > 0 ? InspectionJobIssueCode.PartAlignmentReview
                                 : InspectionJobIssueCode.None,
                             Message = completedMessage,
                             GlobalImageBytes = defectTaskResult.GlobalImageBytes,
@@ -366,6 +368,7 @@ namespace CIS_WebInspector.Services
                             TotalParts = totalParts,
                             PassCount = passCount,
                             FailCount = failCount,
+                            AlignmentReviewCount = reviewCount,
                             ProcessingErrorCount = processingErrorCount,
                             AlignmentMode = alignment.Mode,
                             AlignmentQualityStatus = alignment.QualityStatus,

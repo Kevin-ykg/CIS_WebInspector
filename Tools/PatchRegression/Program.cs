@@ -24,7 +24,7 @@ namespace PatchRegression
             public void Write(string message) { Console.WriteLine(message); }
             public void WriteDiagnostic(string message) { Diagnostic = message; }
         }
-        private sealed class Case { public string Name; public Mat Alpha, Cis; public int Threshold; }
+        private sealed class Case { public string Name; public Mat Alpha, Cis; public int Threshold; public Rect Core; }
         private sealed class Row
         {
             public string Name { get; set; }
@@ -50,9 +50,16 @@ namespace PatchRegression
                 {
                     return PipelineChecks.Run(root, Option("--output") ?? "pipeline", Option("--compare"));
                 }
+                // 0.6 mm 灵敏度是隔离实验：从配置取快照，在内存中改参数，不回写现场文件。
+                if (Array.IndexOf(args, "--sensitivity-06") >= 0)
+                {
+                    return SensitivityChecks.Run(root, Option("--config"), Option("--output") ?? "sensitivity-06");
+                }
                 string output = Path.Combine(root, "obj", "PatchNativeValidation", Option("--output") ?? "default");
                 Directory.CreateDirectory(output);
-                AppConfig config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(Path.Combine(root, "bin/x64/Debug/net48/app_config.json")));
+                // 回归使用显式快照，避免测试期间现场开关/阈值变化污染前后比较；不写回配置。
+                string configPath = Option("--config") ?? Path.Combine(root, "bin/x64/Debug/net48/app_config.json");
+                AppConfig config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(configPath));
                 // 仅覆盖当前验证进程内的夹具位置/物理尺寸，绝不改写软件的 app_config.json。
                 if (Option("--layout-log") != null)
                 {
@@ -73,12 +80,96 @@ namespace PatchRegression
                 {
                     config.MarkTiffHeightMm = double.Parse(Option("--layout-height"), System.Globalization.CultureInfo.InvariantCulture);
                 }
+                if (Option("--origin-y") != null)
+                {
+                    config.LayoutOriginYmm = double.Parse(Option("--origin-y"), System.Globalization.CultureInfo.InvariantCulture);
+                }
+                if (Option("--parallelism") != null)
+                {
+                    config.DefectMaxParallelism = int.Parse(Option("--parallelism"), System.Globalization.CultureInfo.InvariantCulture);
+                }
 
                 File.WriteAllText(Path.Combine(output, "effective-config.json"), JsonSerializer.Serialize(config, Json));
-                var cases = Synthetic();
+                // 统一配准有意改变图像结果；接口契约应能独立验证，不能把旧版像素
+                // 不等价的预期 MISMATCH 混进 ABI 检查的退出码。
+                if (Array.IndexOf(args, "--contract-only") >= 0)
+                {
+                    var contractCases = Synthetic();
+                    try { CheckContract(contractCases[1], config); return 0; }
+                    finally { foreach (var item in contractCases) { item.Alpha.Dispose(); item.Cis.Dispose(); } }
+                }
+                string localProbePart = Option("--local-probe-part");
+                var cases = Option("--raw-inputs") == null && localProbePart == null ? Synthetic() : new List<Case>();
+                if (Option("--raw-inputs") != null)
+                {
+                    string directory = Option("--raw-inputs");
+                    var thresholds = JsonSerializer.Deserialize<Dictionary<string, int>>(
+                        File.ReadAllText(Path.Combine(directory, "thresholds.json")));
+                    string corePath = Path.Combine(directory, "cores.json");
+                    var cores = File.Exists(corePath)
+                        ? JsonSerializer.Deserialize<Dictionary<string, Rect>>(File.ReadAllText(corePath), Json)
+                        : new Dictionary<string, Rect>();
+                    foreach (var entry in thresholds.OrderBy(entry => entry.Key))
+                    {
+                        if (localProbePart != null && entry.Key != localProbePart)
+                        {
+                            continue;
+                        }
+                        cases.Add(new Case { Name = entry.Key, Threshold = entry.Value,
+                            Core = cores.TryGetValue(entry.Key, out Rect core) ? core : default,
+                            Alpha = Cv2.ImRead(Path.Combine(directory, entry.Key + "_alpha.png"), ImreadModes.Unchanged),
+                            Cis = Cv2.ImRead(Path.Combine(directory, entry.Key + "_raw.png"), ImreadModes.Unchanged) });
+                    }
+                }
                 if (Option("--frames") != null)
                 {
-                    cases.AddRange(FromFrames(Option("--frames"), config));
+                    cases.AddRange(FromFrames(Option("--frames"), config, localProbePart,
+                        Array.IndexOf(args, "--registration-context") >= 0, Option("--export-frame")));
+                }
+
+                if (Array.IndexOf(args, "--export-inputs") >= 0)
+                {
+                    ExportInputs(cases, output);
+                }
+                if (Array.IndexOf(args, "--export-only") >= 0)
+                {
+                    foreach (Case item in cases) { item.Alpha.Dispose(); item.Cis.Dispose(); }
+                    return 0;
+                }
+                if (localProbePart != null)
+                {
+                    try
+                    {
+                        if (cases.Count != 1)
+                        {
+                            throw new Exception("Expected exactly one local registration part: " + localProbePart);
+                        }
+                        using (var cache = new PatchSiftTemplateCache())
+                        using (var worker = new PatchSiftWorker(cache))
+                        {
+                            var item = cases[0];
+                            var log = new Log();
+                            var detected = PatchDefectDetector.Detect(item.Alpha, item.Cis, item.Threshold, config,
+                                null, null, null, worker, item.Name, log, item.Core);
+                            string report = JsonSerializer.Serialize(new
+                            {
+                                item.Name, item.Threshold, item.Core, detected.AlignmentStatus,
+                                detected.AlignmentModel, detected.AlignmentReason, detected.AlignmentMatches,
+                                detected.AlignmentInliers, detected.AlignmentRmsOriginalPx,
+                                detected.AlignmentEdgeBeforeWorkPx, detected.AlignmentEdgeAfterWorkPx,
+                                detected.AlignmentStabilityOriginalPx, detected.IsPass,
+                                detected.InnerDefectCount, detected.OuterDefectCount,
+                                detected.FineLineBreakCount, Diagnostic = log.Diagnostic
+                            }, Json);
+                            Console.WriteLine(report);
+                            File.WriteAllText(Path.Combine(output, "local-probe.json"), report);
+                        }
+                    }
+                    finally
+                    {
+                        foreach (var item in cases) { item.Alpha.Dispose(); item.Cis.Dispose(); }
+                    }
+                    return 0;
                 }
 
                 if (args.Length > 1 && args[1] == "--pairs")
@@ -95,6 +186,19 @@ namespace PatchRegression
                     }
                 }
 
+                if (Array.IndexOf(args, "--benchmark-batch") >= 0)
+                {
+                    // 固定原始 ROI 与现场配置，整批并发、不保存图；避免将单件耗时外推为整批节拍。
+                    // 现有排版数据也含 31 位历史编号；不能因此漏掉整批中的四个真实零件。
+                    var actualCases = cases.Where(item => item.Name.Length >= 31 && item.Name.Length <= 32 &&
+                        item.Name.All(Uri.IsHexDigit)).ToList();
+                    if (actualCases.Count == 0) { throw new ArgumentException("批次性能测试需要真实零件 ROI"); }
+                    File.WriteAllText(Path.Combine(output, "batch-performance.json"),
+                        JsonSerializer.Serialize(MeasureBatch(actualCases, config,
+                            Array.IndexOf(args, "--cold-cache") >= 0), Json));
+                    foreach (Case item in cases) { item.Alpha.Dispose(); item.Cis.Dispose(); }
+                    return 0;
+                }
                 var rows = new List<Row>();
                 using (var oldCache = new LegacyCache())
                 using (var cache = new PatchSiftTemplateCache())
@@ -208,7 +312,9 @@ namespace PatchRegression
                     }
                 }
                 File.WriteAllText(Path.Combine(output, "repeat.json"), JsonSerializer.Serialize(repeat, Json));
-                File.WriteAllText(Path.Combine(output, "contract.json"), JsonSerializer.Serialize(CheckContract(cases[1], config), Json));
+                // 单零件定点回归也应执行接口契约检查，不能假定输入目录至少有两件。
+                Case contractCase = cases[Math.Min(1, cases.Count - 1)];
+                File.WriteAllText(Path.Combine(output, "contract.json"), JsonSerializer.Serialize(CheckContract(contractCase, config), Json));
                 File.WriteAllText(Path.Combine(output, "performance.json"), JsonSerializer.Serialize(MeasureWithoutSaving(cases.Last(), config), Json));
                 foreach (var item in cases)
                 { item.Alpha.Dispose(); item.Cis.Dispose(); }
@@ -219,6 +325,69 @@ namespace PatchRegression
             catch (Exception ex) { Console.Error.WriteLine(ex); return 2; }
         }
         private static AppConfig Clone(AppConfig config) => JsonSerializer.Deserialize<AppConfig>(JsonSerializer.Serialize(config));
+
+        private static void ExportInputs(List<Case> cases, string output)
+        {
+            // 保存全局对准后的原始像素和真实 core；不拿已经二值化、二次变换的
+            // 结果图回做配准，避免丢失原始灰度或把搜索余量当成检测区域。
+            string inputs = Path.Combine(output, "inputs");
+            Directory.CreateDirectory(inputs);
+            foreach (Case item in cases)
+            {
+                Cv2.ImWrite(Path.Combine(inputs, item.Name + "_alpha.png"), item.Alpha);
+                Cv2.ImWrite(Path.Combine(inputs, item.Name + "_raw.png"), item.Cis);
+            }
+            File.WriteAllText(Path.Combine(inputs, "thresholds.json"),
+                JsonSerializer.Serialize(cases.ToDictionary(item => item.Name, item => item.Threshold), Json));
+            File.WriteAllText(Path.Combine(inputs, "cores.json"),
+                JsonSerializer.Serialize(cases.ToDictionary(item => item.Name, item => item.Core), Json));
+        }
+
+        private static object MeasureBatch(List<Case> cases, AppConfig config, bool coldCache = false)
+        {
+            var samples = new List<double>();
+            string[] expected = null;
+            using (var cache = new PatchSiftTemplateCache())
+            {
+                // 两次预热不计入统计；随后十批同时核对确定性，当前配置细线开关保持原值。
+                for (int batch = 0; batch < 12; batch++)
+                {
+                    // 正式流水线每批创建模板缓存。显式冷缓存模式用于检验
+                    // 实际批次成本及冷/热一致性，不把跨批缓存复用当作现场节拍。
+                    using var batchCache = coldCache ? new PatchSiftTemplateCache() : null;
+                    var activeCache = batchCache ?? cache;
+                    var actual = new string[cases.Count];
+                    var watch = Stopwatch.StartNew();
+                    Parallel.For(0, cases.Count, new ParallelOptions { MaxDegreeOfParallelism = config.DefectMaxParallelism }, i =>
+                    {
+                        using (var worker = new PatchSiftWorker(activeCache))
+                        {
+                            Case item = cases[i];
+                            var log = new Log();
+                            var result = PatchDefectDetector.Detect(item.Alpha, item.Cis, item.Threshold, config,
+                                null, null, null, worker, item.Name, log, item.Core);
+                            // 缺陷计数相同不代表配准相同：同时核对去掉耗时后的模型/内点/轮廓诊断。
+                            string alignment = log.Diagnostic ?? "";
+                            int time = alignment.LastIndexOf(", time=", StringComparison.Ordinal);
+                            if (time >= 0) { alignment = alignment.Substring(0, time); }
+                            actual[i] = JsonSerializer.Serialize(result, Json) + "\n" + alignment;
+                        }
+                    });
+                    watch.Stop();
+                    if (expected != null && !expected.SequenceEqual(actual))
+                    { throw new InvalidOperationException("整批并发重复结果不一致"); }
+                    expected = actual;
+                    if (batch >= 2) { samples.Add(watch.Elapsed.TotalMilliseconds); }
+                    Console.WriteLine("BATCH " + batch + ": " + watch.Elapsed.TotalMilliseconds.ToString("F1") + " ms");
+                }
+            }
+            var sorted = samples.OrderBy(x => x).ToArray();
+            return new { Parts = cases.Count, Parallelism = config.DefectMaxParallelism, Warmup = 2,
+                Runs = samples, MedianMs = (sorted[4] + sorted[5]) / 2, Repeatable = true,
+                Compared = "defect results and alignment diagnostics without timing", SaveImages = false,
+                CacheMode = coldCache ? "new cache per batch" : "shared across repetitions",
+                Results = expected };
+        }
 
         private static List<string> CheckContract(Case item, AppConfig config)
         {
@@ -236,7 +405,7 @@ namespace PatchRegression
                 options.Alignment = 0;
                 var validImage = alpha;
                 var validOptions = options;
-                foreach (string name in new[] { "image layout", "short input", "stride", "channels", "null pixels", "config layout", "nonfinite scale" })
+                foreach (string name in new[] { "image layout", "short input", "stride", "channels", "null pixels", "config layout", "nonfinite scale", "core outside" })
                 {
                     alpha = validImage;
                     options = validOptions;
@@ -275,6 +444,13 @@ namespace PatchRegression
                         options.Scale = double.NaN;
                     }
 
+                    if (name == "core outside")
+                    {
+                        options.CoreX = item.Alpha.Width;
+                        options.CoreWidth = 10;
+                        options.CoreHeight = 10;
+                    }
+
                     int status = PatchNativeInterop.cis_patch_detect(worker.Handle, ref alpha, ref cis, ref options,
                         out IntPtr invalidResult, worker.Error, (uint)worker.Error.Length);
                     Check(status == -1 && invalidResult == IntPtr.Zero, name + " rejected without result");
@@ -289,6 +465,13 @@ namespace PatchRegression
                     var summary = new PatchNativeInterop.Summary { Size = 80 };
                     Check(PatchNativeInterop.cis_patch_result_summary(result, ref summary, worker.Error, (uint)worker.Error.Length) == 0,
                         "worker survives disposed cache");
+                    var alignment = new PatchNativeInterop.AlignmentInfo { Size = 72 };
+                    Check(PatchNativeInterop.cis_patch_result_alignment(result, ref alignment, worker.Error,
+                        (uint)worker.Error.Length) == 0 && alignment.Status == (int)LocalAlignmentStatus.Disabled,
+                        "structured alignment status");
+                    alignment.Size = 0;
+                    Check(PatchNativeInterop.cis_patch_result_alignment(result, ref alignment, worker.Error,
+                        (uint)worker.Error.Length) == -1, "alignment layout rejected");
                     summary.Size = 0;
                     Check(PatchNativeInterop.cis_patch_result_summary(result, ref summary, worker.Error, (uint)worker.Error.Length) == -1,
                         "summary layout rejected");
@@ -304,6 +487,39 @@ namespace PatchRegression
                         var before = Cv2.Sum(target);
                         Check(cis_patch_result_copy_image(result, 0, target.Data, 1, (ulong)target.Step(), worker.Error, (uint)worker.Error.Length) == -1 &&
                             Cv2.Sum(target) == before, "short image output rejected without writing");
+                    }
+                }
+                // ABI v2 的核心 ROI 与外围搜索区必须独立：配准可使用外圈像素，
+                // 但对外的缺陷/预览图仍应严格保持原理论零件大小。
+                using (var contextAlpha = new Mat())
+                using (var contextCis = new Mat())
+                {
+                    Cv2.CopyMakeBorder(item.Alpha, contextAlpha, 100, 100, 100, 100,
+                        BorderTypes.Constant, Scalar.All(0));
+                    Cv2.CopyMakeBorder(item.Cis, contextCis, 100, 100, 100, 100,
+                        BorderTypes.Constant, Scalar.All(0));
+                    var contextA = PatchNativeInterop.Image.Borrow(contextAlpha);
+                    var contextC = PatchNativeInterop.Image.Borrow(contextCis);
+                    var contextOptions = validOptions;
+                    contextOptions.Alignment = 1;
+                    contextOptions.Outputs = 3; // 请求原尺寸的边缘屏蔽图，检查核心尺寸。
+                    contextOptions.CoreX = 100;
+                    contextOptions.CoreY = 100;
+                    contextOptions.CoreWidth = item.Alpha.Width;
+                    contextOptions.CoreHeight = item.Alpha.Height;
+                    PatchNativeInterop.Check(PatchNativeInterop.cis_patch_detect(worker.Handle, ref contextA,
+                        ref contextC, ref contextOptions, out IntPtr contextPointer, worker.Error,
+                        (uint)worker.Error.Length), worker.Error);
+                    using (var contextResult = new PatchNativeInterop.ResultHandle(contextPointer))
+                    {
+                        var info = new PatchNativeInterop.AlignmentInfo { Size = 72 };
+                        Check(PatchNativeInterop.cis_patch_result_alignment(contextResult, ref info,
+                            worker.Error, (uint)worker.Error.Length) == 0 &&
+                            info.Status != (int)LocalAlignmentStatus.Disabled, "alignment result from context");
+                        using (var coreImage = PatchNativeInterop.ReadImage(contextResult, 4, worker.Error))
+                        {
+                            Check(coreImage.Size() == item.Alpha.Size(), "output excludes search padding");
+                        }
                     }
                 }
                 GC.KeepAlive(item.Alpha);
@@ -410,7 +626,8 @@ namespace PatchRegression
             parent.Dispose();
             return cases;
         }
-        private static unsafe List<Case> FromFrames(string directory, AppConfig config)
+        private static unsafe List<Case> FromFrames(string directory, AppConfig config, string localProbePart = null,
+            bool registrationContext = false, string frameOutput = null)
         {
             var result = new List<Case>();
             StitchedImageResult stitched = null;
@@ -493,10 +710,20 @@ namespace PatchRegression
                     {
                         Cv2.Flip(warped, flippedCis, FlipMode.X);
                         Cv2.Flip(alpha, flippedAlpha, FlipMode.X);
+                        if (frameOutput != null)
+                        {
+                            Directory.CreateDirectory(frameOutput);
+                            Cv2.ImWrite(Path.Combine(frameOutput, "frame_alpha.png"), flippedAlpha);
+                            Cv2.ImWrite(Path.Combine(frameOutput, "frame_raw.png"), flippedCis);
+                        }
                         double ppm = config.LayoutDpi / 25.4;
                         int ox = (int)(config.LayoutOriginXmm * ppm), oy = (int)(config.LayoutOriginYmm * ppm);
                         foreach (var part in layout.Parts)
                         {
+                            if (localProbePart != null && part.HotInkTaskID != localProbePart)
+                            {
+                                continue;
+                            }
                             if (part.HotInkTaskID?.Contains("QRCode") == true)
                             {
                                 continue;
@@ -510,10 +737,18 @@ namespace PatchRegression
                             }
 
                             var roi = new Rect(x, y, w, h);
-                            using (var a = new Mat(flippedAlpha, roi))
-                            using (var c = new Mat(flippedCis, roi))
+                            int padding = localProbePart == null && !registrationContext ? 0 : Math.Max(16, (int)Math.Min(2000,
+                                Math.Ceiling(Math.Max(0, config.LocalAlignmentPaddingMm) * ppm)));
+                            int left = Math.Max(0, roi.X - padding), top = Math.Max(0, roi.Y - padding);
+                            int right = Math.Min(tiff.Width, roi.Right + padding);
+                            int bottom = Math.Min(tiff.Height, roi.Bottom + padding);
+                            var search = new Rect(left, top, right - left, bottom - top);
+                            using (var a = new Mat(flippedAlpha, search))
+                            using (var c = new Mat(flippedCis, search))
                             {
-                                result.Add(new Case { Name = part.HotInkTaskID, Alpha = a.Clone(), Cis = c.Clone(), Threshold = Math.Max(0, Math.Min(255, threshold + config.DefectCisThreshOffset)) });
+                                result.Add(new Case { Name = part.HotInkTaskID, Alpha = a.Clone(), Cis = c.Clone(),
+                                    Core = new Rect(roi.X - left, roi.Y - top, roi.Width, roi.Height),
+                                    Threshold = Math.Max(0, Math.Min(255, threshold + config.DefectCisThreshOffset)) });
                             }
                         }
                     }

@@ -1,17 +1,17 @@
 #pragma once
 #include "cis_patch_api.h"
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/calib3d.hpp>
-#include <opencv2/ximgproc.hpp>
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <climits>
+#include <cmath>
 #include <memory>
 #include <mutex>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/ximgproc.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -59,7 +59,7 @@ struct TemplateCache
     CisPatchCacheStats stats{sizeof(CisPatchCacheStats)};
     // 借用当前 worker 的 SIFT 做首次提取；返回 shared_ptr 保证配准期间缓存项仍存活。
     // 哈希碰撞验证和锁顺序的实现独立放在 patch_template_cache.cpp。
-    std::shared_ptr<TemplateFeatures> get(const cv::Mat &, cv::SIFT &);
+    std::shared_ptr<TemplateFeatures> get(const cv::Mat &, cv::SIFT &, int feature_support = 0);
 };
 struct Worker
 {
@@ -67,22 +67,28 @@ struct Worker
     std::mutex mutex; // 同一 worker 串行，不影响其他 worker 的配准/检测。
     std::shared_ptr<TemplateCache> cache;
     cv::Ptr<cv::SIFT> sift;
-    cv::Ptr<cv::BFMatcher> matcher;
     void initialize()
     {
         if (!sift)
         {
-            sift = cv::SIFT::create(100);
-            matcher = cv::BFMatcher::create(cv::NORM_L2);
+            // 不在 SIFT 内部按整图响应强度先截断；统一在模板坐标中做空间均衡筛选。
+            // DoG 极值按九区均衡取最多 100 个；仅对不同采样位置不足 8 个的
+            // 分区补充转角 SIFT 描述子（最多额外 72 个），不是每区固定加 8 个。
+            // 两类采样点一起进入同一套匹配/稳健估计流程。
+            sift = cv::SIFT::create(0, 3, .04, 10., 1.6, true);
         }
     }
 };
 struct Alignment
 {
     bool applied = false;
-    cv::Mat transform; // 2x3/CV_64F，工作图像坐标，CIS -> Alpha；applied=false 时不得 Warp。
+    // 相似/仿射为 2x3，单应为 3x3；均是原始输入像素坐标 CIS -> Alpha。
+    // applied=true 包含 Applied 与 AppliedDegraded，均须用此矩阵采样核心图；
+    // applied=false 时不得 Warp，调用方不能读取拒绝候选留下的临时矩阵。
+    cv::Mat transform;
     std::string diagnostic;
     double milliseconds = 0;
+    CisPatchAlignmentInfo info{sizeof(CisPatchAlignmentInfo)};
 };
 struct FineResult
 {
@@ -98,10 +104,20 @@ struct PatchResult
     std::vector<CisPatchDefect> defects;
     std::array<cv::Mat, 6> images;
     std::string log;
+    CisPatchAlignmentInfo alignment{sizeof(CisPatchAlignmentInfo)};
 };
 // 输入视图只在同步调用期间借用。结果中所有图像均拥有引用计数内存，不引用调用方像素。
-Alignment local_align(const cv::Mat &alpha, const cv::Mat &cis, int alpha_threshold, int cis_threshold, double scale,
-                      Worker &worker);
+// 统一配准入口：原分辨率输入，输出矩阵也在原分辨率 CIS -> Alpha 坐标中。
+// 工作区与模板内容绑定；调用方不再负责工作图缩放或猜测矩阵所处的尺度。
+// 少量边界截断片段仅在配准副本上排除，完整散点保留；detect 的原始 Alpha 不变。
+Alignment register_patch(const cv::Mat &alpha, const cv::Mat &cis, int alpha_threshold, int cis_threshold, double dpi,
+                         Worker &worker, cv::Rect core);
+void extract_alignment_features(const cv::Mat &image, cv::SIFT &sift, std::vector<cv::KeyPoint> &keypoints,
+                                cv::Mat &descriptors, const std::vector<cv::KeyPoint> *reference = nullptr,
+                                double radius = 0, int feature_support = 0);
+bool unambiguous_period(const cv::Mat &alpha, const cv::Mat &cis, int alpha_threshold, int cis_threshold,
+                        const cv::Mat &transform, double scale, Worker &worker, std::string &diagnostic,
+                        int feature_support = 0);
 FineResult fine_line(const cv::Mat &alpha, const cv::Mat &cis, int threshold, double scale,
                      const CisPatchConfig &config);
 PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfig &config, Worker &worker);

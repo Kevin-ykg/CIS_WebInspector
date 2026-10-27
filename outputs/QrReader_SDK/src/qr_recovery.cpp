@@ -55,9 +55,84 @@ bool plausible(const Quad &c, int width, int height)
     }
     return true;
 }
+
+bool line_scan_rectify(const cv::Mat &straight, int modules, cv::Mat &corrected, double top_adjust = 0,
+                       double bottom_adjust = 0)
+{
+    // 同一帧的线扫速度波动可能使上、下定位框的纵向模块尺寸不同。普通透视
+    // 只能拉直四边形，不能消除这种沿走膜方向变化的局部采样密度。只在三只
+    // 定位框均可复测且确实存在尺寸差异时，按它们的外边界校正纵向坐标。
+    const double pitch = static_cast<double>(straight.rows) / modules;
+    const int quiet = std::max(16, round_even(2 * pitch));
+    cv::Mat framed;
+    cv::copyMakeBorder(straight, framed, quiet, quiet, quiet, quiet, cv::BORDER_CONSTANT, cv::Scalar(255));
+    const auto evidence = finder_evidence(framed);
+    struct Boundary
+    {
+        double start = 0, end = 0;
+        int count = 0;
+    } top, bottom;
+    bool occupied[2][2] = {};
+    for (const auto &finder : evidence)
+    {
+        const double x = finder.x - quiet, y = finder.y - quiet;
+        const bool right = x >= straight.cols * .5, lower = y >= straight.rows * .5;
+        const double expected_x = (right ? modules - 3.5 : 3.5) * pitch;
+        const double expected_y = (lower ? modules - 3.5 : 3.5) * pitch;
+        if (occupied[lower][right] || std::abs(x - expected_x) > 2.5 * pitch ||
+            std::abs(y - expected_y) > 2.5 * pitch || finder.bounds.width < 5 * pitch ||
+            finder.bounds.width > 9 * pitch || finder.bounds.height < 5 * pitch || finder.bounds.height > 9 * pitch)
+        {
+            continue;
+        }
+        occupied[lower][right] = true;
+        auto &group = lower ? bottom : top;
+        group.start += finder.bounds.y - quiet;
+        group.end += finder.bounds.br().y - quiet;
+        ++group.count;
+    }
+    if (top.count + bottom.count != 3 || !top.count || !bottom.count)
+    {
+        return false;
+    }
+    const double top_start = top.start / top.count, top_end = top.end / top.count;
+    const double bottom_start = bottom.start / bottom.count, bottom_end = bottom.end / bottom.count;
+    const double ideal_top_end = 7 * pitch, ideal_bottom_start = (modules - 7) * pitch;
+    if (std::abs(top_start) > pitch || std::abs(bottom_end - straight.rows) > pitch ||
+        top_end >= bottom_start - 2 * pitch || std::abs(top_end - ideal_top_end) > 2 * pitch ||
+        std::abs(bottom_start - ideal_bottom_start) > 2 * pitch ||
+        std::abs((top_end - top_start) - (bottom_end - bottom_start)) < pitch * .25)
+    {
+        return false;
+    }
+
+    // 四个锚点分别是上定位框外沿、上定位框下沿、下定位框上沿及下外沿。
+    // 分段线性插值保持单调，既能修正局部行距，也不会凭空生成或删除模块；
+    // 所有文本仍由二维码解码器及其纠错校验确认，而非由几何外观推断。
+    const std::array<double, 4> target{{0, ideal_top_end, ideal_bottom_start, static_cast<double>(straight.rows - 1)}};
+    // 抗锯齿和阈值使轮廓边界存在约 1～2 像素测量误差。高分辨率恢复时
+    // 只允许对上下两条内部边界作相反方向的小幅修正，外边界固定在码区内。
+    const std::array<double, 4> measured{{std::max(0., top_start), top_end + top_adjust, bottom_start + bottom_adjust,
+                                          std::min(static_cast<double>(straight.rows - 1), bottom_end - 1)}};
+    cv::Mat map_x(straight.size(), CV_32F), map_y(straight.size(), CV_32F);
+    for (int row = 0; row < straight.rows; ++row)
+    {
+        int segment = row < target[1] ? 0 : row < target[2] ? 1 : 2;
+        double fraction = (row - target[segment]) / (target[segment + 1] - target[segment]);
+        float source_y = static_cast<float>(measured[segment] + fraction * (measured[segment + 1] - measured[segment]));
+        auto *xs = map_x.ptr<float>(row), *ys = map_y.ptr<float>(row);
+        for (int col = 0; col < straight.cols; ++col)
+        {
+            xs[col] = static_cast<float>(col);
+            ys[col] = source_y;
+        }
+    }
+    cv::remap(straight, corrected, map_x, map_y, cv::INTER_CUBIC, cv::BORDER_REPLICATE);
+    return true;
+}
 } // namespace
 
-bool QrDetector::perspective(const cv::Mat &source, cv::Rect evidence_roi, Result &result)
+bool QrDetector::perspective(const cv::Mat &source, cv::Rect evidence_roi, Result &result, bool allow_locator_recovery)
 {
     auto safe = evidence_roi & cv::Rect(0, 0, source.cols, source.rows);
     if (safe.width < 64 || safe.height < 64)
@@ -101,13 +176,125 @@ bool QrDetector::perspective(const cv::Mat &source, cv::Rect evidence_roi, Resul
         }
         if (!decoded)
         {
-            continue;
+            cv::Mat corrected, corrected_padded, corrected_normalized;
+            if (line_scan_rectify(straight, candidate.modules, corrected))
+            {
+                cv::copyMakeBorder(corrected, corrected_padded, quiet, quiet, quiet, quiet, cv::BORDER_CONSTANT,
+                                   cv::Scalar(255));
+                cv::normalize(corrected_padded, corrected_normalized, 0, 255, cv::NORM_MINMAX);
+                decoded = decode(corrected_normalized, 1, hit);
+                if (decoded)
+                {
+                    preprocessing = "finder-row-spacing";
+                }
+            }
+            if (!decoded)
+            {
+                continue;
+            }
         }
         result = from_corners(hit, candidate.corners, true);
         result.strategy =
             "WeChatQRCode, finder-perspective, finderCount=3, moduleCount=" + std::to_string(candidate.modules) +
             ", rightAngleCosine=" + fixed(candidate.cosine, 3) + ", rectified=" + preprocessing;
         return true;
+    }
+    if (allow_locator_recovery && !candidates.empty())
+    {
+        // 普通三定位框外推有时会把局部行距失真误当成透视，导致四角本身
+        // 带偏差。仅在上述解码均失败后，使用 OpenCV 定位器提供另一组
+        // 独立四角；仍需与三框候选空间一致，并经分段校正和解码校验。
+        std::vector<cv::Point2f> located;
+        try
+        {
+            cv::QRCodeDetector locator;
+            const auto &candidate = candidates.front();
+            std::vector<cv::Point2f> candidate_points(candidate.corners.begin(), candidate.corners.end());
+            auto search = cv::boundingRect(candidate_points);
+            int margin = round_even(std::max(search.width, search.height) * .15);
+            search =
+                (cv::Rect(search.x - margin, search.y - margin, search.width + 2 * margin, search.height + 2 * margin) &
+                 safe);
+            if (search.width >= 96 && search.height >= 96 && locator.detect(source(search), located) &&
+                located.size() == 4)
+            {
+                Quad corners;
+                for (size_t i = 0; i < corners.size(); ++i)
+                {
+                    corners[i] = located[i] + cv::Point2f(static_cast<float>(search.x), static_cast<float>(search.y));
+                }
+                auto center = [](const Quad &points) {
+                    cv::Point2f sum;
+                    for (const auto &point : points)
+                    {
+                        sum += point;
+                    }
+                    return scaled(sum, .25);
+                };
+                const double side_length = (distance(corners[0], corners[1]) + distance(corners[1], corners[2])) * .5;
+                if (side_length > 96 && distance(center(corners), center(candidate.corners)) < side_length * .25)
+                {
+                    const int side = candidate.modules * 24, quiet = 4 * 24;
+                    Quad destination{{{0, 0},
+                                      {static_cast<float>(side), 0},
+                                      {static_cast<float>(side), static_cast<float>(side)},
+                                      {0, static_cast<float>(side)}}};
+                    cv::Mat straight, corrected;
+                    cv::warpPerspective(source, straight,
+                                        cv::getPerspectiveTransform(corners.data(), destination.data()), {side, side},
+                                        cv::INTER_CUBIC, cv::BORDER_CONSTANT, cv::Scalar(255));
+                    // 只在此前所有普通解码均失败时尝试；边界扰动上限为高分辨率
+                    // 工作图的 4 px，不按样本文本或业务格式推断结果。
+                    const std::array<std::array<double, 2>, 7> boundary_offsets{
+                        {{{0, 0}}, {{-2, 2}}, {{0, 2}}, {{-2, 0}}, {{2, -2}}, {{-4, 4}}, {{4, -4}}}};
+                    for (const auto &adjustment : boundary_offsets)
+                    {
+                        if (!line_scan_rectify(straight, candidate.modules, corrected, adjustment[0], adjustment[1]))
+                        {
+                            break;
+                        }
+                        cv::Mat padded, normalized;
+                        cv::copyMakeBorder(corrected, padded, quiet, quiet, quiet, quiet, cv::BORDER_CONSTANT,
+                                           cv::Scalar(255));
+                        cv::normalize(padded, normalized, 0, 255, cv::NORM_MINMAX);
+                        Hit hit;
+                        bool decoded = decode(normalized, 1, hit);
+                        if (!decoded)
+                        {
+                            cv::Mat corrected_background, corrected_flattened;
+                            cv::GaussianBlur(normalized, corrected_background, {0, 0}, 24 * 1.8);
+                            cv::divide(normalized, corrected_background, corrected_flattened, 255.0);
+                            decoded = decode(corrected_flattened, 1, hit);
+                        }
+                        if (!decoded)
+                        {
+                            // 重新定位的是已校正的完整像素图，不是文本猜测。
+                            // 限制为一层，不再触发同一兜底，避免恢复分支递归膨胀。
+                            Result second_pass;
+                            if (perspective(normalized, cv::Rect(0, 0, normalized.cols, normalized.rows), second_pass,
+                                            false))
+                            {
+                                hit.text = second_pass.text;
+                                decoded = true;
+                            }
+                        }
+                        if (decoded)
+                        {
+                            result = from_corners(hit, corners, true);
+                            result.strategy = "WeChatQRCode, locator-finder-row-spacing, finderCount=3, moduleCount=" +
+                                              std::to_string(candidate.modules) +
+                                              ", boundaryAdjust=" + fixed(adjustment[0], 1) + "/" +
+                                              fixed(adjustment[1], 1);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        catch (const cv::Exception &)
+        {
+            // 几何定位只是可选兜底；OpenCV 找不到四角时仍按普通未识别处理。
+        }
     }
     return false;
 }

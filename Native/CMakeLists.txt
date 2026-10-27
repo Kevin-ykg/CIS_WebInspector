@@ -57,12 +57,13 @@ endif()
 
 if(NOT QR_READER_ONLY)
 add_library(CISVisionCore SHARED src/qr_api.cpp src/cis_qr_adapter.cpp
-  src/patch_api.cpp src/patch_detector.cpp src/patch_alignment.cpp src/patch_template_cache.cpp src/patch_fine_line.cpp
+  src/patch_api.cpp src/patch_detector.cpp src/patch_alignment.cpp src/patch_region.cpp
+  src/patch_periodicity.cpp src/patch_template_cache.cpp src/patch_fine_line.cpp
   src/alignment_api.cpp src/alignment_global.cpp src/alignment_marks.cpp
   src/alignment_side_grid.cpp src/alignment_white_ink.cpp src/alignment_warp.cpp)
 target_compile_features(CISVisionCore PRIVATE cxx_std_17)
 # 声明与实现一起出现在 VS 原生项目中；这些头文件不独立编译。
-target_sources(CISVisionCore PRIVATE src/cis_qr_adapter.h src/patch_detector.h src/patch_constants.h
+target_sources(CISVisionCore PRIVATE src/cis_qr_adapter.h src/patch_detector.h src/patch_constants.h src/patch_region.h
   src/alignment_internal.h include/cis_qr_api.h include/cis_patch_api.h include/cis_alignment_api.h)
 target_compile_definitions(CISVisionCore PRIVATE CIS_VISION_EXPORTS NOMINMAX WIN32_LEAN_AND_MEAN)
 target_include_directories(CISVisionCore PUBLIC include PRIVATE ${OpenCV_INCLUDE_DIRS})

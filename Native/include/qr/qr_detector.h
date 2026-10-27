@@ -66,7 +66,7 @@ class QrDetector
     void ensure_detector();
     bool decode(const cv::Mat &, double, Hit &);
     bool decode_xy(const cv::Mat &, double, double, Hit &);
-    bool perspective(const cv::Mat &, cv::Rect, Result &);
+    bool perspective(const cv::Mat &, cv::Rect, Result &, bool allow_locator_recovery = true);
     bool low_contrast(const cv::Mat &, int, Result &);
     bool blurred(const cv::Mat &, Result &);
     bool blurred_local(const cv::Mat &, const cv::Mat &, const std::vector<BlurTriple> &, Result &);

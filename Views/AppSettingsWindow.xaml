@@ -346,7 +346,7 @@
                             <TextBlock Text="启用零件级局部二次对齐" Width="180"/>
                             <CheckBox IsChecked="{Binding Config.EnableSiftLocalAlign}"/>
                         </StackPanel>
-                        <TextBlock Text="优先轮廓快速平移，困难场景再使用 SIFT，并统一进行亚像素轮廓精修。" Style="{StaticResource ParamDescription}"/>
+                        <TextBlock Text="开启后尝试 SIFT 特征匹配与 RANSAC 局部对准；整体改善但局部质量不足时继续使用并提示复核，证据不可靠时回退全局对准。" Style="{StaticResource ParamDescription}"/>
 
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="保存缺陷可视化图" Width="180"/>

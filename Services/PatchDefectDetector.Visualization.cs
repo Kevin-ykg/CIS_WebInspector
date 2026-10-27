@@ -13,7 +13,8 @@ namespace CIS_WebInspector.Services
         /// </summary>
         private static void SaveVisualization(Mat orgBin, Mat comBin, Mat difInner, Mat difOuter,
             List<Rect> innerRects, List<Rect> outerRects, List<Rect> fineLineRects,
-            bool isPass, string outputPath, IAppLogger logger)
+            bool isPass, LocalAlignmentStatus alignmentStatus, LocalAlignmentModel alignmentModel,
+            string outputPath, IAppLogger logger)
         {
             try
             {
@@ -45,6 +46,8 @@ namespace CIS_WebInspector.Services
 
                     double fontScale = Math.Max(0.5, orgBin.Width / 300.0);
                     int thickness = Math.Max(1, (int)(fontScale * 2));
+                    // 产品 Pass/NG 与局部配准提示是两条独立信息；待复核不能
+                    // 把正常绘制的缺陷结论替换成黄色 Review。
                     Scalar color = isPass ? new Scalar(0, 255, 0) : new Scalar(0, 0, 255);
 
                     Cv2.PutText(orgRgb, "Org(Bin)", new Point(10, orgRgb.Height / 8),
@@ -53,6 +56,34 @@ namespace CIS_WebInspector.Services
                         HersheyFonts.HersheySimplex, fontScale, color, thickness);
                     Cv2.PutText(difRgb, "Diff", new Point(10, difRgb.Height / 8),
                         HersheyFonts.HersheySimplex, fontScale, new Scalar(0, 255, 0), thickness);
+                    if (alignmentStatus == LocalAlignmentStatus.Review ||
+                        alignmentStatus == LocalAlignmentStatus.Error ||
+                        alignmentStatus == LocalAlignmentStatus.AppliedDegraded)
+                    {
+                        int warningY = Math.Min(difRgb.Height - 10,
+                            difRgb.Height / 8 + Math.Max(20, (int)(28 * fontScale)));
+                        Cv2.PutText(difRgb, "ALIGN REVIEW", new Point(10, warningY),
+                            HersheyFonts.HersheySimplex, fontScale * 0.75,
+                            new Scalar(0, 255, 255), thickness);
+                    }
+                    // 区分“局部已应用但质量降级”和“局部拒绝而回退全局”，
+                    // 两者均提示复核，但实际使用的图像与矩阵不同。
+                    string alignmentLabel = alignmentStatus == LocalAlignmentStatus.Applied ||
+                                            alignmentStatus == LocalAlignmentStatus.AppliedDegraded
+                        ? alignmentModel == LocalAlignmentModel.Homography ? "ALIGN: Homography"
+                        : alignmentModel == LocalAlignmentModel.ConstrainedAffine ? "ALIGN: Affine"
+                        : "ALIGN: Similarity"
+                        : alignmentStatus == LocalAlignmentStatus.NotNeeded ? "ALIGN: Global (good)"
+                        : alignmentStatus == LocalAlignmentStatus.Disabled ? "ALIGN: Global (off)"
+                        : "ALIGN: Global (review)";
+                    if (alignmentStatus == LocalAlignmentStatus.AppliedDegraded)
+                    {
+                        alignmentLabel += " (review)";
+                    }
+                    double labelScale = Math.Max(0.45, Math.Min(1.2, difRgb.Width / 1200.0));
+                    Point labelOrigin = new Point(10, difRgb.Height - Math.Max(12, (int)(14 * labelScale)));
+                    Cv2.PutText(difRgb, alignmentLabel, labelOrigin, HersheyFonts.HersheySimplex,
+                        labelScale, new Scalar(0, 255, 255), Math.Max(1, (int)Math.Ceiling(labelScale)));
                     Cv2.Rectangle(comRgb, new Rect(0, 0, comRgb.Width, comRgb.Height), color, 2);
 
                     Cv2.HConcat(new[] { orgRgb, comRgb, difRgb }, vis);

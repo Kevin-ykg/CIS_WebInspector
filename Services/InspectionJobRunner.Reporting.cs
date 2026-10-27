@@ -14,13 +14,14 @@ namespace CIS_WebInspector.Services
         /// 汇总产品结论及最终缺陷的真实面积。每件先检查取消，处理异常不计入产品 NG。
         /// 此处仅消费结果，不重新应用阈值，也不按绘图框面积重新测量。
         /// </summary>
-        private static (int PassCount, int FailCount, int ProcessingErrorCount) LogPartResults(
+        private static (int PassCount, int FailCount, int ProcessingErrorCount, int AlignmentReviewCount) LogPartResults(
             List<PatchDefectResult> results, AppConfig config, IAppLogger log,
             CancellationToken cancellationToken)
         {
             int passCount = 0;
             int failCount = 0;
             int processingErrorCount = 0;
+            int alignmentReviewCount = 0;
             long defectDetailLogTicks = 0;
             int loggedDefectDetailCount = 0;
             foreach (PatchDefectResult defectResult in results)
@@ -36,6 +37,19 @@ namespace CIS_WebInspector.Services
                     continue;
                 }
 
+                if (defectResult.NeedsAlignmentReview)
+                {
+                    alignmentReviewCount++;
+                    string source = defectResult.AlignmentStatus == LocalAlignmentStatus.AppliedDegraded
+                        ? "已采用整体更优的局部矩阵，但局部区域质量降级；"
+                        : "局部配准未通过，已使用全局对准图；";
+                    Log(log, $"  [⚠ 配准待复核] {defectResult.PartId} — " +
+                        source + "继续正常缺陷检测；" +
+                        "建议结合图像复核该零件的对准和缺陷框。" +
+                        $"模型={defectResult.AlignmentModel}，原因={defectResult.AlignmentReason}，" +
+                        $"匹配/内点={defectResult.AlignmentMatches}/{defectResult.AlignmentInliers}");
+                }
+
                 if (defectResult.IsPass)
                 {
                     passCount++;
@@ -46,6 +60,31 @@ namespace CIS_WebInspector.Services
                 }
 
                 string status = defectResult.IsPass ? "✓ Pass" : "✗ FAIL";
+                string alignmentSummary;
+                switch (defectResult.AlignmentStatus)
+                {
+                    case LocalAlignmentStatus.Applied:
+                        alignmentSummary = defectResult.AlignmentModel == LocalAlignmentModel.Homography
+                            ? "局部单应性" : defectResult.AlignmentModel == LocalAlignmentModel.ConstrainedAffine
+                            ? "受约束仿射" : "相似变换";
+                        break;
+                    case LocalAlignmentStatus.AppliedDegraded:
+                        alignmentSummary = defectResult.AlignmentModel == LocalAlignmentModel.Homography
+                            ? "局部单应性（降级待复核）"
+                            : defectResult.AlignmentModel == LocalAlignmentModel.ConstrainedAffine
+                                ? "受约束仿射（降级待复核）" : "相似变换（降级待复核）";
+                        break;
+                    case LocalAlignmentStatus.NotNeeded:
+                        alignmentSummary = "全局对准（无需二次）";
+                        break;
+                    case LocalAlignmentStatus.Review:
+                    case LocalAlignmentStatus.Error:
+                        alignmentSummary = "全局对准（局部待复核）";
+                        break;
+                    default:
+                        alignmentSummary = "全局对准（局部关闭）";
+                        break;
+                }
                 string fineLineSummary = defectResult.FineLineBreakCount > 0
                     ? $" | 细线断裂: {defectResult.FineLineBreakCount}个 " +
                       $"(最长 {defectResult.MaxFineLineBreakLengthMm:F2}mm，" +
@@ -56,7 +95,7 @@ namespace CIS_WebInspector.Services
                     $"(最大 {defectResult.MaxAreaInnerMm2:F3}mm² / 阈值 {config.DefectAreaThreshInner:F3}mm²) | " +
                     $"外部缺陷: {defectResult.OuterDefectCount}个 " +
                     $"(最大 {defectResult.MaxAreaOuterMm2:F3}mm² / 阈值 {config.DefectAreaThreshOuter:F3}mm²)" +
-                    $"{fineLineSummary}");
+                    $"{fineLineSummary} | 配准: {alignmentSummary}");
 
                 // 单独计时新增的逐缺陷尺寸日志，便于判断该追溯功能是否需要配置开关。
                 // 明细集合均来自最终检测结果，不会记录未通过面积/长度/线宽门槛的候选。
@@ -82,7 +121,7 @@ namespace CIS_WebInspector.Services
                 (defectDetailLogMilliseconds > 500
                     ? "（超过 500ms，建议启用可配置开关）"
                     : "（未超过 500ms，无需增加控制开关）"));
-            return (passCount, failCount, processingErrorCount);
+            return (passCount, failCount, processingErrorCount, alignmentReviewCount);
         }
 
         /// <summary>

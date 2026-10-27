@@ -53,3 +53,11 @@ _ReSharper*/
 
 # Large media files
 *.tiff
+
+# Disposable local alignment diagnostics. Keep confirmed regression inputs and
+# reports in Regression/, but never commit regenerated previews here.
+/outputs/*Alignment_20*/
+/outputs/UnifiedRegistrationReview_*/
+/Regression/PatchNative/Periodic20*/
+**/__pycache__/
+~$*.docx

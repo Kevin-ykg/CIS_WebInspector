@@ -16,9 +16,10 @@ namespace CIS_WebInspector.Services
         private const string Dll = "CISVisionCore.dll";
         internal static void ValidateAbi()
         {
-            if (cis_patch_abi_version() != 1 || Marshal.SizeOf(typeof(Image)) != 40 ||
-                Marshal.SizeOf(typeof(Config)) != 112 || Marshal.SizeOf(typeof(Defect)) != 64 ||
-                Marshal.SizeOf(typeof(Summary)) != 80 || Marshal.SizeOf(typeof(CacheStats)) != 48)
+            if (cis_patch_abi_version() != 2 || Marshal.SizeOf(typeof(Image)) != 40 ||
+                Marshal.SizeOf(typeof(Config)) != 128 || Marshal.SizeOf(typeof(Defect)) != 64 ||
+                Marshal.SizeOf(typeof(Summary)) != 80 || Marshal.SizeOf(typeof(CacheStats)) != 48 ||
+                Marshal.SizeOf(typeof(AlignmentInfo)) != 72)
             {
                 throw new InvalidOperationException("CISVisionCore.dll 零件检测接口版本/布局不匹配，请重新构建并部署 DLL。");
             }
@@ -64,7 +65,8 @@ namespace CIS_WebInspector.Services
             public int Alignment, FineLine, MinWidth, AlphaThreshold, CisThreshold, Outputs, Reserved;
             public double Scale, Dpi, InnerTolerance, OuterTolerance, OuterExclusion, InnerExclusion;
             public double InnerArea, OuterArea, FineLength, FineWidth;
-            public static Config From(AppConfig value, int cisThreshold, int outputs)
+            public int CoreX, CoreY, CoreWidth, CoreHeight;
+            public static Config From(AppConfig value, int cisThreshold, int outputs, Rect core = default(Rect))
             {
                 if (value == null)
                 {
@@ -73,7 +75,7 @@ namespace CIS_WebInspector.Services
                 // 配置按值复制。正在运行的检测不借用设置窗口上的可变对象。
                 return new Config
                 {
-                    Size = 112,
+                    Size = 128,
                     Alignment = value.EnableSiftLocalAlign ? 1 : 0,
                     FineLine = value.EnableFineLineBreakDetection ? 1 : 0,
                     MinWidth = value.DefectMinScaledWidth,
@@ -89,9 +91,21 @@ namespace CIS_WebInspector.Services
                     InnerArea = value.DefectAreaThreshInner,
                     OuterArea = value.DefectAreaThreshOuter,
                     FineLength = value.FineLineMinBreakLengthMm,
-                    FineWidth = value.FineLineMaxWidthMm
+                    FineWidth = value.FineLineMaxWidthMm,
+                    CoreX = core.X,
+                    CoreY = core.Y,
+                    CoreWidth = core.Width,
+                    CoreHeight = core.Height
                 };
             }
+        }
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct AlignmentInfo
+        {
+            public uint Size;
+            public int Status, Model, Reason, Matches, Inliers;
+            public double InlierRatio, RmsOriginalPx, EdgeBeforeWorkPx, EdgeAfterWorkPx;
+            public double LeaveOutChangeOriginalPx, AlignmentMs;
         }
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct Defect
@@ -189,6 +203,7 @@ namespace CIS_WebInspector.Services
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] private static extern void cis_patch_worker_destroy(IntPtr handle);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] internal static extern int cis_patch_detect(WorkerHandle worker, ref Image alpha, ref Image cis, ref Config config, out IntPtr result, [Out] byte[] error, uint capacity);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] internal static extern int cis_patch_result_summary(ResultHandle result, ref Summary summary, [Out] byte[] error, uint capacity);
+        [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] internal static extern int cis_patch_result_alignment(ResultHandle result, ref AlignmentInfo info, [Out] byte[] error, uint capacity);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] internal static extern int cis_patch_result_defects(ResultHandle result, [Out] Defect[] defects, uint count, [Out] byte[] error, uint capacity);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] private static extern int cis_patch_result_log(ResultHandle result, [Out] byte[] text, uint capacity, out uint required);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)] private static extern int cis_patch_result_image(ResultHandle result, int kind, ref Image info, [Out] byte[] error, uint capacity);

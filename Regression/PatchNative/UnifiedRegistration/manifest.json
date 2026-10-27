@@ -1,0 +1,157 @@
+{
+  "purpose": "human review; no alignment transform estimated",
+  "cases": [
+    {
+      "set": "img2",
+      "part_id": "04200c88c8634c2388bc931c65cdb1cb",
+      "width": 3047,
+      "height": 3874,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/periodic-img2-before/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/04200c88c8634c2388bc931c65cdb1cb_alpha.png",
+          "sha256": "c60332381484db155998634ea7ac65a88863320bae5a9f371dcaa70c3ee7069a"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/04200c88c8634c2388bc931c65cdb1cb_raw.png",
+          "sha256": "ac1aa6f4375e84fc92634f783845ec8b966d1e75ad4c796afa40b156836e15c3"
+        }
+      }
+    },
+    {
+      "set": "img2",
+      "part_id": "2b72867d30ea4244a700bdca93cd8522",
+      "width": 2692,
+      "height": 3874,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/periodic-img2-before/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/2b72867d30ea4244a700bdca93cd8522_alpha.png",
+          "sha256": "76e251a4f7a1de0b7eef1c2100146d15ef5723f9dcab12006e5f292efe14e645"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/2b72867d30ea4244a700bdca93cd8522_raw.png",
+          "sha256": "143d5c851f7eeed004ee277684c78213b2c21d74d0a52896783f19ae518e5a86"
+        }
+      }
+    },
+    {
+      "set": "img2",
+      "part_id": "3b72867d30ea4244a700bdca93cd8522",
+      "width": 3401,
+      "height": 1346,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/periodic-img2-before/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/3b72867d30ea4244a700bdca93cd8522_alpha.png",
+          "sha256": "8862082df477d0ae7ff255e46f066815f031b83a213aa368d85fc41c8c3ec8c3"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/3b72867d30ea4244a700bdca93cd8522_raw.png",
+          "sha256": "c40450dbfb04e66d89087b30c9349aa7b3fb4a0f7c4a5b6e33735d358d91d252"
+        }
+      }
+    },
+    {
+      "set": "img2",
+      "part_id": "4b72867d30ea4244a700bdca93cd8522",
+      "width": 3401,
+      "height": 3874,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/periodic-img2-before/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/4b72867d30ea4244a700bdca93cd8522_alpha.png",
+          "sha256": "cf9f0a4dd485e81c468b09f721faa07dc48521297600809f51864d1218f7b0d0"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/4b72867d30ea4244a700bdca93cd8522_raw.png",
+          "sha256": "43d968fa02b9ae9f6ee98b5a03437f6bb4f842e9735bb21f72dd0d133c22238f"
+        }
+      }
+    },
+    {
+      "set": "img2",
+      "part_id": "5b72867d30ea4244a700bdca93cd8522",
+      "width": 3401,
+      "height": 3874,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/periodic-img2-before/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/5b72867d30ea4244a700bdca93cd8522_alpha.png",
+          "sha256": "e347e0dbc294124a65f11a7da9a508e87dff6d9acf00796cc919f99374396569"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img2/5b72867d30ea4244a700bdca93cd8522_raw.png",
+          "sha256": "eb2bec87670e0b1f10b8cd5d65dfc7d20b0ac45d85251303bb41b842df375eaf"
+        }
+      }
+    },
+    {
+      "set": "img3_origin62",
+      "part_id": "04200c88c8634c2388bc931c65cdb1cb",
+      "width": 3047,
+      "height": 3874,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/origin-before-62-20261022/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img3_origin62/04200c88c8634c2388bc931c65cdb1cb_alpha.png",
+          "sha256": "0e7c6f9b15cebb5594c06ceabf30cab0b19028cb8011ea5a1f6397df8d50eb33"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/img3_origin62/04200c88c8634c2388bc931c65cdb1cb_raw.png",
+          "sha256": "28ebb263cf9e1fb02a33a2ed508a706d1501f2a83d5bd871e423c4b05dbb5e77"
+        }
+      }
+    },
+    {
+      "set": "batch171315",
+      "part_id": "d73d865b7e2d47f5904c9e5a67ca84bf",
+      "width": 3283,
+      "height": 4110,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/batch171315-diagnosis-20261022/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/batch171315/d73d865b7e2d47f5904c9e5a67ca84bf_alpha.png",
+          "sha256": "42553c17e0c4ed2eefdc5a3e61cd0c21d353ab85b8b921842dce02741eba5c7c"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/batch171315/d73d865b7e2d47f5904c9e5a67ca84bf_raw.png",
+          "sha256": "3796ae0c6d5396353a15d7a4a0a3659bf4b32f71e0c468ee54f30721a49a176e"
+        }
+      }
+    },
+    {
+      "set": "batch171315",
+      "part_id": "ed18db0a1fdb4102b95e9dddb742bc28",
+      "width": 3283,
+      "height": 4110,
+      "alpha_threshold": 60,
+      "cis_threshold": 120,
+      "source": "obj/PatchNativeValidation/batch171315-diagnosis-20261022/inputs",
+      "files": {
+        "alpha": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/batch171315/ed18db0a1fdb4102b95e9dddb742bc28_alpha.png",
+          "sha256": "431e8bb45a5502dd7743ade9e75d8596cb73d47b43c78b424e0725854b899aba"
+        },
+        "raw": {
+          "path": "Regression/PatchNative/UnifiedRegistration/inputs/batch171315/ed18db0a1fdb4102b95e9dddb742bc28_raw.png",
+          "sha256": "bd6b5ec04ab70ae2e969c8e12ed62d465c0a0337e64051ad71d39fc92972b118"
+        }
+      }
+    }
+  ]
+}

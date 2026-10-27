@@ -124,13 +124,22 @@ void append_defect(PatchResult &result, int kind, cv::Rect original, cv::Rect wo
 } // namespace
 
 // 原 DetectCore 的完整处理链。alpha/cis 为已裁出的原分辨率零件，方向与原 PatchCropper 相同。
-// 配准失败不等于缺陷：未得到可信矩阵时，继续使用全局对准的 CIS 裁图做三类检测。
+// 配准失败不等于缺陷：未得到可信矩阵时，仍使用全局对准的 CIS 核心裁图
+// 继续正常计算三类缺陷和产品 Pass/NG；同时独立保留 Review 警示供人工核对。
 // 此处只返回数据，不写磁盘、不调用 UI；C# 保留现有颜色、文件命名、日志与结果汇总。
 PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfig &config, Worker &worker)
 {
     auto started = Clock::now();
     PatchResult result;
-    cv::Mat alpha_gray = gray(alpha), cis_gray = gray(cis);
+    const cv::Rect image_bounds(0, 0, alpha.cols, alpha.rows);
+    const cv::Rect core = config.core_width > 0 && config.core_height > 0
+                              ? cv::Rect(config.core_x, config.core_y, config.core_width, config.core_height)
+                              : image_bounds;
+    if (alpha.size() != cis.size() || core.width <= 0 || core.height <= 0 || (core & image_bounds) != core)
+    {
+        throw std::invalid_argument("Alpha/CIS context or core ROI invalid");
+    }
+    cv::Mat alpha_gray = gray(alpha(core));
     double scale = config.detection_scale;
     if (scale <= 0 || !std::isfinite(scale))
     {
@@ -146,50 +155,46 @@ PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfi
     // 普通差分使用 Nearest；细线和配准各有独立尺度，不将所有缩放合并成一种插值。
     cv::Mat alpha_scaled, cis_scaled, cis_aligned, cis_original;
     cv::resize(alpha_gray, alpha_scaled, {}, scale, scale, cv::INTER_NEAREST);
-    cv::resize(cis_gray, cis_scaled, alpha_scaled.size(), 0, 0, cv::INTER_NEAREST);
-    cis_aligned = cis_scaled;
     if (config.enable_alignment)
     {
-        // 配准使用独立的约 700 px 工作宽度，不能复用普通差分的 scale。
-        // 这样调整 DefectDetectScale 只改变检测采样，不改变 SIFT 的特征图和几何容差。
-        double alignment_scale =
-            std::min(1., LocalAlignmentTargetWidthPx / static_cast<double>(std::max(1, alpha_gray.cols)));
-        cv::Size size(std::max(1, round_even(alpha_gray.cols * alignment_scale)),
-                      std::max(1, round_even(alpha_gray.rows * alignment_scale)));
-        cv::Mat template_work, captured_work, template_blurred, captured_blurred;
-        cv::resize(alpha_gray, template_work, size, 0, 0, cv::INTER_AREA);
-        cv::resize(cis_gray, captured_work, size, 0, 0, cv::INTER_AREA);
-        cv::blur(template_work, template_blurred, {3, 3});
-        cv::blur(captured_work, captured_blurred, {3, 3});
-        auto alignment = local_align(template_blurred, captured_blurred, config.alpha_threshold, config.cis_threshold,
-                                     alignment_scale, worker);
+        // 配准使用含真实搜索余量的输入；缺陷阈值、坐标和输出始终只作用于核心 ROI。
+        // 最终矩阵处于完整输入像素坐标；下面只为核心目标区域采样一次原图。
+        auto alignment = register_patch(gray(alpha), gray(cis), config.alpha_threshold, config.cis_threshold,
+                                        config.layout_dpi, worker, core);
+        result.alignment = alignment.info;
         result.summary.alignment_ms = alignment.milliseconds;
         result.log =
             alignment.diagnostic + ", time=" + std::to_string(static_cast<int64_t>(alignment.milliseconds)) + "ms";
         if (alignment.applied)
         {
-            // 对应原 CreateAlignedOutputs：2x2 旋转/缩放项无量纲，只有平移项需要换尺度。
-            // 目标检测图只 Warp 一次；若细线通道需要原图，再由原像素独立 Warp，
-            // 不能把低分辨率配准图放大，否则会丢失细线灰度并改变二值化边缘。
-            cv::Mat work = alignment.transform.clone();
-            double ratio = scale / alignment_scale;
-            work.at<double>(0, 2) *= ratio;
-            work.at<double>(1, 2) *= ratio;
-            cv::warpAffine(cis_scaled, cis_aligned, work, alpha_scaled.size(), cv::INTER_CUBIC);
-            if (config.enable_fine_line || (config.output_flags & CIS_PATCH_CIS_BINARY))
+            if (alignment.info.model == CIS_PATCH_MODEL_HOMOGRAPHY)
             {
-                cv::Mat original = alignment.transform.clone();
-                original.at<double>(0, 2) /= alignment_scale;
-                original.at<double>(1, 2) /= alignment_scale;
-                // 原图可能有 3/4 通道，先 Warp 彩色再灰度，与旧细线通道保持相同舍入顺序。
-                cv::warpAffine(cis, cis_original, original, cis.size(), cv::INTER_CUBIC);
+                // 原矩阵将完整 CIS 映到完整 Alpha；左乘输出坐标平移，
+                // 只对核心 ROI 进行一次透视采样，不先生成整张中间对齐图。
+                const cv::Mat output_origin = (cv::Mat_<double>(3, 3) << 1, 0, -core.x, 0, 1, -core.y, 0, 0, 1);
+                const cv::Mat core_transform = output_origin * alignment.transform;
+                cv::warpPerspective(cis, cis_original, core_transform, core.size(), cv::INTER_CUBIC);
+            }
+            else
+            {
+                cv::Mat core_transform = alignment.transform.clone();
+                core_transform.at<double>(0, 2) -= core.x;
+                core_transform.at<double>(1, 2) -= core.y;
+                cv::warpAffine(cis, cis_original, core_transform, core.size(), cv::INTER_CUBIC);
             }
         }
     }
+    else
+    {
+        result.alignment.status = CIS_PATCH_ALIGNMENT_DISABLED;
+    }
+    cv::Mat cis_for_detection = gray(cis_original.empty() ? cis(core) : cis_original);
+    cv::resize(cis_for_detection, cis_scaled, alpha_scaled.size(), 0, 0, cv::INTER_NEAREST);
+    cis_aligned = cis_scaled;
     if (config.output_flags & CIS_PATCH_CIS_BINARY)
     {
-        auto saved = gray(cis_original.empty() ? cis : cis_original);
-        cv::threshold(saved, result.images[CIS_PATCH_CIS_ORIGINAL], config.cis_threshold, 255, cv::THRESH_BINARY);
+        cv::threshold(cis_for_detection, result.images[CIS_PATCH_CIS_ORIGINAL], config.cis_threshold, 255,
+                      cv::THRESH_BINARY);
     }
     cv::Mat alpha_binary, cis_binary, inner_dilated, outer_dilated, difference_inner, difference_outer;
     cv::threshold(alpha_scaled, alpha_binary, config.alpha_threshold, 255, cv::THRESH_BINARY);
@@ -221,7 +226,7 @@ PatchResult detect(const cv::Mat &alpha, const cv::Mat &cis, const CisPatchConfi
         fine_size = {std::max(1, round_even(alpha_gray.cols * fine_scale)),
                      std::max(1, round_even(alpha_gray.rows * fine_scale))};
         cv::Mat fine_template, fine_captured;
-        auto captured = gray(cis_original.empty() ? cis_gray : cis_original);
+        auto captured = cis_for_detection;
         cv::resize(alpha_gray, fine_template, fine_size, 0, 0, cv::INTER_AREA);
         cv::resize(captured, fine_captured, fine_size, 0, 0, cv::INTER_AREA);
         fine = fine_line(fine_template, fine_captured, config.cis_threshold, fine_scale, config);

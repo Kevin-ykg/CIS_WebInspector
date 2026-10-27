@@ -1,3 +1,5 @@
+// 全局对准编排：验证锚点与物理配置，建立上下排对应关系，求解并检查 CIS→TIFF 矩阵。
+// 圆点提取、侧边残差网格、白墨测量和图像采样各在独立文件中；此处不写文件或操作 UI。
 #include "alignment_internal.h"
 
 namespace alignment

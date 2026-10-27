@@ -21,6 +21,8 @@ ImageStitcher（单帧 / 跨帧组合，仍为 C#）
 
 2026-10-09：`qr_blur_local.cpp` 在 Otsu 定位框边界无法完成解码后，增加按实测模块宽度设置窗口的自适应边界测量，解决小尺寸失焦码的局部光照偏差。两种测量共用既有四次局部解码预算，保留原始灰度、几何和模块结构检查。`QrDetector::detect` 的严重失焦阶段自动进入该分支，正式 CIS DLL 与 SDK 共用实现。验证入口为 `QrReaderOutlineChecks`，样本保存在 `Regression/QrReusable/samples/tight_blurred_22.jpg`。
 
+2026-10-25：`qr_recovery.cpp` 对存在纵向码格间距差异的困难码增加受限兜底：三定位框约束局部搜索，独立定位四角，按上/下定位框外边界作单调分段 Y 校正，再由 WeChatQRCode 解码验证。正常码仍走原快速路径；失真成因不由软件推断。样本、正确文本和回放结果见 [纵向行距失真回归](../Regression/QrReusable/LineScanRowSpacing_20261022.md)。
+
 | 文件 | 职责 |
 |---|---|
 | `include/cis_qr_api.h` | 二维码 C 接口，固定宽度字段、状态码、调用约定 |
@@ -92,11 +94,11 @@ InspectionJobRunner
 ## 零件配准与三类缺陷：边界与调用关系
 
 ```text
-PatchCropper（C#：统一 ROI、并行度、每 worker 上下文、结果汇总）
+PatchCropper（C#：核心 ROI + 真实搜索余量、并行度、结果汇总）
   → PatchDefectDetector.Detect（C#：配置快照/借用像素）
     → cis_patch_detect（每件一次同步计算）
       → cis::patch::detect
-        ├─ local_align：既有分级局部配准，返回矩阵/诊断
+        ├─ register_patch：稳定工作坐标 → 同组匹配估计相似/仿射 → 必要时单应候选 → 质量与周期复核
         ├─ threshold / morphology / components：内部与外部缺陷
         └─ fine_line：缺口候选/骨架/截面/端点/共同位移/合并
     ← result 句柄：三类框、mm/mm²、诊断、按需输出图
@@ -105,12 +107,14 @@ PatchCropper（C#：统一 ROI、并行度、每 worker 上下文、结果汇总
 
 | 文件 | 职责与原方法对应 |
 |---|---|
-| `include/cis_patch_api.h` | 零件检测 C ABI v1；输入/配置/结果结构体、资源生命周期 |
+| `include/cis_patch_api.h` | 零件检测 C ABI v2；核心 ROI、结构化配准状态、输入/配置/结果生命周期 |
 | `src/patch_api.cpp` | 长度/步长检查、异常屏障、worker 锁、结果复制；不包含阈值算法 |
 | `src/patch_detector.h` | 私有 RAII 类型、模板缓存、worker、结果所有权 |
-| `src/patch_constants.h` | 原局部配准/细线常量与原说明；不是另一份用户配置 |
+| `src/patch_constants.h` | 正式局部配准/细线常量；已删除无引用的历史常量，不是另一份用户配置 |
 | `src/patch_detector.cpp` | 原 `DetectCore`、物理单位换算、最终 Warp、普通连通域判定与测量 |
-| `src/patch_alignment.cpp` | 原 `TryLocalAlign`、轮廓评分/精修、SIFT/RANSAC |
+| `src/patch_alignment.cpp` | 当前唯一编入 DLL 的局部配准实现 |
+| `src/patch_region.h/.cpp` | 配准窗口与边界内容整理；只读输入，不求矩阵、不改变检测核心 |
+| `src/patch_periodicity.cpp` | 模板重复位移投票、全前景覆盖比较；只拒绝歧义，不自动换周期 |
 | `src/patch_template_cache.cpp` | `TemplateCache::get`：签名分桶、逐像素核对、SIFT 特征复用和锁顺序 |
 | `src/patch_fine_line.cpp` | 原 `DetectFineLineBreaksAtDetailScale`、边界带、骨架/端点/抗错位证据 |
 | `../Services/PatchNativeInterop.cs` | P/Invoke 布局、SafeHandle、只读输入与输出图复制 |
@@ -119,18 +123,26 @@ PatchCropper（C#：统一 ROI、并行度、每 worker 上下文、结果汇总
 
 原 `PatchDefectDetector.Alignment.cs`、`.FineLine.cs` 不再存在于正式 Services；冻结快照只在开发比较工具中。注释按流程迁入对应 C++ 文件，并补充坐标/尺度、截面与锚段含义、面积口径、RAII/缓存锁等说明。C++ helper 上保留原 C# 方法名，便于查找迁移位置。
 
-### 行为保持约定
+### 当前统一实现（2026-10-27 核对）
 
-- 本次不调整配准分支、SIFT 数量、RANSAC 门槛、插值、随机种子或缺陷门槛。当前实际主线仍为轮廓平移 → SIFT 相似变换 → 小范围精修/质量门控，失败继续使用全局裁图。
-- 配准约 700 px 工作宽度，普通差分用 `DefectDetectScale`，细线用至少 0.5 且不超过 1 的细节尺度。尺度转换只修改矩阵平移项；不得把低分辨率对齐图放大作为细线输入。
-- 普通缺陷先在原始差分中标记连通域；完全在屏蔽区才忽略，一旦越过屏蔽区保留完整连通域，以 `CC_STAT_AREA` 严格大于面积阈值判定。
-- 细线从边缘屏蔽区内的缺失证据出发，统一校验骨架长度、模板线宽、横截面、相反方向两个锚段、共同小位移与合并。既有 0.5 mm 最小支持长度和线宽栅格余量保持不变。
-- 细线计数与内部/外部独立；细线面积仍按最终断口骨架掩膜非零像素数换算，不擅自改成填充截面面积。扩展标注框也不参与面积计算。
+- `PatchCropper` 在理论零件核心 ROI 外取默认 15 mm 的真实像素作为配准搜索上下文；缺陷坐标、三类判定和保存图只使用核心。采样预算与 DPI、目标尺寸有关，独立于 `DefectDetectScale`。裁框一致性有完整目标和真实搜索余量前提，不是任意外围内容下的保证。
+- `registration_core` 从 TIFF Alpha 完整连通结构中共同定位至少 95% 前景的中心，保留排版给定的逻辑窗口尺寸；同面积结构共同纳入，中心取整使用对整数平移等变的 floor。要求新窗口在真实输入内且不丢失原核心任何前景，失败则记录 `domain=layout/no-context|empty|incomplete-support|insufficient-context|retain-all-content` 并保留原窗口；成功为 `domain=content-anchored`。不需要独立 PNG，不改检测核心或缺陷模板。孔洞和孔洞内独立散点按真实 8 邻域像素统计，不以矩形面积代替。完整结构仅在自身包围框内 floodFill，边界结构复用访问掩膜，避免对每个散点反复分配全图缓冲。
+- `registration_content` 先检查核心边界是否接触前景。没有接触时保持原像素路径；有真实上下文且边界截断片段合计不超过核心前景 5% 时，在独立配准二值副本上通过 8 邻域填充去掉这些片段，再确定内容框。完整框内的所有散点保留，不取最大连通域；主体大面积穿过边界时沿用原图，避免把被裁坏的目标悄悄缩小。原 Alpha 和缺陷模板从不修改，C ABI 不变。诊断 `boundaryFragments=N/Mpx` 表示忽略的连通片段数和它们进入核心的前景像素数，不是缺陷统计。
+- TIFF/CIS 统一二值化、Area 缩小和轻度模糊；SIFT 特征图统一使用 32 工作像素的滤波边界，关键点中心仍限真实区域，工作密度不按特征数临界值切换。特征为最多 100 个空间均衡 DoG 点，仅对不同位置不足 8 个的分区补充转角 SIFT 描述子；有真实转角才补，不保证每区一定有 8 个点。转角点使用固定轴向、12 工作像素尺度，不生成独立轮廓矩阵。全部证据执行原局部约束、双向 ratio 与互相一致匹配。空间窗内只有一个候选时不用虚假的 ratio，要求其描述子距离 <120。同一组对应点分别估计相似和受约束仿射，RANSAC 固定随机种子。新增采样会改变匹配证据，须单独回归精度、缺陷保留及耗时，不能声明检测效果完全不变。
+- 相似、受约束仿射统一检查内点、几何、跨区留出稳定性、九区双向轮廓及周期歧义。九区平均值使用固定的 TIFF 有图案分区作为分母，CIS 独有结构另加罚分，防止候选矩阵改变评分分区集合。通过安全检查且整体均值优于全局的候选可以应用；改善不足 10% 或最差区超过 8 原像素时标记 `AppliedDegraded` 待复核，而非直接回退。效果接近选相似，仿射整体至少再改善 10% 才选。两者均不可用且全局并非已足够好时，才以同组点补估局部单应性；其二维内点分布、九点雅可比、留区稳定性和周期检查保持硬门控，15% 改善及最差区上限只决定是否标记降级。轮廓只检查质量，不生成或精修矩阵；最终原尺寸核心 ROI 仅采样一次。
+- 留区稳定性在所有 RANSAC 内点的实际 CIS 图案位置检查重拟合位移（包括被留出的点），不再把核心裁框的空白四角当作特征证据；整个核心的物理变换范围和越界仍由几何门控独立检查。相似变换的稳定性上限为 6.25 原像素（包含 0.25px 特征定位余量），仿射及单应性仍为 6 原像素；失败日志分别记录各模型的稳定性数值。
+- 轻微剪切范围：仿射与单应局部雅可比共用 `LocalAlignmentMaximumShearDegrees=2°`（2026-10-27）。仿射仍限制主伸缩在 0.97–1.03、非等比比值 ≤1.03、旋转 ≤3°，不是允许任意 2° 剪切与其他形变叠加。匹配共识、留区稳定性、真实搜索范围和错周期检查保留。此调整允许 img/2 的 2b…使用整体更好的降级仿射；不把弯曲形变变成已解决能力，也不强制应用不稳定候选。
+- `leave_out_change` 先合并源坐标、目标坐标均完全相同的内点，仅在稳定性复核中按几何位置分组/留出/重拟合/设置探针。相同角点的多个 SIFT 方向不会把“两处结构”变成“三点整区留出”，也不会重复加权最小二乘。相似/仿射/单应至少需 4/5/9 个不同坐标对，才能留出一点并保持原重拟合最小点数。没有容差聚类，不把相近但不同的真实角点合并；原匹配、Lowe 比值、RANSAC 矩阵、8/12 候选点及 6/10 内点门槛不变。`stabilityPoints` 为不同坐标对数；拒绝诊断按相似/仿射/单应顺序显示三项，0 表示该候选未走到稳定性检查。
+- 如果相似与仿射的九区均值均未优于全局对准，而全局已有至少六个模板有结构分区、平均 ≤2 原像素、最差区 ≤4 原像素，则保留全局图并记录 `NotNeeded/StrongGlobalAlignment`，不额外重采样；周期检查照常执行。只要有候选通过安全检查且整体均值确有改善，即使改善不足 10%，也进入 `AppliedDegraded`，不走这一 `NotNeeded` 分支。
+- 无可信局部矩阵时使用全局对准裁图正常检测并返回结构化 `Review/Error` 警示；已采用但质量降级的局部矩阵返回 `AppliedDegraded` 警示（原因码 `EdgeQualityDegraded=9`）。两者的三类缺陷均照常计数、显示和写尺寸日志，建议人工核对对准质量。`cis_patch_result_alignment` 与 `cis_patch_abi_version()==2` 读取状态；旧 DLL 不可与新 C# 混用，新增状态/原因码只追加枚举值，不修改 ABI 结构布局。
+- 这是算法更改，不能引用旧版迁移等价性或下方历史性能数据作为新版本验收。当前 [独立验收口径](../Regression/PatchNative/UnifiedRegistration/AcceptanceRevision_20261024.md) 与后续实图库测试应分别评估正确接受、错误接受、拒绝率、缺陷保留和耗时。
+
+旧配准分支和专用常量已清理；历史实验记录见 [维护记录](../docs/维护记录.md)。改算法请修改 `Native/src`，不要修改 SDK 发布副本或生成工程。
 
 ### 零件 C ABI 与内存契约
 
-- Windows x64、`__cdecl`、显式 pack=8、`cis_patch_abi_version()==1`；二维码 ABI v2 不变。输入/配置/汇总/缓存统计描述的 `struct_size` 必须填正确值，C# 与 C++ 均检查布局；缺陷数组记录为固定布局输出，不含该字段。
-- `cache_create → worker_create → detect → result读取 → result_destroy → worker_destroy → cache_destroy`。每批一个缓存，每并行 worker 一个上下文；SIFT/Matcher 按需创建并复用。worker 通过 `shared_ptr` 持有缓存。
+- Windows x64、`__cdecl`、显式 pack=8、`cis_patch_abi_version()==2`；二维码 ABI v2 不变。配置增加核心 ROI，结果增加 `cis_patch_result_alignment`；输入/配置/汇总/配准/缓存统计的 `struct_size` 必须正确。
+- `cache_create → worker_create → detect → result读取 → result_destroy → worker_destroy → cache_destroy`。每批一个缓存，每并行 worker 一个上下文；SIFT 按需创建并复用，空间匹配直接比较受约束候选，不再保留 BFMatcher。worker 通过 `shared_ptr` 持有缓存。
 - 输入仅借用 Gray8/BGR24/BGRA32 的像素，支持有行间隔的 ROI；有效长度至少 `(height-1)*stride+width*channels`。调用期间不能修改/释放输入；函数返回后 DLL 不持有输入地址。
 - 输出不跨库共享 Mat/STL。`detect` 成功后返回结果句柄，读取 summary/defects/log/images 不重复检测；C# 分配图像后按行复制，结果句柄释放不影响保存/UI。
 - `output_flags` 的 1/2/4 分别请求缺陷三联图素材、原尺寸屏蔽图、原尺寸 CIS 二值图。关闭图像保存仍执行同一算法，只省略不需要的输出拷贝。

@@ -1,0 +1,640 @@
+{
+  "schema": "CIS.UnifiedRegistration.ManualReview.v1",
+  "exportedAt": "2026-10-23T09:25:13.104Z",
+  "coordinateSystem": "original ROI pixels; top-left origin",
+  "cases": [
+    {
+      "set": "img2",
+      "partId": "04200c88c8634c2388bc931c65cdb1cb",
+      "complete": "yes",
+      "geometry": "nonlinear",
+      "structures": "uncertain",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 112,
+          "alphaY": 167,
+          "cisX": 92,
+          "cisY": 160
+        },
+        {
+          "alphaX": 564,
+          "alphaY": 164,
+          "cisX": 580,
+          "cisY": 160
+        },
+        {
+          "alphaX": 92,
+          "alphaY": 3706,
+          "cisX": 120,
+          "cisY": 3599
+        },
+        {
+          "alphaX": 588,
+          "alphaY": 3706,
+          "cisX": 624,
+          "cisY": 3611
+        },
+        {
+          "alphaX": 1288,
+          "alphaY": 168,
+          "cisX": 1280,
+          "cisY": 163
+        },
+        {
+          "alphaX": 1748,
+          "alphaY": 165,
+          "cisX": 1756,
+          "cisY": 163
+        },
+        {
+          "alphaX": 1272,
+          "alphaY": 3706,
+          "cisX": 1312,
+          "cisY": 3625
+        },
+        {
+          "alphaX": 1768,
+          "alphaY": 3703,
+          "cisX": 1812,
+          "cisY": 3632
+        },
+        {
+          "alphaX": 2467,
+          "alphaY": 165,
+          "cisX": 2463,
+          "cisY": 166
+        },
+        {
+          "alphaX": 2919,
+          "alphaY": 164,
+          "cisX": 2939,
+          "cisY": 163
+        },
+        {
+          "alphaX": 2447,
+          "alphaY": 3704,
+          "cisX": 2499,
+          "cisY": 3649
+        },
+        {
+          "alphaX": 2943,
+          "alphaY": 3704,
+          "cisX": 2995,
+          "cisY": 3655
+        }
+      ],
+      "defects": []
+    },
+    {
+      "set": "img2",
+      "partId": "2b72867d30ea4244a700bdca93cd8522",
+      "complete": "yes",
+      "geometry": "affine",
+      "structures": "yes",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 993,
+          "alphaY": 165,
+          "cisX": 1001,
+          "cisY": 164
+        },
+        {
+          "alphaX": 1717,
+          "alphaY": 166,
+          "cisX": 1725,
+          "cisY": 164
+        },
+        {
+          "alphaX": 1005,
+          "alphaY": 1018,
+          "cisX": 1037,
+          "cisY": 1012
+        },
+        {
+          "alphaX": 1701,
+          "alphaY": 1017,
+          "cisX": 1729,
+          "cisY": 1019
+        },
+        {
+          "alphaX": 281,
+          "alphaY": 1935,
+          "cisX": 325,
+          "cisY": 1911
+        },
+        {
+          "alphaX": 2401,
+          "alphaY": 1931,
+          "cisX": 2445,
+          "cisY": 1939
+        },
+        {
+          "alphaX": 561,
+          "alphaY": 3147,
+          "cisX": 609,
+          "cisY": 3113
+        },
+        {
+          "alphaX": 2133,
+          "alphaY": 3143,
+          "cisX": 2181,
+          "cisY": 3145
+        },
+        {
+          "alphaX": 997,
+          "alphaY": 3703,
+          "cisX": 1053,
+          "cisY": 3681
+        },
+        {
+          "alphaX": 1693,
+          "alphaY": 3703,
+          "cisX": 1737,
+          "cisY": 3697
+        },
+        {
+          "alphaX": 288,
+          "alphaY": 592,
+          "cisX": 304,
+          "cisY": 584
+        },
+        {
+          "alphaX": 2412,
+          "alphaY": 591,
+          "cisX": 2428,
+          "cisY": 591
+        }
+      ],
+      "defects": []
+    },
+    {
+      "set": "img2",
+      "partId": "3b72867d30ea4244a700bdca93cd8522",
+      "complete": "yes",
+      "geometry": "similarity",
+      "structures": "yes",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 557,
+          "alphaY": 171,
+          "cisX": 597,
+          "cisY": 72
+        },
+        {
+          "alphaX": 205,
+          "alphaY": 827,
+          "cisX": 237,
+          "cisY": 709
+        },
+        {
+          "alphaX": 801,
+          "alphaY": 992,
+          "cisX": 833,
+          "cisY": 890
+        },
+        {
+          "alphaX": 1653,
+          "alphaY": 283,
+          "cisX": 1697,
+          "cisY": 208
+        },
+        {
+          "alphaX": 1357,
+          "alphaY": 715,
+          "cisX": 1397,
+          "cisY": 621
+        },
+        {
+          "alphaX": 2025,
+          "alphaY": 879,
+          "cisX": 2069,
+          "cisY": 805
+        },
+        {
+          "alphaX": 2821,
+          "alphaY": 307,
+          "cisX": 2873,
+          "cisY": 251
+        },
+        {
+          "alphaX": 2525,
+          "alphaY": 716,
+          "cisX": 2565,
+          "cisY": 649
+        },
+        {
+          "alphaX": 3177,
+          "alphaY": 867,
+          "cisX": 3221,
+          "cisY": 818
+        }
+      ],
+      "defects": []
+    },
+    {
+      "set": "img2",
+      "partId": "4b72867d30ea4244a700bdca93cd8522",
+      "complete": "yes",
+      "geometry": "similarity",
+      "structures": "yes",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 1190,
+          "alphaY": 175,
+          "cisX": 1243,
+          "cisY": 163
+        },
+        {
+          "alphaX": 2182,
+          "alphaY": 875,
+          "cisX": 2235,
+          "cisY": 895
+        },
+        {
+          "alphaX": 1894,
+          "alphaY": 1535,
+          "cisX": 1931,
+          "cisY": 1555
+        },
+        {
+          "alphaX": 1702,
+          "alphaY": 2075,
+          "cisX": 1727,
+          "cisY": 2071
+        },
+        {
+          "alphaX": 1046,
+          "alphaY": 1874,
+          "cisX": 1063,
+          "cisY": 1863
+        },
+        {
+          "alphaX": 706,
+          "alphaY": 2946,
+          "cisX": 723,
+          "cisY": 2923
+        },
+        {
+          "alphaX": 1718,
+          "alphaY": 3322,
+          "cisX": 1723,
+          "cisY": 3342
+        },
+        {
+          "alphaX": 3240,
+          "alphaY": 2214,
+          "cisX": 3265,
+          "cisY": 2254
+        },
+        {
+          "alphaX": 2800,
+          "alphaY": 3358,
+          "cisX": 2797,
+          "cisY": 3386
+        }
+      ],
+      "defects": []
+    },
+    {
+      "set": "img2",
+      "partId": "5b72867d30ea4244a700bdca93cd8522",
+      "complete": "yes",
+      "geometry": "affine",
+      "structures": "uncertain",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 885,
+          "alphaY": 455,
+          "cisX": 909,
+          "cisY": 367
+        },
+        {
+          "alphaX": 2389,
+          "alphaY": 795,
+          "cisX": 2421,
+          "cisY": 739
+        },
+        {
+          "alphaX": 1937,
+          "alphaY": 479,
+          "cisX": 1969,
+          "cisY": 415
+        },
+        {
+          "alphaX": 781,
+          "alphaY": 1263,
+          "cisX": 789,
+          "cisY": 1171
+        },
+        {
+          "alphaX": 2701,
+          "alphaY": 1363,
+          "cisX": 2721,
+          "cisY": 1311
+        },
+        {
+          "alphaX": 1869,
+          "alphaY": 2071,
+          "cisX": 1869,
+          "cisY": 2047
+        },
+        {
+          "alphaX": 509,
+          "alphaY": 2359,
+          "cisX": 497,
+          "cisY": 2339
+        },
+        {
+          "alphaX": 3089,
+          "alphaY": 2207,
+          "cisX": 3093,
+          "cisY": 2191
+        },
+        {
+          "alphaX": 205,
+          "alphaY": 3103,
+          "cisX": 193,
+          "cisY": 3103
+        },
+        {
+          "alphaX": 1261,
+          "alphaY": 3343,
+          "cisX": 1249,
+          "cisY": 3351
+        },
+        {
+          "alphaX": 2513,
+          "alphaY": 3669,
+          "cisX": 2505,
+          "cisY": 3671
+        },
+        {
+          "alphaX": 2581,
+          "alphaY": 2793,
+          "cisX": 2585,
+          "cisY": 2783
+        },
+        {
+          "alphaX": 3051,
+          "alphaY": 3329,
+          "cisX": 3043,
+          "cisY": 3339
+        }
+      ],
+      "defects": []
+    },
+    {
+      "set": "img3_origin62",
+      "partId": "04200c88c8634c2388bc931c65cdb1cb",
+      "complete": "yes",
+      "geometry": "nonlinear",
+      "structures": "uncertain",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 44,
+          "alphaY": 71,
+          "cisX": 32,
+          "cisY": 79
+        },
+        {
+          "alphaX": 636,
+          "alphaY": 91,
+          "cisX": 628,
+          "cisY": 103
+        },
+        {
+          "alphaX": 92,
+          "alphaY": 3561,
+          "cisX": 88,
+          "cisY": 3581
+        },
+        {
+          "alphaX": 580,
+          "alphaY": 3561,
+          "cisX": 584,
+          "cisY": 3581
+        },
+        {
+          "alphaX": 1264,
+          "alphaY": 3563,
+          "cisX": 1276,
+          "cisY": 3577
+        },
+        {
+          "alphaX": 1764,
+          "alphaY": 3559,
+          "cisX": 1772,
+          "cisY": 3577
+        },
+        {
+          "alphaX": 1220,
+          "alphaY": 91,
+          "cisX": 1208,
+          "cisY": 99
+        },
+        {
+          "alphaX": 1816,
+          "alphaY": 95,
+          "cisX": 1812,
+          "cisY": 91
+        },
+        {
+          "alphaX": 2463,
+          "alphaY": 26,
+          "cisX": 2463,
+          "cisY": 27
+        },
+        {
+          "alphaX": 2923,
+          "alphaY": 19,
+          "cisX": 2931,
+          "cisY": 23
+        },
+        {
+          "alphaX": 2447,
+          "alphaY": 3559,
+          "cisX": 2455,
+          "cisY": 3573
+        },
+        {
+          "alphaX": 2939,
+          "alphaY": 3559,
+          "cisX": 2947,
+          "cisY": 3569
+        }
+      ],
+      "defects": []
+    },
+    {
+      "set": "batch171315",
+      "partId": "d73d865b7e2d47f5904c9e5a67ca84bf",
+      "complete": "yes",
+      "geometry": "affine",
+      "structures": "uncertain",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 312,
+          "alphaY": 192,
+          "cisX": 328,
+          "cisY": 184
+        },
+        {
+          "alphaX": 1036,
+          "alphaY": 884,
+          "cisX": 1060,
+          "cisY": 872
+        },
+        {
+          "alphaX": 1760,
+          "alphaY": 124,
+          "cisX": 1784,
+          "cisY": 116
+        },
+        {
+          "alphaX": 3225,
+          "alphaY": 120,
+          "cisX": 3242,
+          "cisY": 116
+        },
+        {
+          "alphaX": 745,
+          "alphaY": 2534,
+          "cisX": 762,
+          "cisY": 2506
+        },
+        {
+          "alphaX": 2473,
+          "alphaY": 2542,
+          "cisX": 2498,
+          "cisY": 2514
+        },
+        {
+          "alphaX": 565,
+          "alphaY": 1673,
+          "cisX": 581,
+          "cisY": 1651
+        },
+        {
+          "alphaX": 2685,
+          "alphaY": 1697,
+          "cisX": 2705,
+          "cisY": 1671
+        },
+        {
+          "alphaX": 53,
+          "alphaY": 3879,
+          "cisX": 73,
+          "cisY": 3863
+        },
+        {
+          "alphaX": 3149,
+          "alphaY": 3879,
+          "cisX": 3161,
+          "cisY": 3867
+        }
+      ],
+      "defects": [
+        {
+          "x": 2956,
+          "y": 667,
+          "w": 53,
+          "h": 100,
+          "type": "outer"
+        },
+        {
+          "x": 2593,
+          "y": 2507,
+          "w": 226,
+          "h": 66,
+          "type": "outer"
+        }
+      ]
+    },
+    {
+      "set": "batch171315",
+      "partId": "ed18db0a1fdb4102b95e9dddb742bc28",
+      "complete": "yes",
+      "geometry": "affine",
+      "structures": "uncertain",
+      "notes": "",
+      "points": [
+        {
+          "alphaX": 124,
+          "alphaY": 155,
+          "cisX": 140,
+          "cisY": 147
+        },
+        {
+          "alphaX": 848,
+          "alphaY": 499,
+          "cisX": 872,
+          "cisY": 491
+        },
+        {
+          "alphaX": 2245,
+          "alphaY": 439,
+          "cisX": 2268,
+          "cisY": 443
+        },
+        {
+          "alphaX": 2880,
+          "alphaY": 895,
+          "cisX": 2900,
+          "cisY": 899
+        },
+        {
+          "alphaX": 560,
+          "alphaY": 1872,
+          "cisX": 584,
+          "cisY": 1860
+        },
+        {
+          "alphaX": 320,
+          "alphaY": 3103,
+          "cisX": 336,
+          "cisY": 3095
+        },
+        {
+          "alphaX": 1140,
+          "alphaY": 3789,
+          "cisX": 1152,
+          "cisY": 3789
+        },
+        {
+          "alphaX": 2610,
+          "alphaY": 3495,
+          "cisX": 2627,
+          "cisY": 3507
+        },
+        {
+          "alphaX": 2794,
+          "alphaY": 1731,
+          "cisX": 2819,
+          "cisY": 1735
+        },
+        {
+          "alphaX": 2678,
+          "alphaY": 2901,
+          "cisX": 2691,
+          "cisY": 2903
+        }
+      ],
+      "defects": [
+        {
+          "x": 587,
+          "y": 3391,
+          "w": 83,
+          "h": 136,
+          "type": "outer"
+        }
+      ]
+    }
+  ]
+}

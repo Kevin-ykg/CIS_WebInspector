@@ -1,0 +1,468 @@
+{
+  "prototype": "standalone; no production DLL or defect decision changed",
+  "dpiAssumption": 300,
+  "opencv": "4.13.0",
+  "manualClickUncertaintyApproxPxPerImage": 3.0,
+  "provisionalAlignmentTargetOriginalPx": 6.0,
+  "uncertaintyCaveat": "Approximate, not a hard error bound; no case can certify 5-6px true geometry from these labels alone.",
+  "cases": [
+    {
+      "set": "img2",
+      "partId": "04200c88c8634c2388bc931c65cdb1cb",
+      "status": "Review",
+      "candidateModel": null,
+      "externalVerdict": "NoCandidate",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 40.31945140600104,
+        "p95": 99.64707937163408,
+        "max": 104.60289327137876
+      },
+      "workSize": [
+        774,
+        984
+      ],
+      "templateFeatures": 25,
+      "movingFeatures": 31,
+      "matches": 9,
+      "manualBeforePx": {
+        "p50": 46.31945140600104,
+        "p95": 105.64707937163408,
+        "max": 110.60289327137876
+      },
+      "manualAfterPx": {
+        "p50": 46.31945140600104,
+        "p95": 105.64707937163408,
+        "max": 110.60289327137876
+      },
+      "candidateModels": [],
+      "matrixCisToAlpha": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "milliseconds": 476.00819999934174
+    },
+    {
+      "set": "img2",
+      "partId": "2b72867d30ea4244a700bdca93cd8522",
+      "status": "Review",
+      "candidateModel": null,
+      "externalVerdict": "NoCandidate",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 32.482423907274224,
+        "p95": 53.42686669536042,
+        "max": 54.166435825965294
+      },
+      "workSize": [
+        684,
+        984
+      ],
+      "templateFeatures": 84,
+      "movingFeatures": 147,
+      "matches": 15,
+      "manualBeforePx": {
+        "p50": 38.482423907274224,
+        "p95": 59.42686669536042,
+        "max": 60.166435825965294
+      },
+      "manualAfterPx": {
+        "p50": 38.482423907274224,
+        "p95": 59.42686669536042,
+        "max": 60.166435825965294
+      },
+      "candidateModels": [],
+      "matrixCisToAlpha": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ]
+      ],
+      "milliseconds": 400.156199997582
+    },
+    {
+      "set": "img2",
+      "partId": "3b72867d30ea4244a700bdca93cd8522",
+      "status": "Candidate",
+      "candidateModel": "affine",
+      "externalVerdict": "UnresolvedAtLabelPrecision",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.0,
+        "p95": 0.7246680715674235,
+        "max": 0.8034173192751188
+      },
+      "workSize": [
+        864,
+        342
+      ],
+      "templateFeatures": 197,
+      "movingFeatures": 189,
+      "matches": 50,
+      "manualBeforePx": {
+        "p50": 86.95401083331349,
+        "p95": 116.1179378824309,
+        "max": 122.2620137246234
+      },
+      "manualAfterPx": {
+        "p50": 3.6783346331462523,
+        "p95": 6.724668071567423,
+        "max": 6.803417319275119
+      },
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 36,
+          "matches": 50,
+          "cells": 8,
+          "rmsWorkPx": 1.1418442709940704,
+          "edgeBeforeWorkPx": 5.88466199239095,
+          "edgeAfterWorkPx": 0.9125325812233819,
+          "worstCellRegressionWorkPx": -4.309845864772797
+        },
+        {
+          "kind": "affine",
+          "inliers": 46,
+          "matches": 50,
+          "cells": 9,
+          "rmsWorkPx": 0.6251233862770912,
+          "edgeBeforeWorkPx": 5.88466199239095,
+          "edgeAfterWorkPx": 0.48190023832850987,
+          "worstCellRegressionWorkPx": -4.1841078996658325
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9957570107797671,
+          0.007021368719069498,
+          -38.30360771033088
+        ],
+        [
+          -0.021860188878378314,
+          1.0054661240925318,
+          114.53894018741258
+        ]
+      ],
+      "milliseconds": 233.07479999493808
+    },
+    {
+      "set": "img2",
+      "partId": "4b72867d30ea4244a700bdca93cd8522",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "LargeResidualBeyondApproxNoise",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 4.7477507667805945,
+        "p95": 10.65599154690284,
+        "max": 12.810950927749229
+      },
+      "workSize": [
+        864,
+        984
+      ],
+      "templateFeatures": 204,
+      "movingFeatures": 151,
+      "matches": 56,
+      "manualBeforePx": {
+        "p50": 28.600699292150182,
+        "p95": 55.72542676255415,
+        "max": 56.64803615307419
+      },
+      "manualAfterPx": {
+        "p50": 10.747750766780594,
+        "p95": 16.65599154690284,
+        "max": 18.81095092774923
+      },
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 28,
+          "matches": 56,
+          "cells": 8,
+          "rmsWorkPx": 1.4118338304717943,
+          "edgeBeforeWorkPx": 4.247675076127052,
+          "edgeAfterWorkPx": 1.034247137606144,
+          "worstCellRegressionWorkPx": -0.39263784885406494
+        },
+        {
+          "kind": "affine",
+          "inliers": 31,
+          "matches": 56,
+          "cells": 6,
+          "rmsWorkPx": 0.9854633645765799,
+          "edgeBeforeWorkPx": 4.247675076127052,
+          "edgeAfterWorkPx": 1.44679856300354,
+          "worstCellRegressionWorkPx": -0.4384644031524658
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          1.0008474819278146,
+          0.018513160615573215,
+          -62.99610606652758
+        ],
+        [
+          -0.01851926840038579,
+          1.0008474819278146,
+          27.114948884297963
+        ]
+      ],
+      "milliseconds": 619.4592000028933
+    },
+    {
+      "set": "img2",
+      "partId": "5b72867d30ea4244a700bdca93cd8522",
+      "status": "Candidate",
+      "candidateModel": "affine",
+      "externalVerdict": "LargeResidualBeyondApproxNoise",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 2.6627967138916535,
+        "p95": 30.40771910734824,
+        "max": 39.140983428022956
+      },
+      "workSize": [
+        864,
+        984
+      ],
+      "templateFeatures": 240,
+      "movingFeatures": 240,
+      "matches": 119,
+      "manualBeforePx": {
+        "p50": 23.323807579381203,
+        "p95": 91.66728882272724,
+        "max": 92.34717104492157
+      },
+      "manualAfterPx": {
+        "p50": 8.662796713891654,
+        "p95": 36.40771910734824,
+        "max": 45.140983428022956
+      },
+      "candidateModels": [
+        {
+          "kind": "affine",
+          "inliers": 48,
+          "matches": 119,
+          "cells": 6,
+          "rmsWorkPx": 1.1735914171549213,
+          "edgeBeforeWorkPx": 4.082594964239332,
+          "edgeAfterWorkPx": 2.380799584918552,
+          "worstCellRegressionWorkPx": 0.05207324028015137
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9944292571333018,
+          0.006214675774948528,
+          0.576426651179275
+        ],
+        [
+          -0.0025633558554281214,
+          0.9769772677290145,
+          77.31963759211914
+        ]
+      ],
+      "milliseconds": 557.643600004667
+    },
+    {
+      "set": "img3_origin62",
+      "partId": "04200c88c8634c2388bc931c65cdb1cb",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "UnresolvedAtLabelPrecision",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.007101378506862321,
+        "p95": 5.092319587114799,
+        "max": 7.010689729102296
+      },
+      "workSize": [
+        774,
+        984
+      ],
+      "templateFeatures": 9,
+      "movingFeatures": 20,
+      "matches": 8,
+      "manualBeforePx": {
+        "p50": 14.422205101855956,
+        "p95": 20.396078054371138,
+        "max": 20.396078054371138
+      },
+      "manualAfterPx": {
+        "p50": 5.676007556762409,
+        "p95": 11.0923195871148,
+        "max": 13.010689729102296
+      },
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 6,
+          "matches": 8,
+          "cells": 5,
+          "rmsWorkPx": 0.8683456317169372,
+          "edgeBeforeWorkPx": 1.3751964072386424,
+          "edgeAfterWorkPx": 0.5659830305311415,
+          "worstCellRegressionWorkPx": 0.10229822993278503
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9955176133619081,
+          -0.0024335880507824967,
+          13.907413386035321
+        ],
+        [
+          0.0024339581863900292,
+          0.9955176133619082,
+          -7.1894269526354435
+        ]
+      ],
+      "milliseconds": 402.59879999939585
+    },
+    {
+      "set": "batch171315",
+      "partId": "d73d865b7e2d47f5904c9e5a67ca84bf",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "LargeResidualBeyondApproxNoise",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 4.834129024201149,
+        "p95": 14.27284714712265,
+        "max": 14.687408145564124
+      },
+      "workSize": [
+        834,
+        1044
+      ],
+      "templateFeatures": 151,
+      "movingFeatures": 151,
+      "matches": 70,
+      "manualBeforePx": {
+        "p50": 26.222656339864436,
+        "p95": 35.40625433720685,
+        "max": 37.53664875824692
+      },
+      "manualAfterPx": {
+        "p50": 10.83412902420115,
+        "p95": 20.27284714712265,
+        "max": 20.687408145564124
+      },
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 38,
+          "matches": 70,
+          "cells": 4,
+          "rmsWorkPx": 1.0434983351294929,
+          "edgeBeforeWorkPx": 4.088573604822159,
+          "edgeAfterWorkPx": 1.7171731293201447,
+          "worstCellRegressionWorkPx": -0.11252450942993164
+        },
+        {
+          "kind": "affine",
+          "inliers": 54,
+          "matches": 70,
+          "cells": 7,
+          "rmsWorkPx": 0.8428082872644201,
+          "edgeBeforeWorkPx": 4.088573604822159,
+          "edgeAfterWorkPx": 1.3130602985620499,
+          "worstCellRegressionWorkPx": -0.47588372230529785
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9992758490973154,
+          -0.0004367012790075654,
+          -19.26230146372144
+        ],
+        [
+          0.000436774671867578,
+          0.9992758490973154,
+          9.167061526003144
+        ]
+      ],
+      "milliseconds": 550.5148000011104
+    },
+    {
+      "set": "batch171315",
+      "partId": "ed18db0a1fdb4102b95e9dddb742bc28",
+      "status": "Candidate",
+      "candidateModel": "similarity",
+      "externalVerdict": "UnresolvedAtLabelPrecision",
+      "approxPairAnnotationUncertaintyPx": 6.0,
+      "optimisticExcessAfterPx": {
+        "p50": 0.0,
+        "p95": 3.390576678926222,
+        "max": 3.537282070894987
+      },
+      "workSize": [
+        834,
+        1044
+      ],
+      "templateFeatures": 173,
+      "movingFeatures": 179,
+      "matches": 99,
+      "manualBeforePx": {
+        "p50": 20.602365050527975,
+        "p95": 26.151138662553556,
+        "max": 26.832815729997478
+      },
+      "manualAfterPx": {
+        "p50": 5.003427307884735,
+        "p95": 9.390576678926223,
+        "max": 9.537282070894987
+      },
+      "candidateModels": [
+        {
+          "kind": "similarity",
+          "inliers": 67,
+          "matches": 99,
+          "cells": 7,
+          "rmsWorkPx": 0.9240319719391801,
+          "edgeBeforeWorkPx": 3.3052791357040405,
+          "edgeAfterWorkPx": 0.7376455739140511,
+          "worstCellRegressionWorkPx": -1.6937898397445679
+        },
+        {
+          "kind": "affine",
+          "inliers": 82,
+          "matches": 99,
+          "cells": 8,
+          "rmsWorkPx": 0.8505796198143367,
+          "edgeBeforeWorkPx": 3.3052791357040405,
+          "edgeAfterWorkPx": 0.6804805286228657,
+          "worstCellRegressionWorkPx": -1.5761772394180298
+        }
+      ],
+      "matrixCisToAlpha": [
+        [
+          0.9988817661085311,
+          0.00438031417594725,
+          -25.694058834092264
+        ],
+        [
+          -0.004381050340003965,
+          0.9988817661085311,
+          9.067679868529234
+        ]
+      ],
+      "milliseconds": 560.1093000004767
+    }
+  ]
+}
