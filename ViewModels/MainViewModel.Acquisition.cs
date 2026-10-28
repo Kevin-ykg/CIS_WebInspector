@@ -96,6 +96,10 @@ namespace CIS_WebInspector.ViewModels
             }
 
             ICameraSource source = CameraSource;
+            if (source is CisCameraEngine camera)
+            {
+                camera.AcquisitionFaulted += OnCameraAcquisitionFaulted;
+            }
 
             // 数据源公开原始几何，二维码、拼接和预览统一使用 DownscaleFactor 后的处理坐标系。
             int downscaleFactor = Math.Max(1, acquisitionConfig.DownscaleFactor);
@@ -174,6 +178,10 @@ namespace CIS_WebInspector.ViewModels
                 IsRunning = false;
                 StatusText = $"启动失败: {ex.Message}";
                 AddLog($"[ERROR] 启动采集失败: {ex.Message}");
+                if (CameraSource is CisCameraEngine)
+                {
+                    MessageBox.Show(ex.Message, "相机采集启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 

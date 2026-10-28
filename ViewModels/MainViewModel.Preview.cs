@@ -1,4 +1,5 @@
 using System;
+using CIS_WebInspector.Services;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
@@ -120,6 +121,10 @@ namespace CIS_WebInspector.ViewModels
             // 顺序很重要：先取消检测和停止消费者，再退订/释放生产者，避免释放后仍有回调进入。
             CancelInspectionJob();
             StopFrameProcessor(false);
+            if (CameraSource is CisCameraEngine camera)
+            {
+                camera.AcquisitionFaulted -= OnCameraAcquisitionFaulted;
+            }
             _acquisitionSession.Close();
         }
 

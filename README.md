@@ -87,6 +87,8 @@ CIS_WebInspector 是面向连续烫画膜/CIS 线扫图像的 WPF 工业视觉�
 
 ## 构建
 
+Volans x64 SDK 的 `VolansGrabberCL_net.dll`、`VolansGrabberCL.dll` 和 `CamExpRemote.dll` 放在项目内 `lib/x64`，工程引用与构建复制均使用该相对路径，不再依赖仓库外的 `../../lib/x64`。这三个依赖文件需随源码一起提交，避免独立克隆后出现 `ares`、`VolansDevice` 或 `VolansEventHandler` 找不到的编译错误；在线采集仍需安装厂商驱动。
+
 二维码、全局/侧边对准、白墨检查、零件局部配准与三类缺陷检测已迁入 C++。C# 保留拼接状态机、配置快照、同步借用像素、结果转换、批次调度和图像保存；C++ 通过稳定 C 接口封装模型、矩阵/控制网格、SIFT/模板缓存及临时图像。迁移时的等价性与后续局部配准算法调整属于不同阶段；不能拿迁移对照结果证明当前统一流程的精度或耗时。
 
 ```powershell

@@ -21,6 +21,12 @@ mono_crash.*
 [Rr]eleases/
 x64/
 x86/
+# Project-local Volans SDK dependencies must survive a fresh clone.
+!/lib/x64/
+/lib/x64/*
+!/lib/x64/VolansGrabberCL_net.dll
+!/lib/x64/VolansGrabberCL.dll
+!/lib/x64/CamExpRemote.dll
 [Ww][Ii][Nn]32/
 [Aa][Rr][Mm]/
 [Aa][Rr][Mm]64/

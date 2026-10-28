@@ -10,7 +10,7 @@ namespace CIS_WebInspector.Services
     /// 在线相机数据源：封装 VolansDevice SDK，管理非托管内存池与异步采集回调。
     /// 实现 IDisposable 确保相机句柄与非托管内存的确定性释放。
     /// </summary>
-    public sealed class CisCameraEngine : ICameraSource
+    public sealed partial class CisCameraEngine : ICameraSource
     {
         [DllImport("kernel32.dll", EntryPoint = "CopyMemory", SetLastError = false)]
         private static extern void CopyMemory(IntPtr dst, IntPtr src, int size);
@@ -181,6 +181,10 @@ namespace CIS_WebInspector.Services
             _callbackImageReady = new VolansEventHandler(
                 delegate (uint arg0, uint arg1)
                 {
+                    if (_disposed || System.Threading.Volatile.Read(ref _connectionFaulted) != 0)
+                    {
+                        return;
+                    }
                     if (!_useUserBuffer)
                     {
                         // 内部缓存模式：手动拷贝数据到用户内存池
@@ -258,34 +262,80 @@ namespace CIS_WebInspector.Services
                     }
                 });
 
-            _device.registerEventHandler(
+            if (!_device.registerEventHandler(
                 (uint)AriEventType.AriEvent_FrameReady,
-                _callbackImageReady);
+                _callbackImageReady))
+            {
+                throw new InvalidOperationException("注册帧回调失败：" + GetSdkError());
+            }
+            RegisterConnectionCallbacks();
         }
 
         /// <summary>清零统计并启动 SDK 非阻塞采集；重复启动直接忽略。</summary>
         public void StartGrab()
         {
-            if (_device == null || IsRunning)
+            lock (_deviceSync)
             {
-                return;
+                if (_disposed || _device == null)
+                {
+                    throw new InvalidOperationException("相机未加载或已关闭。");
+                }
+                if (_connectionFaulted != 0)
+                {
+                    throw new InvalidOperationException("相机发生过采集/信号异常，请检查供电、连接并重新加载相机配置。");
+                }
+                if (IsRunning)
+                {
+                    return;
+                }
+                _imgIndex = 0;
+                _connectionHealth.Reset();
+                System.Threading.Interlocked.Exchange(ref _pendingGrabFailed, 0);
+                // 回调只记录原子状态，不能在 SDK 回调中同步停采或关闭设备。
+                System.Threading.Volatile.Write(ref _connectionMonitoring, 1);
+                try
+                {
+                    if (!_device.startGrab(0))
+                    {
+                        throw new InvalidOperationException("SDK 启动采集失败：" + GetSdkError());
+                    }
+                    IsRunning = true;
+                    _connectionTimer = new System.Threading.Timer(CheckConnection, null, 250, 250);
+                }
+                catch
+                {
+                    // 包括启动到一半抛异常或 Timer 创建失败，不能留下无监控的后台采集。
+                    System.Threading.Volatile.Write(ref _connectionMonitoring, 0);
+                    try
+                    { _device.stopGrab(); }
+                    catch { }
+                    IsRunning = false;
+                    throw;
+                }
             }
-
-            _imgIndex = 0;
-            IsRunning = true;
-            _device.startGrab(0);
         }
 
         /// <summary>停止 SDK 继续产生回调；已进入回调的处理仍会自然返回。</summary>
         public void StopGrab()
         {
-            if (_device == null || !IsRunning)
+            lock (_deviceSync)
             {
-                return;
+                System.Threading.Volatile.Write(ref _connectionMonitoring, 0);
+                _connectionTimer?.Dispose();
+                _connectionTimer = null;
+                if (_device == null || !IsRunning)
+                {
+                    return;
+                }
+                try
+                {
+                    _device.stopGrab();
+                }
+                finally
+                {
+                    IsRunning = false;
+                }
             }
-
-            _device.stopGrab();
-            IsRunning = false;
         }
 
         // ---- 动态硬件属性配置支持 ----
@@ -295,21 +345,23 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public Dictionary<string, uint> GetAllProperties()
         {
-            var dict = new Dictionary<string, uint>();
-            if (_device == null)
+            lock (_deviceSync)
             {
+                var dict = new Dictionary<string, uint>();
+                if (_disposed || _device == null)
+                {
+                    return dict;
+                }
+                foreach (AriPropertyType prop in Enum.GetValues(typeof(AriPropertyType)))
+                {
+                    uint val = 0;
+                    if (_device.getProperty((uint)prop, ref val))
+                    {
+                        dict[prop.ToString()] = val;
+                    }
+                }
                 return dict;
             }
-
-            foreach (AriPropertyType prop in Enum.GetValues(typeof(AriPropertyType)))
-            {
-                uint val = 0;
-                if (_device.getProperty((uint)prop, ref val))
-                {
-                    dict[prop.ToString()] = val;
-                }
-            }
-            return dict;
         }
 
         /// <summary>
@@ -317,16 +369,18 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public bool SetProperty(string propName, uint value)
         {
-            if (_device == null)
+            lock (_deviceSync)
             {
+                if (_disposed || _device == null)
+                {
+                    return false;
+                }
+                if (Enum.TryParse<AriPropertyType>(propName, out var prop))
+                {
+                    return _device.setProperty((uint)prop, value);
+                }
                 return false;
             }
-
-            if (Enum.TryParse<AriPropertyType>(propName, out var prop))
-            {
-                return _device.setProperty((uint)prop, value);
-            }
-            return false;
         }
 
         /// <summary>
@@ -334,12 +388,10 @@ namespace CIS_WebInspector.Services
         /// </summary>
         public bool SaveConfiguration(string configPath)
         {
-            if (_device == null)
+            lock (_deviceSync)
             {
-                return false;
+                return !_disposed && _device != null && _device.saveConfigurationFile(configPath);
             }
-
-            return _device.saveConfigurationFile(configPath);
         }
 
         /// <summary>按“停采 → 关闭设备 → 释放用户缓冲池”的顺序清理所有原生资源。</summary>
@@ -358,10 +410,13 @@ namespace CIS_WebInspector.Services
             catch { }
 
             // 关闭设备句柄
-            try
-            { _device?.closeDevice(); }
-            catch { }
-            _device = null;
+            lock (_deviceSync)
+            {
+                try
+                { _device?.closeDevice(); }
+                catch { }
+                _device = null;
+            }
 
             // 释放所有非托管内存
             for (int i = 0; i < _imgBuffers.Count; ++i)
